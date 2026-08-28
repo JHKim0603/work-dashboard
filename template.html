@@ -177,6 +177,22 @@
   .advisory-badge.warn { background: var(--warn-wash); color: var(--warn); }
   .advisory-badge.danger { background: var(--bad-wash); color: var(--bad); }
 
+  /* Wording for the 7-day strip's advisories. Each strip column is ~50px wide, far too narrow
+     for "폭염주의보", which is why the day cell carries only a dot; below the strip the text
+     has the full card width and, unlike the dot's title attribute, it survives on touch. */
+  .week-adv { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gridline); }
+  .wa-label {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--ink-muted); margin-bottom: 5px;
+  }
+  .wa-row { display: flex; align-items: baseline; gap: 8px; padding: 2px 0; flex-wrap: wrap; }
+  .wa-date {
+    font-size: 11.5px; font-weight: 700; color: var(--ink-secondary);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .wa-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .wa-tags .advisory-badge { margin-top: 0; margin-right: 0; }
+
   .typhoon-card {
     border-radius: 12px; padding: 16px 20px; border: 1px solid var(--border);
   }
@@ -461,6 +477,26 @@ function advisoryBadges(advisories) {
   return advisories.map(a => `<span class="advisory-badge ${a.tone === "danger" ? "danger" : "warn"}">⚠ ${esc(a.text)}</span>`).join("");
 }
 
+// Spells out which forecast days carry an advisory. The strip itself can only afford a dot per
+// day, and that dot kept its wording in a title attribute - a tooltip never opens on a phone,
+// so a 폭염경보 three days out arrived as an unlabelled "!". The dot stays as the positional
+// marker; this is what actually names it.
+function weekAdvisoryList(days) {
+  const rows = (days || []).filter(d => Array.isArray(d.advisories) && d.advisories.length).map(d => {
+    const dt = new Date(d.date + "T00:00:00");
+    const label = `${dt.getMonth() + 1}/${dt.getDate()}(${DOW[dt.getDay()]})`;
+    return `<div class="wa-row">
+          <span class="wa-date">${esc(label)}</span>
+          <span class="wa-tags">${advisoryBadges(d.advisories)}</span>
+        </div>`;
+  });
+  if (rows.length === 0) return "";
+  return `<div class="week-adv">
+        <div class="wa-label">주간 특보</div>
+        ${rows.join("")}
+      </div>`;
+}
+
 // WMO weather code -> emoji, matching the Korean labels the generator already assigns
 function weatherIcon(desc) {
   if (!desc) return "·";
@@ -495,10 +531,14 @@ if (!WEATHER || WEATHER.length === 0) {
       const label = `${dt.getMonth() + 1}/${dt.getDate()}(${DOW[dt.getDay()]})`;
       const topPct = ((hi - d.maxC) / span) * 100;
       const botPct = ((d.minC - lo) / span) * 100;
-      const adv = Array.isArray(d.advisories) && d.advisories.length ? d.advisories[0] : null;
-      const advDot = adv
-        ? `<span class="wd-adv ${adv.tone === "danger" ? "danger" : "warn"}" title="${esc(adv.text)}">!</span>`
-        : `<span class="wd-adv"></span>`;
+      // Reading only advisories[0] meant a day under both a 폭염 and a 한파-class warning showed
+      // whichever happened to be first; the dot now takes the more severe tone and names them all.
+      const advs = Array.isArray(d.advisories) ? d.advisories : [];
+      const tone = advs.some(a => a.tone === "danger") ? "danger" : (advs.length ? "warn" : "");
+      const advText = advs.map(a => a.text).join(", ");
+      const advDot = tone
+        ? `<span class="wd-adv ${tone}" title="${esc(advText)}" aria-label="${esc(advText)}">!</span>`
+        : `<span class="wd-adv" aria-hidden="true"></span>`;
       return `
         <div class="week-day" title="${esc(d.date)} ${esc(d.desc)} ${d.minC}~${d.maxC}°C, 강수확률 ${d.chanceOfRain}%">
           <span class="wd-label${d.date === todayStr ? " today" : ""}">${esc(label)}</span>
@@ -520,6 +560,7 @@ if (!WEATHER || WEATHER.length === 0) {
         </div>
         <div class="weather-meta">습도 ${w.humidity}% ${advisoryBadges(w.advisories)}</div>
         <div class="week-strip">${strip}</div>
+        ${weekAdvisoryList(days)}
       </div>`;
   }).join("");
 }
