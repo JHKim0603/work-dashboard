@@ -442,13 +442,54 @@ function Get-ZipEntryXml {
     try { [xml]$reader.ReadToEnd() } finally { $reader.Close() }
 }
 
+# Last edition confirmed working. Only used if discovery below fails - the hash and the
+# trailing 0050012026 are edition-specific, so this link dies whenever a new Pink Sheet ships.
+$kclFallbackUrl = "https://thedocs.worldbank.org/en/doc/74e8be41ceb20fa0da750cda2f6b9e4e-0050012026/related/CMO-Historical-Data-Monthly.xlsx"
+
+function Get-PinkSheetUrl {
+    # The workbook lives under an edition-stamped path, so hardcoding it means the KCl card
+    # disappears without a word the next time the World Bank publishes - a 404 here is caught
+    # below, returns $null, and the card is simply never added. The Commodity Markets landing
+    # page always links the current edition, so read the link from there and keep the last
+    # known-good URL only as a fallback.
+    param($fallbackUrl)
+
+    try {
+        $page = Invoke-WebRequest -Uri "https://www.worldbank.org/en/research/commodity-markets" `
+            -Headers $headers -UseBasicParsing -TimeoutSec 30
+        $match = [regex]::Match($page.Content, 'https://[^"''\s]*CMO-Historical-Data-Monthly\.xlsx')
+        if ($match.Success) {
+            if ($match.Value -ne $fallbackUrl) {
+                Write-Host "  Pink Sheet 새 판 감지: $($match.Value)"
+            }
+            return $match.Value
+        }
+        Write-Warning "  Pink Sheet 링크를 페이지에서 찾지 못했습니다 - 마지막 확인된 URL로 시도합니다."
+    } catch {
+        Write-Warning "  Pink Sheet 링크 조회 실패 ($($_.Exception.Message)) - 마지막 확인된 URL로 시도합니다."
+    }
+    $fallbackUrl
+}
+
 function Get-KclPriceHistory {
     param($months = 30)
 
     $tmpXlsx = [System.IO.Path]::GetTempFileName() + ".xlsx"
     try {
-        $xlsxUrl = "https://thedocs.worldbank.org/en/doc/74e8be41ceb20fa0da750cda2f6b9e4e-0050012026/related/CMO-Historical-Data-Monthly.xlsx"
-        Invoke-WebRequest -Uri $xlsxUrl -Headers $headers -OutFile $tmpXlsx
+        $xlsxUrl = Get-PinkSheetUrl -fallbackUrl $kclFallbackUrl
+        # ~2MB over a link that may have just rotated; one attempt was enough to lose the card
+        # to a transient failure, the same way a single GDACS attempt used to blank the typhoon one.
+        $downloaded = $false
+        for ($attempt = 1; $attempt -le 3 -and -not $downloaded; $attempt++) {
+            try {
+                Invoke-WebRequest -Uri $xlsxUrl -Headers $headers -OutFile $tmpXlsx -TimeoutSec 60
+                $downloaded = $true
+            } catch {
+                if ($attempt -eq 3) { throw }
+                Write-Warning "  Pink Sheet 다운로드 실패 ($attempt/3), 재시도: $($_.Exception.Message)"
+                Start-Sleep -Seconds 3
+            }
+        }
 
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $zip = [System.IO.Compression.ZipFile]::OpenRead($tmpXlsx)
@@ -836,11 +877,14 @@ $typhoonJson = ConvertTo-JsonOrNull -InputObject $typhoon -Depth 4
 $pricesJson = ConvertTo-Json -InputObject @($priceCards) -Depth 6
 $scfiJson = ConvertTo-JsonOrNull -InputObject $scfi -Depth 4
 $hasFuelKey = if ($env:OPINET_API_KEY) { "true" } else { "false" }
+# A failed KCl fetch used to just not append a card, so the page came back one card shorter
+# with nothing saying so - indistinguishable from "we never tracked potash". Say it instead.
+$hasKcl = if ($kcl) { "true" } else { "false" }
 $materialsJson = ConvertTo-Json -InputObject @($materials) -Depth 6
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
-$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
+$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8

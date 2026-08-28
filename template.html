@@ -445,6 +445,7 @@ const TYPHOON = __TYPHOON_JSON__;
 const PRICES = __PRICES_JSON__;
 const SCFI = __SCFI_JSON__;
 const HAS_FUEL_KEY = __HAS_FUEL_KEY__;
+const HAS_KCL = __HAS_KCL__;
 const MATERIALS = __MATERIALS_JSON__;
 const FETCHED_AT = "__FETCHED_AT__";
 
@@ -979,6 +980,22 @@ if (!HAS_FUEL_KEY) {
         오피넷 무료 API 키가 필요합니다 (1,500회/일).<br>
         <a href="https://www.opinet.co.kr/user/custapi/custApiInfo.do" target="_blank" rel="noopener">오피넷에서 키 발급</a> 후
         GitHub 저장소 시크릿에 <code>OPINET_API_KEY</code>로 등록하면 이 카드가 자동으로 채워집니다.
+      </div>
+    </div>`);
+}
+
+// Dropping the card on failure made a broken upstream look like a scope decision. The fetcher
+// resolves the workbook link from the World Bank's own page and retries, so landing here means
+// something changed at the source rather than a blip.
+if (!HAS_KCL) {
+  priceCards.push(`
+    <div class="card">
+      <h3>KCl (염화칼륨)</h3>
+      <div class="locked-note">
+        이번 실행에서 World Bank Pink Sheet 데이터를 가져오지 못했습니다.<br>
+        스프레드시트 주소나 시트 구성이 바뀌었을 수 있습니다 —
+        <a href="https://www.worldbank.org/en/research/commodity-markets" target="_blank" rel="noopener">Commodity Markets 페이지</a>에서
+        확인이 필요합니다. 다음 실행에서 복구되면 이 카드는 자동으로 사라집니다.
       </div>
     </div>`);
 }
