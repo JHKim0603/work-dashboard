@@ -79,11 +79,15 @@ function Get-WeatherSnapshot {
                 minC         = $minC
                 desc         = Get-WeatherDescKo $midday.weatherCode
                 chanceOfRain = $maxRainChance
-                advisories   = Get-TempAdvisories -heatRefC $maxC -minC $minC
+                # @(...) at the call site (not just inside the function) matters here - without
+                # it, a function whose output happens to be an empty collection collapses to
+                # $null on capture, and ConvertTo-Json then renders that as {} instead of [],
+                # which crashes the dashboard's advisories.map() in the browser.
+                advisories   = @(Get-TempAdvisories -heatRefC $maxC -minC $minC)
             }
         })
 
-        $curAdvisories = Get-TempAdvisories -heatRefC ([int]$cur.FeelsLikeC) -minC $null
+        $curAdvisories = @(Get-TempAdvisories -heatRefC ([int]$cur.FeelsLikeC) -minC $null)
 
         [PSCustomObject]@{
             id          = $loc.Id

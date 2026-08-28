@@ -196,7 +196,7 @@ function esc(s) {
 document.getElementById("fetchedAtLabel").textContent = FETCHED_AT ? `업데이트: ${FETCHED_AT.replace("T", " ").slice(0, 16)}` : "";
 
 function advisoryBadges(advisories) {
-  if (!advisories || advisories.length === 0) return "";
+  if (!Array.isArray(advisories) || advisories.length === 0) return "";
   return advisories.map(a => `<span class="advisory-badge ${a.tone === "danger" ? "danger" : "warn"}">⚠ ${esc(a.text)}</span>`).join("");
 }
 
