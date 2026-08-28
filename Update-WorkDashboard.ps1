@@ -194,15 +194,20 @@ function Get-HolidayBlock {
     param($todayKst)
 
     try {
+        # Three years, not two: with a two-year horizon a run started in December needs the
+        # year after next to resolve, and the extra call is cheap.
         $year = $todayKst.Year
         $holidays = @()
-        foreach ($y in @($year, ($year + 1))) {
+        foreach ($y in @($year, ($year + 1), ($year + 2))) {
             $uri = "https://date.nager.at/api/v3/PublicHolidays/$y/KR"
             $holidays += Invoke-RestMethod -Uri $uri -Headers $headers
         }
 
         $today = $todayKst.Date
-        $horizon = $today.AddDays(365)
+        # A 365-day horizon meant the list always died at the end of the current year - in late
+        # August it stopped at 크리스마스 and showed nothing for the year after, which is exactly
+        # when next year's 설날/추석 start mattering for shipping plans.
+        $horizon = $today.AddDays(730)
         $holidayByDate = @{}
         foreach ($h in $holidays) {
             $d = [DateTime]::Parse($h.date)
@@ -247,7 +252,10 @@ function Get-HolidayBlock {
             if ($name) { $namesInRun += $name }
         }
 
-        $nextHolidays = @($holidayByDate.Keys | Sort-Object | Select-Object -First 6 | ForEach-Object {
+        # 6 raw dates collapsed to about four rows, and 추석 alone eats three of them. Korea has
+        # roughly 16 holiday dates a year, so 40 carries the full two-year horizon; the page
+        # scrolls the list rather than truncating it.
+        $nextHolidays = @($holidayByDate.Keys | Sort-Object | Select-Object -First 40 | ForEach-Object {
             [PSCustomObject]@{ date = $_; name = $holidayByDate[$_] }
         })
 
@@ -1000,6 +1008,9 @@ $priceCards = @()
 # unless it is named here too.
 $priceCards += @($yahooSeries | Where-Object { $_.id -eq "usdkrw" })
 $priceCards += @($yahooSeries | Where-Object { $_.id -eq "wti" -or $_.id -eq "brent" })
+# Distillate sits with crude because it is the same barrel one refining step on, and it is the
+# cut that jet fuel and marine gasoil come from - which is what fuel surcharges are indexed to.
+$priceCards += @($yahooSeries | Where-Object { $_.id -eq "distillate" })
 # Resin sits next to crude deliberately: PP/PE are naphtha derivatives, so the oil cards above
 # are the upstream half of the same story the film and strapping prices below tell.
 $priceCards += @($resinSeries)

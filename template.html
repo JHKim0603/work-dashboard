@@ -350,7 +350,12 @@
     font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink-muted);
     text-transform: uppercase; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--gridline);
   }
-  .upcoming-list { font-size: 12.5px; color: var(--ink-secondary); }
+  /* The three top-row cards are height-matched, so an unbounded two-year holiday list would
+     stretch 날씨 and 태풍 to match it. Scroll the list instead of truncating the years away. */
+  .upcoming-list {
+    font-size: 12.5px; color: var(--ink-secondary);
+    max-height: 190px; overflow-y: auto; overscroll-behavior: contain;
+  }
   .upcoming-list .up-row {
     display: flex; justify-content: space-between; gap: 10px; padding: 5px 0;
     border-top: 1px solid var(--gridline); font-variant-numeric: tabular-nums;

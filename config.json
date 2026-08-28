@@ -39,6 +39,15 @@
       "Decimals": 2,
       "Note": "ICE 브렌트유 선물",
       "NewsQuery": "브렌트유 국제유가 OPEC"
+    },
+    {
+      "Id": "distillate",
+      "Symbol": "HO=F",
+      "DisplayName": "중간유분 (ULSD 선물)",
+      "Unit": "/갤런",
+      "Decimals": 3,
+      "Note": "NYMEX 초저유황 경유 · 항공유·선박유와 같은 유분이라 유류할증료가 1~2개월 시차로 따라옵니다",
+      "NewsQuery": "유류할증료 항공 해상운임 유가"
     }
   ],
 
