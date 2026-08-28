@@ -701,6 +701,22 @@ function changeOver(points, days) {
   return { diff, pct: best.value ? (diff / best.value) * 100 : null, from: best };
 }
 
+// Pick lookback windows the series can actually answer. The pump-price feed is only 7 days
+// long, so asking it for a 1-year change yields four empty boxes; a 2-year weekly series
+// would be wasted on day-scale windows.
+function statWindowsFor(points) {
+  const first = parseLabel(points[0].label), last = parseLabel(points[points.length - 1].label);
+  const spanDays = (first && last) ? (last - first) / 86400000 : 0;
+  if (spanDays <= 45) {
+    return [{ label: "1일", days: 1 }, { label: "3일", days: 3 }, { label: "1주", days: 7 }];
+  }
+  if (spanDays <= 200) {
+    return [{ label: "1주", days: 7 }, { label: "1개월", days: 30 }, { label: "3개월", days: 90 }];
+  }
+  return [{ label: "1개월", days: 30 }, { label: "3개월", days: 90 },
+          { label: "6개월", days: 180 }, { label: "1년", days: 365 }];
+}
+
 function statBox(label, ch, unit) {
   if (!ch) return `<div class="m-stat"><div class="sl">${esc(label)}</div><div class="sn">–</div></div>`;
   const up = ch.diff >= 0;
@@ -721,7 +737,8 @@ function trendSentence(c) {
   const span = hi - lo;
   const posPct = span ? ((last.value - lo) / span) * 100 : 50;
 
-  const m3 = changeOver(pts, 90) || changeOver(pts, 30);
+  // fall back through shorter windows so a 7-day series still gets a read
+  const m3 = changeOver(pts, 90) || changeOver(pts, 30) || changeOver(pts, 7) || changeOver(pts, 3);
   let dir = "뚜렷한 방향성이 없습니다";
   if (m3 && m3.pct !== null) {
     const a = Math.abs(m3.pct);
@@ -734,7 +751,9 @@ function trendSentence(c) {
   const band = posPct >= 80 ? "관측 구간 <b>상단</b>" : posPct >= 55 ? "구간 중상단"
              : posPct >= 45 ? "구간 <b>중간</b>" : posPct >= 20 ? "구간 중하단" : "관측 구간 <b>하단</b>";
 
-  return `${dir} 현재가는 이 기간 최저 ${c.currency}${lo} · 최고 ${c.currency}${hi} 중 ${band}에 있습니다.`;
+  // currency-prefixed series ($82.85) vs unit-suffixed ones (1,845 원/L)
+  const money = v => c.currency ? `${c.currency}${v}` : `${v}${c.unit ? " " + c.unit : ""}`;
+  return `${dir} 현재가는 이 기간 최저 ${money(lo)} · 최고 ${money(hi)} 중 ${band}에 있습니다.`;
 }
 
 function openDetail(id) {
@@ -756,12 +775,7 @@ function openDetail(id) {
         <span class="pd">${esc(last.label)} 기준 · ${pts.length}개 시점</span>
       </div>
       <div class="chart-wrap">${priceChartSvg(pts, chartId)}<div class="ch-tip"></div></div>
-      <div class="m-stats">
-        ${statBox("1개월", changeOver(pts, 30))}
-        ${statBox("3개월", changeOver(pts, 90))}
-        ${statBox("6개월", changeOver(pts, 180))}
-        ${statBox("1년", changeOver(pts, 365))}
-      </div>
+      <div class="m-stats">${statWindowsFor(pts).map(w => statBox(w.label, changeOver(pts, w.days))).join("")}</div>
       <div class="m-section-title">추이 해설</div>
       <div class="m-read">${trendSentence(c)}</div>`;
   } else if (c.isScfi) {

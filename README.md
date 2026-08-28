@@ -30,7 +30,7 @@ workflow.
    | 국제유가 WTI / 브렌트 | Yahoo Finance 선물 | 주간 종가 2년 | 차트 |
    | 미국산 목재 (CME 제재목 선물) | Yahoo Finance | 주간 종가 2년 | 차트 |
    | KCl (염화칼륨) | World Bank Pink Sheet | 월간 30개월 | 차트 |
-   | 국내 경유·휘발유 | 오피넷 | 최근 7일 | 차트 — **키 필요, 아래 참고** |
+   | 국내 경유·휘발유 (전국평균) | 한국석유공사 오피넷 | 최근 7일 | 차트 |
 
 5. **수급 뉴스** — 수산화칼륨(KOH)·탄산칼륨(K2CO3), 폴리프로필렌(PP)·폴리에틸렌(PE), 국내 목재 관련 헤드라인.
 
@@ -48,13 +48,23 @@ workflow_dispatch 화면을 여는 링크이고, 거기서 **Run workflow**를 �
 로컬에서는 `run.bat` 더블클릭이 같은 일을 합니다. 상단의 "데이터 기준" 표기는 경과 시간을
 같이 보여주며, **하루가 지나면 빨간색**으로 바뀌어 오래된 페이지를 최신으로 착각하지 않게 합니다.
 
-### 국내 유가를 켜려면 (오피넷 키)
+### 국내 유가 (오피넷 키)
 
-경유·휘발유 카드는 무료 오피넷 API 키가 있어야 채워집니다 (1,500 calls/day).
+경유·휘발유 카드는 무료 오피넷 API 키로 동작합니다 (1,500 calls/day).
+**저장소 시크릿 `OPINET_API_KEY`는 이미 등록되어 있어 Actions 실행 시 자동으로 채워집니다.**
 
-1. [오피넷 유가정보 API](https://www.opinet.co.kr/user/custapi/custApiInfo.do)에서 회원가입 후 키 발급
-2. GitHub 저장소 **Settings → Secrets and variables → Actions**에 `OPINET_API_KEY`로 등록
-3. 로컬 실행 시에는 환경변수로: `$env:OPINET_API_KEY = "..."` 후 `run.bat`
+로컬에서 `run.bat`으로 돌릴 때만 환경변수를 직접 넣어주면 됩니다:
+
+```powershell
+$env:OPINET_API_KEY = "발급받은키"
+.\run.bat
+```
+
+> 키는 저장소 파일에 절대 넣지 마세요 — 이 저장소는 public입니다. 키는 GitHub Actions
+> 시크릿에만 두고, 스크립트는 `$env:OPINET_API_KEY`로만 읽습니다. 생성되는 `dashboard.html`
+> 에는 가격 값만 들어가고 키는 포함되지 않습니다.
+>
+> 키를 교체하려면: `gh secret set OPINET_API_KEY --repo JHKim0603/work-dashboard`
 
 키가 없으면 해당 카드가 안내 문구로 대체될 뿐, 나머지는 정상 동작합니다.
 
