@@ -1,5 +1,15 @@
 # Work Dashboard
 
+> ### ⚠️ 설정 남음: Gmail 시크릿
+> 일일 이메일 발송이 아직 안 됩니다 — 이 저장소에 Gmail 시크릿이 없습니다.
+> ```powershell
+> gh secret set GMAIL_USERNAME --repo JHKim0603/work-dashboard
+> gh secret set GMAIL_APP_PASSWORD --repo JHKim0603/work-dashboard
+> ```
+> `stockdashboard`와 같은 계정·앱 비밀번호를 쓰면 됩니다. 자세한 내용은
+> [이슈 #1](https://github.com/JHKim0603/work-dashboard/issues/1).
+> **대시보드 배포 자체는 이 설정 없이도 정상 동작합니다.**
+
 Local reference dashboard for daily work-planning inputs. No backend, no build step — just
 PowerShell + a static HTML/JS template.
 
