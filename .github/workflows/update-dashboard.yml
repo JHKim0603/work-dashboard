@@ -1,0 +1,68 @@
+name: Update Work Dashboard
+
+on:
+  schedule:
+    # 07:00 KST every day. Cron runs on UTC, and KST is UTC+9, so 22:00 UTC lands as 07:00 KST
+    # the next day. Runs daily (not just weekdays) since weather/holiday info is relevant on
+    # weekends too.
+    - cron: '0 22 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate dashboard.html
+        shell: pwsh
+        run: ./Update-WorkDashboard.ps1
+
+      - name: Read email subject
+        id: subject
+        run: echo "text=$(cat email-subject.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Send email summary
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: ${{ steps.subject.outputs.text }}
+          to: jhyupkim@unid.co.kr
+          from: 업무 참고자료 Dashboard <${{ secrets.GMAIL_USERNAME }}>
+          html_body: file://email-summary.html
+
+      - name: Prepare Pages content
+        run: cp dashboard.html index.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,20 @@
+{
+  "weatherLocations": [
+    { "Id": "ulsan-namgu", "DisplayName": "울산 남구", "Country": "KR", "Lat": 35.5433, "Lon": 129.3300 },
+    { "Id": "hanoi", "DisplayName": "하노이", "Country": "VN", "Lat": 21.0278, "Lon": 105.8342 },
+    { "Id": "hcmc", "DisplayName": "호치민", "Country": "VN", "Lat": 10.8231, "Lon": 106.6297 },
+    { "Id": "vungtau", "DisplayName": "붕따우", "Country": "VN", "Lat": 10.3460, "Lon": 107.0843 }
+  ],
+  "materials": [
+    {
+      "Id": "pp-pe",
+      "DisplayName": "PP/PE 가격·수급",
+      "NewsQueries": ["PP 폴리프로필렌 가격", "PE 폴리에틸렌 가격 수급", "석유화학 원자재 가격 동향"]
+    },
+    {
+      "Id": "timber",
+      "DisplayName": "국내 목재 수급 (수종별)",
+      "NewsQueries": ["국내 목재 수급", "원목 가격 국산", "소나무 낙엽송 목재 가격"]
+    }
+  ]
+}

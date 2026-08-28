@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>업무 참고자료 Dashboard</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --page:            #f9f9f7;
+    --surface:         #fcfcfb;
+    --surface-raised:  #ffffff;
+    --ink-primary:     #0b0b0b;
+    --ink-secondary:   #52514e;
+    --ink-muted:       #6e6c66;
+    --gridline:        #e1e0d9;
+    --border:          rgba(11,11,11,0.10);
+    --accent:          #2a78d6;
+    --accent-wash:     rgba(42,120,214,0.08);
+    --good:            #006300;
+    --bad:             #b3221f;
+  }
+  @media (prefers-color-scheme: dark) {
+    .viz-root {
+      color-scheme: dark;
+      --page:            #0d0d0d;
+      --surface:         #1a1a19;
+      --surface-raised:  #212120;
+      --ink-primary:     #ffffff;
+      --ink-secondary:   #c3c2b7;
+      --ink-muted:       #a3a199;
+      --gridline:        #2c2c2a;
+      --border:          rgba(255,255,255,0.10);
+      --accent:          #3987e5;
+      --accent-wash:     rgba(57,135,229,0.14);
+      --good:            #0ca30c;
+      --bad:             #e66767;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-raised: #212120;
+    --ink-primary: #ffffff; --ink-secondary: #c3c2b7; --ink-muted: #a3a199;
+    --gridline: #2c2c2a; --border: rgba(255,255,255,0.10);
+    --accent: #3987e5; --accent-wash: rgba(57,135,229,0.14);
+    --good: #0ca30c; --bad: #e66767;
+  }
+  :root[data-theme="light"] .viz-root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --surface-raised: #ffffff;
+    --ink-primary: #0b0b0b; --ink-secondary: #52514e; --ink-muted: #6e6c66;
+    --gridline: #e1e0d9; --border: rgba(11,11,11,0.10);
+    --accent: #2a78d6; --accent-wash: rgba(42,120,214,0.08);
+    --good: #006300; --bad: #b3221f;
+  }
+
+  .viz-root {
+    font-family: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+    background: var(--page);
+    color: var(--ink-primary);
+    min-height: 100vh;
+    box-sizing: border-box;
+    padding: 32px clamp(16px, 4vw, 48px) 56px;
+  }
+  .viz-root *, .viz-root *::before, .viz-root *::after { box-sizing: border-box; }
+
+  .topbar {
+    display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap;
+    gap: 12px; max-width: 1320px; margin: 0 auto 28px;
+  }
+  .topbar h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .topbar .sub { font-size: 13px; color: var(--ink-muted); }
+
+  .wrap { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+
+  .section-title {
+    font-size: 14px; font-weight: 650; color: var(--ink-secondary);
+    margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+
+  .card {
+    background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .card h3 { margin: 0 0 6px; font-size: 15px; font-weight: 650; }
+  .card .flag { font-size: 11px; color: var(--ink-muted); margin-bottom: 8px; }
+
+  .weather-now { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .weather-now .temp { font-size: 30px; font-weight: 700; line-height: 1; }
+  .weather-now .desc { font-size: 13px; color: var(--ink-secondary); }
+  .weather-meta { font-size: 12px; color: var(--ink-muted); margin-bottom: 12px; }
+
+  .forecast-row { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-top: 1px solid var(--gridline); }
+  .forecast-row:first-of-type { border-top: none; }
+  .forecast-row .d { color: var(--ink-muted); width: 64px; }
+  .forecast-row .desc2 { color: var(--ink-secondary); flex: 1; text-align: left; padding-left: 6px; }
+  .forecast-row .range { color: var(--ink-primary); font-weight: 600; white-space: nowrap; }
+
+  .holiday-card {
+    background: var(--accent-wash); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .holiday-card .headline { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+  .holiday-card .sub2 { font-size: 13px; color: var(--ink-secondary); margin-bottom: 10px; }
+  .holiday-card .dday {
+    display: inline-block; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
+    padding: 3px 10px; border-radius: 999px; margin-right: 8px;
+  }
+  .upcoming-list { margin-top: 12px; font-size: 12px; color: var(--ink-secondary); }
+  .upcoming-list .up-row { display: flex; justify-content: space-between; padding: 4px 0; border-top: 1px solid var(--gridline); }
+  .upcoming-list .up-row:first-child { border-top: none; }
+
+  .news-item { font-size: 12.5px; padding: 7px 0; border-top: 1px solid var(--gridline); }
+  .news-item:first-child { border-top: none; }
+  .news-item a { color: var(--accent); text-decoration: none; }
+  .news-item a:hover { text-decoration: underline; }
+  .news-item .src { color: var(--ink-muted); font-size: 11px; margin-left: 4px; }
+  .empty-note { font-size: 12px; color: var(--ink-muted); font-style: italic; }
+
+  .footnote { max-width: 1320px; margin: 32px auto 0; font-size: 11.5px; color: var(--ink-muted); line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="viz-root">
+  <div class="topbar">
+    <div>
+      <h1>업무 참고자료 Dashboard</h1>
+      <div class="sub" id="fetchedAtLabel"></div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div>
+      <div class="section-title">날씨 / 온습도</div>
+      <div class="grid" id="weatherGrid"></div>
+    </div>
+
+    <div>
+      <div class="section-title">공휴일 · 연휴</div>
+      <div id="holidaySection"></div>
+    </div>
+
+    <div>
+      <div class="section-title">원자재 수급</div>
+      <div class="grid" id="materialsGrid"></div>
+    </div>
+  </div>
+
+  <div class="footnote">
+    날씨 출처: wttr.in (World Weather Online 데이터). 공휴일 출처: Nager.Date. 원자재 뉴스 출처: Google 뉴스 검색 —
+    실제 가격·수급 수치가 아닌 관련 헤드라인입니다, 참고용으로만 사용하세요.
+  </div>
+</div>
+
+<script>
+const WEATHER = __WEATHER_JSON__;
+const HOLIDAY = __HOLIDAY_JSON__;
+const MATERIALS = __MATERIALS_JSON__;
+const FETCHED_AT = "__FETCHED_AT__";
+
+function esc(s) {
+  if (s === null || s === undefined) return "";
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+document.getElementById("fetchedAtLabel").textContent = FETCHED_AT ? `업데이트: ${FETCHED_AT.replace("T", " ").slice(0, 16)}` : "";
+
+const weatherGrid = document.getElementById("weatherGrid");
+if (!WEATHER || WEATHER.length === 0) {
+  weatherGrid.innerHTML = `<div class="empty-note">날씨 정보를 가져오지 못했습니다.</div>`;
+} else {
+  weatherGrid.innerHTML = WEATHER.map(w => {
+    const days = (w.days || []).map(d => {
+      const md = d.date.slice(5).replace("-", "/");
+      return `<div class="forecast-row"><span class="d">${esc(md)}</span><span class="desc2">${esc(d.desc)}</span><span class="range">${d.minC}° / ${d.maxC}°C</span></div>`;
+    }).join("");
+    return `
+      <div class="card">
+        <h3>${esc(w.displayName)}</h3>
+        <div class="flag">${esc(w.country)}</div>
+        <div class="weather-now">
+          <span class="temp">${w.tempC}°C</span>
+          <span class="desc">${esc(w.desc)} · 체감 ${w.feelsLikeC}°C</span>
+        </div>
+        <div class="weather-meta">습도 ${w.humidity}%</div>
+        ${days}
+      </div>`;
+  }).join("");
+}
+
+const holidaySection = document.getElementById("holidaySection");
+if (!HOLIDAY) {
+  holidaySection.innerHTML = `<div class="empty-note">공휴일 정보를 가져오지 못했습니다.</div>`;
+} else {
+  const dDayText = HOLIDAY.dDay === 0 ? "오늘부터" : `D-${HOLIDAY.dDay}`;
+  const names = [...new Set(HOLIDAY.holidayNames || [])].join(", ");
+  const upcoming = (HOLIDAY.nextHolidays || []).map(h =>
+    `<div class="up-row"><span>${esc(h.name)}</span><span>${esc(h.date)}</span></div>`
+  ).join("");
+  holidaySection.innerHTML = `
+    <div class="holiday-card">
+      <span class="dday">${dDayText}</span>
+      <span class="headline">가장 빠른 연휴: ${esc(HOLIDAY.startDate)} ~ ${esc(HOLIDAY.endDate)} (${HOLIDAY.days}일)</span>
+      <div class="sub2">${esc(names)}</div>
+      <div class="upcoming-list">${upcoming}</div>
+    </div>`;
+}
+
+const materialsGrid = document.getElementById("materialsGrid");
+if (!MATERIALS || MATERIALS.length === 0) {
+  materialsGrid.innerHTML = `<div class="empty-note">원자재 뉴스를 가져오지 못했습니다.</div>`;
+} else {
+  materialsGrid.innerHTML = MATERIALS.map(m => {
+    const news = (m.news && m.news.length)
+      ? m.news.map(n => `<div class="news-item">· <a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a><span class="src">${esc(n.source || "")} · ${esc(n.date)}</span></div>`).join("")
+      : `<div class="empty-note">관련 뉴스 없음</div>`;
+    return `
+      <div class="card">
+        <h3>${esc(m.displayName)}</h3>
+        ${news}
+      </div>`;
+  }).join("");
+}
+</script>
+</body>
+</html>
