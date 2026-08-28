@@ -6,11 +6,37 @@
     { "Id": "hanoi", "DisplayName": "하노이", "Lat": 21.0278, "Lon": 105.8342 },
     { "Id": "hcmc", "DisplayName": "호치민", "Lat": 10.8231, "Lon": 106.6297 }
   ],
+  "yahooSeries": [
+    {
+      "Id": "wti",
+      "Symbol": "CL=F",
+      "DisplayName": "국제유가 (WTI)",
+      "Unit": "/bbl",
+      "Decimals": 2,
+      "Note": "NYMEX 서부텍사스산 원유 선물"
+    },
+    {
+      "Id": "brent",
+      "Symbol": "BZ=F",
+      "DisplayName": "국제유가 (브렌트)",
+      "Unit": "/bbl",
+      "Decimals": 2,
+      "Note": "ICE 브렌트유 선물"
+    },
+    {
+      "Id": "lumber",
+      "Symbol": "LBR=F",
+      "DisplayName": "미국산 목재 (제재목 선물)",
+      "Unit": "/1000bf",
+      "Decimals": 1,
+      "Note": "CME 제재목 선물 · 1,000 보드피트당"
+    }
+  ],
   "materials": [
     {
       "Id": "pp-pe",
-      "DisplayName": "PP/PE 가격·수급",
-      "NewsQueries": ["PP 폴리프로필렌 가격", "PE 폴리에틸렌 가격 수급", "석유화학 원자재 가격 동향"]
+      "DisplayName": "폴리프로필렌(PP) · 폴리에틸렌(PE)",
+      "NewsQueries": ["폴리프로필렌 PP 가격", "폴리에틸렌 PE 가격 수급", "석유화학 원자재 가격 동향"]
     },
     {
       "Id": "timber",

@@ -2,8 +2,10 @@
   Update-WorkDashboard.ps1
   Fetches a 7-day forecast + heat/cold advisories (Open-Meteo), the nearest upcoming Korean
   holiday block (Nager.Date), Vietnam-area typhoon activity and history relative to the
-  하노이/호치민 hubs (GDACS), KCl monthly prices (World Bank Pink Sheet), and commodity/material
-  news headlines (Google News RSS) listed in config.json, then regenerates dashboard.html.
+  하노이/호치민 hubs (GDACS), crude oil + US lumber futures (Yahoo Finance), KCl monthly prices
+  (World Bank Pink Sheet), the SCFI container freight index (Shanghai Shipping Exchange),
+  optionally Korean pump prices (Opinet, needs $env:OPINET_API_KEY), and commodity news
+  headlines (Google News RSS), then regenerates dashboard.html.
   Run manually by double-clicking run.bat, or right-click > Run with PowerShell.
 #>
 
@@ -352,6 +354,131 @@ function Get-KclPriceHistory {
     }
 }
 
+# --- Yahoo Finance daily series (crude oil, US lumber) ------------------------------------
+# Same keyless chart endpoint the stockdashboard repo already relies on. Monthly-sampled down
+# to ~2 years so the chart shape matches the KCl one rather than being 500 noisy daily points.
+function Get-YahooSeries {
+    param($cfg)
+
+    try {
+        $uri = "https://query1.finance.yahoo.com/v8/finance/chart/$([uri]::EscapeDataString($cfg.Symbol))?interval=1wk&range=2y"
+        $resp = Invoke-RestMethod -Uri $uri -Headers $headers
+        $result = $resp.chart.result[0]
+        $closes = $result.indicators.quote[0].close
+        $stamps = $result.timestamp
+        if (-not $closes -or -not $stamps) { throw "no series data returned" }
+
+        $decimals = if ($null -ne $cfg.Decimals) { [int]$cfg.Decimals } else { 2 }
+        $points = for ($i = 0; $i -lt $closes.Count; $i++) {
+            if ($null -eq $closes[$i]) { continue }
+            [PSCustomObject]@{
+                label = [DateTimeOffset]::FromUnixTimeSeconds($stamps[$i]).ToString("yyyy-MM-dd")
+                value = [math]::Round([double]$closes[$i], $decimals)
+            }
+        }
+        $points = @($points)
+        if ($points.Count -eq 0) { throw "all closes were null" }
+
+        [PSCustomObject]@{
+            id          = $cfg.Id
+            displayName = $cfg.DisplayName
+            unit        = $cfg.Unit
+            note        = $cfg.Note
+            source      = "Yahoo Finance"
+            currency    = "$"
+            points      = $points
+        }
+    } catch {
+        Write-Warning "Yahoo series fetch failed for '$($cfg.Symbol)': $($_.Exception.Message)"
+        $null
+    }
+}
+
+# --- SCFI (Shanghai Containerized Freight Index) ------------------------------------------
+# The AJAX endpoint behind SSE's own public SCFI page. Their historical-series endpoint
+# (/singleIndex/scfi) requires a subscriber login, so only the current and prior week are
+# available - shown as a value + weekly change rather than a chart.
+function Get-ScfiIndex {
+    try {
+        $scfiHeaders = $headers.Clone()
+        $scfiHeaders["Referer"] = "https://en.sse.net.cn/indices/scfinew.jsp"
+        $scfiHeaders["X-Requested-With"] = "XMLHttpRequest"
+        $resp = Invoke-RestMethod -Uri "https://en.sse.net.cn/currentIndex?indexName=scfi" -Headers $scfiHeaders
+
+        $data = $resp.data
+        if (-not $data) { throw "no data node in response" }
+        $comp = $data.lineDataList | Where-Object { $_.dataItemTypeName -eq "SCFI_T" } | Select-Object -First 1
+        if (-not $comp) { throw "comprehensive index row not found" }
+
+        [PSCustomObject]@{
+            id          = "scfi"
+            displayName = "컨테이너 운임지수 (SCFI)"
+            current     = [math]::Round([double]$comp.currentContent, 1)
+            previous    = [math]::Round([double]$comp.lastContent, 1)
+            change      = [math]::Round([double]$comp.absolute, 1)
+            changePct   = [math]::Round([double]$comp.percentage, 2)
+            currentDate = $data.currentDate
+            lastDate    = $data.lastDate
+            note        = "상하이 → 세계 주요 13개 항로 수출 컨테이너 운임"
+            source      = "Shanghai Shipping Exchange"
+        }
+    } catch {
+        Write-Warning "SCFI fetch failed: $($_.Exception.Message)"
+        $null
+    }
+}
+
+# --- 국내 경유가 (Opinet) -------------------------------------------------------------------
+# Opinet's public API is free but key-gated (signup at opinet.co.kr, 1,500 calls/day). Without
+# a key the endpoint answers with an empty OIL array rather than an error, so this returns
+# $null and the dashboard shows a "키 필요" placeholder instead of a broken card.
+function Get-DomesticFuelPrices {
+    $apiKey = $env:OPINET_API_KEY
+    if (-not $apiKey) {
+        Write-Host "  (OPINET_API_KEY 미설정 - 국내 유가 건너뜀)"
+        return $null
+    }
+
+    try {
+        # avgRecentPrice returns the last 7 days of nationwide averages per product code,
+        # which gives the card a small trend line instead of just today's number.
+        $uri = "https://www.opinet.co.kr/api/avgRecentPrice.do?out=json&code=$apiKey"
+        $resp = Invoke-RestMethod -Uri $uri -Headers $headers
+        $rows = @($resp.RESULT.OIL)
+        if ($rows.Count -eq 0) { throw "empty OIL array (키가 유효하지 않을 수 있음)" }
+
+        # PRODCD: B027 = 휘발유, D047 = 자동차용 경유
+        $products = @(
+            @{ code = "D047"; name = "국내 경유 (전국평균)" }
+            @{ code = "B027"; name = "국내 휘발유 (전국평균)" }
+        )
+
+        $out = foreach ($p in $products) {
+            $series = @($rows | Where-Object { $_.PRODCD -eq $p.code } | Sort-Object DATE)
+            if ($series.Count -eq 0) { continue }
+            $points = foreach ($r in $series) {
+                [PSCustomObject]@{
+                    label = ([string]$r.DATE -replace '^(\d{4})(\d{2})(\d{2})$', '$1-$2-$3')
+                    value = [math]::Round([double]$r.PRICE, 1)
+                }
+            }
+            [PSCustomObject]@{
+                id          = $p.code
+                displayName = $p.name
+                unit        = "원/L"
+                currency    = ""
+                note        = "최근 7일 전국 주유소 평균"
+                source      = "한국석유공사 오피넷"
+                points      = @($points)
+            }
+        }
+        @($out)
+    } catch {
+        Write-Warning "Opinet fuel price fetch failed: $($_.Exception.Message)"
+        $null
+    }
+}
+
 # --- News (materials) -------------------------------------------------------------------
 function Get-NewsHeadlines {
     param($query, $max = 4)
@@ -422,6 +549,40 @@ $typhoon = Get-TyphoonWatch -hubs $config.typhoonWatchHubs
 
 Write-Host "Fetching KCl price history..."
 $kcl = Get-KclPriceHistory
+if ($kcl) {
+    $kcl = [PSCustomObject]@{
+        id          = "kcl"
+        displayName = "KCl (염화칼륨)"
+        unit        = "/mt"
+        currency    = "$"
+        note        = "비료용 염화칼륨 · 월간 국제가"
+        source      = $kcl.source
+        points      = $kcl.points
+    }
+}
+
+Write-Host "Fetching commodity series (oil, lumber)..."
+$yahooSeries = @(foreach ($cfg in $config.yahooSeries) {
+    Write-Host "  - $($cfg.DisplayName)"
+    Get-YahooSeries $cfg
+    Start-Sleep -Milliseconds 400
+})
+$yahooSeries = @($yahooSeries | Where-Object { $_ })
+
+Write-Host "Fetching SCFI..."
+$scfi = Get-ScfiIndex
+
+Write-Host "Fetching domestic fuel prices..."
+$fuel = @(Get-DomesticFuelPrices | Where-Object { $_ })
+
+# One flat list so the dashboard/email render every price card the same way regardless of
+# which upstream it came from. Order here is the display order.
+$priceCards = @()
+$priceCards += @($yahooSeries | Where-Object { $_.id -eq "wti" -or $_.id -eq "brent" })
+$priceCards += @($fuel)
+$priceCards += @($yahooSeries | Where-Object { $_.id -eq "lumber" })
+if ($kcl) { $priceCards += $kcl }
+$priceCards = @($priceCards)
 
 Write-Host "Fetching material news..."
 $materials = @(foreach ($mat in $config.materials) {
@@ -444,12 +605,14 @@ function ConvertTo-JsonOrNull {
 $weatherJson = ConvertTo-Json -InputObject @($weather) -Depth 6
 $holidayJson = ConvertTo-JsonOrNull -InputObject $holiday -Depth 4
 $typhoonJson = ConvertTo-JsonOrNull -InputObject $typhoon -Depth 4
-$kclJson = ConvertTo-JsonOrNull -InputObject $kcl -Depth 4
+$pricesJson = ConvertTo-Json -InputObject @($priceCards) -Depth 6
+$scfiJson = ConvertTo-JsonOrNull -InputObject $scfi -Depth 4
+$hasFuelKey = if ($env:OPINET_API_KEY) { "true" } else { "false" }
 $materialsJson = ConvertTo-Json -InputObject @($materials) -Depth 6
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
-$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__KCL_JSON__", $kclJson).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
+$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8
@@ -553,25 +716,42 @@ function Get-Sparkline {
     })
 }
 
-$kclHtml = ""
-if ($kcl -and $kcl.points.Count -gt 0) {
-    $pts = $kcl.points
+$priceRowsHtml = foreach ($c in $priceCards) {
+    $pts = @($c.points)
+    if ($pts.Count -eq 0) { continue }
     $latest = $pts[-1]
     $prior = if ($pts.Count -gt 1) { $pts[-2] } else { $null }
     $changeText = if ($prior) {
         $diff = $latest.value - $prior.value
         $sign = if ($diff -ge 0) { "+" } else { "" }
         $color = if ($diff -ge 0) { "#b3221f" } else { "#0a6b0a" }
-        "<span style='color:$color;font-weight:600;'>$sign$([math]::Round($diff,1)) (전월비)</span>"
+        $pct = if ($prior.value -ne 0) { " ({0}{1:N1}%)" -f $sign, (($diff / $prior.value) * 100) } else { "" }
+        "<span style='color:$color;font-weight:600;'>$sign$([math]::Round($diff,2))$pct</span>"
     } else { "" }
     $spark = Get-Sparkline ($pts | ForEach-Object { $_.value })
-    $kclHtml = @"
+    @"
 <tr>
   <td style="padding:10px 12px;border-bottom:1px solid #e1e0d9;">
-    <div style="font-weight:600;font-size:13px;color:#0b0b0b;">KCl (염화칼륨) 국제가격</div>
-    <div style="font-size:12px;color:#52514e;margin-top:3px;">$($latest.label) 기준 <b>`$$($latest.value)/mt</b> $changeText</div>
+    <div style="font-weight:600;font-size:13px;color:#0b0b0b;">$($c.displayName)</div>
+    <div style="font-size:12px;color:#52514e;margin-top:3px;"><b>$($c.currency)$($latest.value)</b> <span style="color:#898781;">$($c.unit)</span> $changeText <span style="color:#898781;">· $($latest.label) 기준</span></div>
     <div style="font-size:16px;letter-spacing:1px;margin-top:4px;color:#2a78d6;">$spark</div>
-    <div style="font-size:11px;color:#898781;margin-top:2px;">최근 $($pts.Count)개월, World Bank Pink Sheet</div>
+    <div style="font-size:11px;color:#898781;margin-top:2px;">$($c.note) · $($c.source)</div>
+  </td>
+</tr>
+"@
+}
+
+$scfiHtml = ""
+if ($scfi) {
+    $up = $scfi.change -ge 0
+    $arrow = if ($up) { "▲" } else { "▼" }
+    $color = if ($up) { "#b3221f" } else { "#0a6b0a" }
+    $scfiHtml = @"
+<tr>
+  <td style="padding:10px 12px;border-bottom:1px solid #e1e0d9;">
+    <div style="font-weight:600;font-size:13px;color:#0b0b0b;">$($scfi.displayName)</div>
+    <div style="font-size:12px;color:#52514e;margin-top:3px;"><b>$($scfi.current)</b> <span style="color:$color;font-weight:600;">$arrow $([math]::Abs($scfi.change)) ($($scfi.changePct)%)</span> <span style="color:#898781;">· $($scfi.currentDate) 기준, 전주 $($scfi.previous)</span></div>
+    <div style="font-size:11px;color:#898781;margin-top:2px;">$($scfi.note) · $($scfi.source)</div>
   </td>
 </tr>
 "@
@@ -606,11 +786,12 @@ $emailHtml = @"
   $typhoonHtml
   <table style="width:100%;border-collapse:collapse;background:#ffffff;border:1px solid #e1e0d9;border-radius:8px;">
     $($weatherRowsHtml -join "`n")
-    $kclHtml
+    $scfiHtml
+    $($priceRowsHtml -join "`n")
     $($materialsHtml -join "`n")
   </table>
   <div style="margin-top:16px;font-size:11px;color:#898781;line-height:1.6;">
-    날씨 출처: Open-Meteo. 공휴일 출처: Nager.Date. 태풍 정보 출처: GDACS. KCl 가격 출처: World Bank. 원자재 뉴스 출처: Google 뉴스. 업무 참고용 요약입니다.<br>
+    날씨: Open-Meteo · 공휴일: Nager.Date · 태풍: GDACS · 유가/목재: Yahoo Finance · KCl: World Bank · 운임지수: Shanghai Shipping Exchange · 뉴스: Google 뉴스. 업무 참고용 요약입니다.<br>
     자세한 내용은 <a href="$dashboardUrl" style="color:#2a78d6;">대시보드</a>에서 확인하세요.
   </div>
 </div>

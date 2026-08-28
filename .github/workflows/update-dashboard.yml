@@ -27,6 +27,9 @@ jobs:
 
       - name: Generate dashboard.html
         shell: pwsh
+        env:
+          # Optional: unset simply skips the 국내 경유/휘발유 card, everything else still runs.
+          OPINET_API_KEY: ${{ secrets.OPINET_API_KEY }}
         run: ./Update-WorkDashboard.ps1
 
       - name: Read email subject

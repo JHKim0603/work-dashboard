@@ -73,9 +73,15 @@
 
   .wrap { max-width: 1480px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
 
-  /* 날씨 / 공휴일 / 태풍 sit side by side on wide screens, stack on narrow ones */
-  .top-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: start; }
-  @media (max-width: 980px) {
+  /* 날씨 / 공휴일 / 태풍 sit side by side on wide screens, stack on narrow ones.
+     align-items defaults to stretch so all three columns match the tallest one; the
+     inner cards then take height:100% so their borders line up, not just the columns. */
+  .top-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+  .top-row > * { display: flex; flex-direction: column; min-width: 0; }
+  .top-row .card,
+  .top-row .holiday-card,
+  .top-row .typhoon-card { flex: 1; }
+  @media (max-width: 1080px) {
     .top-row { grid-template-columns: 1fr; }
   }
 
@@ -157,22 +163,58 @@
 
   .card.wide { grid-column: 1 / -1; }
   .price-now { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 2px 0 10px; }
-  .price-now .pv { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .price-now .pv { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .price-now .pu { font-size: 12px; color: var(--ink-muted); margin-left: -4px; }
   .price-now .pd { font-size: 11.5px; color: var(--ink-muted); }
   .price-now .chg { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .price-now .chg.up { color: var(--bad); }
   .price-now .chg.down { color: var(--good); }
 
-  .price-chart { width: 100%; height: auto; display: block; overflow: visible; }
+  .chart-wrap { position: relative; }
+  .price-chart { width: 100%; height: auto; display: block; overflow: visible; touch-action: none; }
   .ch-grid { stroke: var(--gridline); stroke-width: 1; }
   .ch-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .ch-area { fill: var(--accent-wash); stroke: none; }
   .ch-dot { fill: var(--accent); }
   .ch-ylabel { font-size: 9.5px; fill: var(--ink-muted); text-anchor: end; font-variant-numeric: tabular-nums; }
   .ch-xlabel { font-size: 9.5px; fill: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  /* hover readout: a vertical rule + marker that follow the nearest data point */
+  .ch-hitbox { fill: transparent; cursor: crosshair; }
+  .ch-cursor { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; pointer-events: none; }
+  .ch-marker { fill: var(--surface-raised); stroke: var(--accent); stroke-width: 2.5; opacity: 0; pointer-events: none; }
+  .chart-wrap.active .ch-cursor, .chart-wrap.active .ch-marker { opacity: 1; }
+  .ch-tip {
+    position: absolute; pointer-events: none; opacity: 0; transform: translate(-50%, -100%);
+    background: var(--ink-primary); color: var(--page); border-radius: 6px;
+    padding: 5px 9px; font-size: 11.5px; line-height: 1.45; white-space: nowrap;
+    font-variant-numeric: tabular-nums; box-shadow: 0 3px 10px rgba(0,0,0,0.22);
+    transition: opacity .12s ease; z-index: 5;
+  }
+  .chart-wrap.active .ch-tip { opacity: 1; }
+  .ch-tip .tv { font-weight: 700; }
+  .ch-tip .td { opacity: 0.72; font-size: 10.5px; }
+
   .chart-note { font-size: 11px; color: var(--ink-muted); margin-top: 6px; }
   .news-caveat { font-size: 10.5px; color: var(--ink-muted); margin-bottom: 8px; font-style: italic; }
+
+  /* SCFI has no free historical series, so it renders as a stat tile rather than a chart */
+  .stat-tile .stat-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
+  .stat-tile .sv { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat-tile .sc { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat-tile .sc.up { color: var(--bad); }
+  .stat-tile .sc.down { color: var(--good); }
+  .stat-tile .prev-row {
+    font-size: 12px; color: var(--ink-secondary); display: flex; justify-content: space-between;
+    padding: 5px 0; border-top: 1px solid var(--gridline);
+  }
+  .locked-note {
+    font-size: 12px; color: var(--ink-secondary); line-height: 1.6;
+    background: var(--accent-wash); border: 1px dashed var(--border);
+    border-radius: 8px; padding: 10px 12px; margin-top: 4px;
+  }
+  .locked-note code {
+    font-size: 11px; background: var(--gridline); padding: 1px 5px; border-radius: 4px;
+  }
 
   .holiday-card {
     background: var(--accent-wash); border: 1px solid var(--border); border-radius: 12px;
@@ -226,17 +268,24 @@
     </div>
 
     <div>
-      <div class="section-title">원자재 가격 · 수급</div>
+      <div class="section-title">원자재 · 물류 가격</div>
+      <div class="grid" id="pricesGrid"></div>
+    </div>
+
+    <div>
+      <div class="section-title">수급 뉴스</div>
       <div class="grid" id="materialsGrid"></div>
     </div>
   </div>
 
   <div class="footnote">
-    날씨 출처: Open-Meteo (폭염/한파 멘트는 기상청 특보 기준을 단순화한 참고용 임계값).
-    공휴일 출처: Nager.Date. 태풍 정보 출처: GDACS(UN 재해 알림 시스템).
-    KCl 가격 출처: World Bank Pink Sheet(월간, USD/mt).
-    PP/PE·목재는 무료 공개 수치 API가 없어 관련 뉴스 헤드라인으로 대체했습니다(Google 뉴스 검색).
-    모두 참고용으로만 사용하세요.
+    날씨: Open-Meteo (폭염/한파 멘트는 기상청 특보 기준을 단순화한 참고용 임계값) ·
+    공휴일: Nager.Date · 태풍: GDACS(UN 재해 알림 시스템) ·
+    국제유가·미국산 목재: Yahoo Finance 선물 주간 종가 ·
+    KCl: World Bank Pink Sheet(월간) · 컨테이너 운임: Shanghai Shipping Exchange(주간) ·
+    뉴스: Google 뉴스 검색.<br>
+    폴리프로필렌·폴리에틸렌은 무료 공개 수치 API가 없어(data.go.kr는 키 발급 필요, SunSirs·100ppi는 봇 차단)
+    뉴스 헤드라인으로 대체했습니다. 모두 참고용으로만 사용하세요.
   </div>
 </div>
 
@@ -244,7 +293,9 @@
 const WEATHER = __WEATHER_JSON__;
 const HOLIDAY = __HOLIDAY_JSON__;
 const TYPHOON = __TYPHOON_JSON__;
-const KCL = __KCL_JSON__;
+const PRICES = __PRICES_JSON__;
+const SCFI = __SCFI_JSON__;
+const HAS_FUEL_KEY = __HAS_FUEL_KEY__;
 const MATERIALS = __MATERIALS_JSON__;
 const FETCHED_AT = "__FETCHED_AT__";
 
@@ -378,85 +429,188 @@ if (!TYPHOON) {
   }
 }
 
-function priceChartSvg(points) {
-  const W = 560, H = 150, PAD_L = 44, PAD_R = 10, PAD_T = 12, PAD_B = 24;
+const CH = { W: 560, H: 150, PAD_L: 46, PAD_R: 12, PAD_T: 12, PAD_B: 24 };
+
+function chartGeometry(points) {
   const vals = points.map(p => p.value);
   const lo = Math.min(...vals), hi = Math.max(...vals);
   const span = (hi - lo) || 1;
-  const x = i => PAD_L + (i / Math.max(points.length - 1, 1)) * (W - PAD_L - PAD_R);
-  const y = v => PAD_T + (1 - (v - lo) / span) * (H - PAD_T - PAD_B);
+  return {
+    lo, hi, span,
+    x: i => CH.PAD_L + (i / Math.max(points.length - 1, 1)) * (CH.W - CH.PAD_L - CH.PAD_R),
+    y: v => CH.PAD_T + (1 - (v - lo) / span) * (CH.H - CH.PAD_T - CH.PAD_B),
+  };
+}
 
-  const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
-  const area = `${line} L${x(points.length - 1).toFixed(1)},${(H - PAD_B).toFixed(1)} L${x(0).toFixed(1)},${(H - PAD_B).toFixed(1)} Z`;
+function priceChartSvg(points, chartId) {
+  const g = chartGeometry(points);
+  const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${g.x(i).toFixed(1)},${g.y(p.value).toFixed(1)}`).join(" ");
+  const area = `${line} L${g.x(points.length - 1).toFixed(1)},${(CH.H - CH.PAD_B).toFixed(1)} L${g.x(0).toFixed(1)},${(CH.H - CH.PAD_B).toFixed(1)} Z`;
 
-  // 4 horizontal gridlines with value labels
   const grid = [0, 0.33, 0.66, 1].map(f => {
-    const v = lo + f * span;
-    const yy = y(v);
-    return `<line x1="${PAD_L}" y1="${yy.toFixed(1)}" x2="${W - PAD_R}" y2="${yy.toFixed(1)}" class="ch-grid"/>
-            <text x="${PAD_L - 6}" y="${(yy + 3.5).toFixed(1)}" class="ch-ylabel">${Math.round(v)}</text>`;
+    const v = g.lo + f * g.span;
+    const yy = g.y(v);
+    const lbl = g.span < 10 ? v.toFixed(1) : Math.round(v);
+    return `<line x1="${CH.PAD_L}" y1="${yy.toFixed(1)}" x2="${CH.W - CH.PAD_R}" y2="${yy.toFixed(1)}" class="ch-grid"/>
+            <text x="${CH.PAD_L - 6}" y="${(yy + 3.5).toFixed(1)}" class="ch-ylabel">${lbl}</text>`;
   }).join("");
 
-  // first / middle / last x labels only - a label per month would collide at this width
   const tickIdx = [0, Math.floor((points.length - 1) / 2), points.length - 1];
   const xlabels = tickIdx.map(i =>
-    `<text x="${x(i).toFixed(1)}" y="${H - 6}" class="ch-xlabel" text-anchor="${i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${esc(points[i].label)}</text>`
+    `<text x="${g.x(i).toFixed(1)}" y="${CH.H - 6}" class="ch-xlabel" text-anchor="${i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${esc(points[i].label)}</text>`
   ).join("");
 
-  const lastX = x(points.length - 1), lastY = y(points[points.length - 1].value);
+  const lastX = g.x(points.length - 1), lastY = g.y(points[points.length - 1].value);
 
-  return `<svg viewBox="0 0 ${W} ${H}" class="price-chart" role="img" aria-label="가격 추이 차트">
+  return `<svg viewBox="0 0 ${CH.W} ${CH.H}" class="price-chart" data-chart="${chartId}" role="img" aria-label="가격 추이 차트">
     ${grid}
     <path d="${area}" class="ch-area"/>
     <path d="${line}" class="ch-line"/>
     <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3.5" class="ch-dot"/>
     ${xlabels}
+    <line class="ch-cursor" y1="${CH.PAD_T}" y2="${CH.H - CH.PAD_B}" x1="0" x2="0"/>
+    <circle class="ch-marker" r="4.5" cx="0" cy="0"/>
+    <rect class="ch-hitbox" x="0" y="0" width="${CH.W}" height="${CH.H}"/>
   </svg>`;
 }
 
-const materialsGrid = document.getElementById("materialsGrid");
-const materialCards = [];
+// Wires pointer tracking on a rendered chart: snap to the nearest data point, move the
+// cursor rule + marker, and position the tooltip in the wrapper's own pixel space (the SVG
+// is scaled to fit, so viewBox units have to be converted back via the rendered width).
+const CHART_DATA = {};
+function attachChartHover(wrap) {
+  const svg = wrap.querySelector(".price-chart");
+  if (!svg) return;
+  const pts = CHART_DATA[svg.dataset.chart];
+  if (!pts || !pts.points.length) return;
 
-if (KCL && KCL.points && KCL.points.length > 0) {
-  const pts = KCL.points;
+  const { points, currency, unit, decimals } = pts;
+  const g = chartGeometry(points);
+  const cursor = svg.querySelector(".ch-cursor");
+  const marker = svg.querySelector(".ch-marker");
+  const tip = wrap.querySelector(".ch-tip");
+
+  function show(ev) {
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width) return;
+    const scale = CH.W / rect.width;
+    const vbX = (ev.clientX - rect.left) * scale;
+
+    let best = 0, bestDist = Infinity;
+    for (let i = 0; i < points.length; i++) {
+      const d = Math.abs(g.x(i) - vbX);
+      if (d < bestDist) { bestDist = d; best = i; }
+    }
+    const p = points[best];
+    const px = g.x(best), py = g.y(p.value);
+
+    cursor.setAttribute("x1", px); cursor.setAttribute("x2", px);
+    marker.setAttribute("cx", px); marker.setAttribute("cy", py);
+
+    tip.innerHTML = `<span class="tv">${currency}${p.value.toFixed(decimals)}</span> <span style="opacity:.7">${esc(unit)}</span><br><span class="td">${esc(p.label)}</span>`;
+    // clamp so the tooltip never runs off either edge of the card
+    const leftPx = Math.min(Math.max(px / scale, 42), rect.width - 42);
+    tip.style.left = leftPx + "px";
+    tip.style.top = (py / scale - 10) + "px";
+    wrap.classList.add("active");
+  }
+
+  svg.addEventListener("pointermove", show);
+  svg.addEventListener("pointerdown", show);
+  svg.addEventListener("pointerleave", () => wrap.classList.remove("active"));
+}
+
+function priceCardHtml(c, idx) {
+  const pts = c.points || [];
+  if (!pts.length) return "";
   const latest = pts[pts.length - 1];
   const prior = pts.length > 1 ? pts[pts.length - 2] : null;
-  const diff = prior ? latest.value - prior.value : 0;
-  const up = diff >= 0;
-  const changeHtml = prior
-    ? `<span class="chg ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(diff).toFixed(1)} (전월비)</span>`
-    : "";
-  materialCards.push(`
-    <div class="card wide">
-      <h3>KCl (염화칼륨) 국제가격</h3>
+  const decimals = Number.isInteger(latest.value) ? 0 : (String(latest.value).split(".")[1] || "").length;
+  const chartId = "ch" + idx;
+  CHART_DATA[chartId] = { points: pts, currency: c.currency || "", unit: c.unit || "", decimals: Math.min(decimals, 2) };
+
+  let changeHtml = "";
+  if (prior) {
+    const diff = latest.value - prior.value;
+    const up = diff >= 0;
+    const pct = prior.value ? ((diff / prior.value) * 100).toFixed(1) : null;
+    changeHtml = `<span class="chg ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(diff).toFixed(2)}${pct ? ` (${pct}%)` : ""}</span>`;
+  }
+
+  return `
+    <div class="card">
+      <h3>${esc(c.displayName)}</h3>
       <div class="price-now">
-        <span class="pv">$${latest.value}</span>
-        <span class="pu">/${esc((KCL.unit || "").replace("USD/", ""))}</span>
+        <span class="pv">${esc(c.currency || "")}${latest.value}</span>
+        <span class="pu">${esc(c.unit || "")}</span>
         ${changeHtml}
-        <span class="pd">${esc(latest.label)} 기준</span>
+        <span class="pd">${esc(latest.label)}</span>
       </div>
-      ${priceChartSvg(pts)}
-      <div class="chart-note">최근 ${pts.length}개월 · ${esc(KCL.source || "")}</div>
+      <div class="chart-wrap">
+        ${priceChartSvg(pts, chartId)}
+        <div class="ch-tip"></div>
+      </div>
+      <div class="chart-note">${esc(c.note || "")} · ${esc(c.source || "")}</div>
+    </div>`;
+}
+
+const pricesGrid = document.getElementById("pricesGrid");
+const priceCards = [];
+
+if (SCFI) {
+  const up = SCFI.change >= 0;
+  priceCards.push(`
+    <div class="card stat-tile">
+      <h3>${esc(SCFI.displayName)}</h3>
+      <div class="stat-row">
+        <span class="sv">${SCFI.current.toLocaleString()}</span>
+        <span class="sc ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(SCFI.change)} (${SCFI.changePct}%)</span>
+        <span class="pd">${esc(SCFI.currentDate)}</span>
+      </div>
+      <div class="prev-row"><span>전주 (${esc(SCFI.lastDate)})</span><span>${SCFI.previous.toLocaleString()}</span></div>
+      <div class="chart-note">${esc(SCFI.note || "")} · ${esc(SCFI.source || "")}<br>주간 발표 · 과거 시계열은 SSE 구독 계정 전용</div>
     </div>`);
 }
 
-if (MATERIALS && MATERIALS.length > 0) {
-  MATERIALS.forEach(m => {
+(PRICES || []).forEach((c, i) => {
+  const html = priceCardHtml(c, i);
+  if (html) priceCards.push(html);
+});
+
+if (!HAS_FUEL_KEY) {
+  priceCards.push(`
+    <div class="card">
+      <h3>국내 경유 · 휘발유 (전국평균)</h3>
+      <div class="locked-note">
+        오피넷 무료 API 키가 필요합니다 (1,500회/일).<br>
+        <a href="https://www.opinet.co.kr/user/custapi/custApiInfo.do" target="_blank" rel="noopener">오피넷에서 키 발급</a> 후
+        GitHub 저장소 시크릿에 <code>OPINET_API_KEY</code>로 등록하면 이 카드가 자동으로 채워집니다.
+      </div>
+    </div>`);
+}
+
+pricesGrid.innerHTML = priceCards.length
+  ? priceCards.join("")
+  : `<div class="empty-note">가격 정보를 가져오지 못했습니다.</div>`;
+
+document.querySelectorAll(".chart-wrap").forEach(attachChartHover);
+
+const materialsGrid = document.getElementById("materialsGrid");
+if (!MATERIALS || MATERIALS.length === 0) {
+  materialsGrid.innerHTML = `<div class="empty-note">뉴스를 가져오지 못했습니다.</div>`;
+} else {
+  materialsGrid.innerHTML = MATERIALS.map(m => {
     const news = (m.news && m.news.length)
       ? m.news.map(n => `<div class="news-item">· <a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a><span class="src">${esc(n.source || "")} · ${esc(n.date)}</span></div>`).join("")
       : `<div class="empty-note">관련 뉴스 없음</div>`;
-    materialCards.push(`
+    return `
       <div class="card">
         <h3>${esc(m.displayName)}</h3>
         <div class="news-caveat">공개 수치 API 없음 — 관련 뉴스</div>
         ${news}
-      </div>`);
-  });
+      </div>`;
+  }).join("");
 }
-
-materialsGrid.innerHTML = materialCards.length
-  ? materialCards.join("")
-  : `<div class="empty-note">원자재 정보를 가져오지 못했습니다.</div>`;
 </script>
 </body>
 </html>
