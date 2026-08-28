@@ -2,7 +2,7 @@
   Update-WorkDashboard.ps1
   Fetches a 7-day forecast + heat/cold advisories (Open-Meteo), the nearest upcoming Korean
   holiday block (Nager.Date), Vietnam-area typhoon activity and history relative to the
-  하노이/호치민 hubs (GDACS), crude oil + US lumber futures (Yahoo Finance), KCl monthly prices
+  하노이/호치민 hubs (GDACS), crude oil futures + USD/KRW (Yahoo Finance), PP/PE resin (DCE), KCl monthly prices
   (World Bank Pink Sheet), the SCFI container freight index (Shanghai Shipping Exchange),
   optionally Korean pump prices (Opinet, needs $env:OPINET_API_KEY), and commodity news
   headlines (Google News RSS), then regenerates dashboard.html.
@@ -564,7 +564,7 @@ function Get-KclPriceHistory {
     }
 }
 
-# --- Yahoo Finance daily series (crude oil, US lumber) ------------------------------------
+# --- Yahoo Finance daily series (crude oil, USD/KRW) ------------------------------------
 # Same keyless chart endpoint the stockdashboard repo already relies on. Monthly-sampled down
 # to ~2 years so the chart shape matches the KCl one rather than being 500 noisy daily points.
 function Get-YahooSeries {
@@ -667,6 +667,89 @@ function Get-DceResinSeries {
         }
     } catch {
         Write-Warning "DCE resin fetch failed for '$($cfg.Symbol)': $($_.Exception.Message)"
+        $null
+    }
+}
+
+# --- 관세청 수입 단가 (data.go.kr 품목별 국가별 수출입실적) --------------------------------
+# Deliberately generic: this is the one source here that can price nearly any traded input, so
+# it is driven entirely by config.customsSeries rather than wired to a particular commodity.
+# Adding a material is one config entry - no code change.
+#
+# Unit price is derived, not published: the API reports value and weight, so 수입금액 ÷ 수입중량
+# is the landed USD/톤. That is what makes it worth having - it is what Korea actually paid,
+# not a foreign benchmark standing in for it.
+#
+# Two limits worth knowing before relying on it. The window is capped at one year per call, so
+# a longer series costs one call per year. And the data is monthly with roughly a month's lag -
+# on 2026-08-28 the newest month available was 2026-07 - which makes this a confirmation
+# series, not a leading one. Do not put a fast-moving decision on top of it.
+function Get-CustomsImportSeries {
+    param($cfg, $months = 12)
+
+    $key = $env:DATA_GO_KR_KEY
+    if (-not $key) { return $null }
+
+    try {
+        $end = (Get-Date).AddMonths(-1)          # newest published month, given the lag
+        $start = $end.AddMonths(-($months - 1))
+        $uri = "https://apis.data.go.kr/1220000/nitemtrade/getNitemtradeList" +
+               "?serviceKey=$([uri]::EscapeDataString($key))" +
+               "&strtYymm=$($start.ToString('yyyyMM'))&endYymm=$($end.ToString('yyyyMM'))" +
+               "&hsSgn=$([uri]::EscapeDataString($cfg.HsSgn))"
+        if ($cfg.CntyCd) { $uri += "&cntyCd=$([uri]::EscapeDataString($cfg.CntyCd))" }
+
+        $resp = Invoke-WebRequest -Uri $uri -Headers $headers -UseBasicParsing -TimeoutSec 45
+        [xml]$xml = $resp.Content
+
+        $code = $xml.response.header.resultCode
+        if ($code -ne "00") { throw "resultCode=$code $($xml.response.header.resultMsg)" }
+
+        # 총계 repeats the window sum as a pseudo-row; a real month always looks like "2026.07".
+        $items = @($xml.response.body.items.item | Where-Object { $_.year -match '^\d{4}\.\d{2}$' })
+        if ($cfg.StatKorMatch) {
+            $items = @($items | Where-Object { $_.statKor -like "*$($cfg.StatKorMatch)*" })
+        }
+        if ($items.Count -eq 0) { throw "no rows matched" }
+
+        # One HS heading spans several sub-items per month, so sum value and weight across them
+        # before dividing - averaging the per-row unit prices would weight a 5-tonne shipment
+        # the same as a 2,000-tonne one.
+        $byMonth = @{}
+        foreach ($it in $items) {
+            $m = $it.year
+            if (-not $byMonth.ContainsKey($m)) { $byMonth[$m] = @{ dlr = 0.0; wgt = 0.0 } }
+            $byMonth[$m].dlr += [double]$it.impDlr
+            $byMonth[$m].wgt += [double]$it.impWgt
+        }
+
+        # Guard on value as well as weight. An HS code that does not exist still answers 정상서비스
+        # with rows carrying impDlr=0 and a nonzero impWgt, which a weight-only check waves
+        # through as a 0 USD/톤 card - a typo in config would ship a plausible-looking empty chart.
+        $points = foreach ($m in ($byMonth.Keys | Sort-Object)) {
+            $w = $byMonth[$m].wgt
+            $d = $byMonth[$m].dlr
+            if ($w -le 0 -or $d -le 0) { continue }
+            [PSCustomObject]@{
+                label = $m -replace '\.', '-'
+                value = [math]::Round(($d / $w) * 1000, 0)   # USD per tonne
+            }
+        }
+        $points = @($points)
+        if ($points.Count -eq 0) { throw "no month had both import value and weight - check HsSgn/CntyCd" }
+
+        [PSCustomObject]@{
+            id          = $cfg.Id
+            displayName = $cfg.DisplayName
+            unit        = if ($cfg.Unit) { $cfg.Unit } else { "USD/톤" }
+            note        = $cfg.Note
+            source      = "관세청 수출입무역통계 (data.go.kr)"
+            currency    = "$"
+            points      = $points
+            newsQuery   = $cfg.NewsQuery
+        }
+    } catch {
+        Write-Warning "관세청 수입단가 조회 실패 ($($cfg.Id)): $($_.Exception.Message)"
         $null
     }
 }
@@ -850,7 +933,7 @@ if ($kcl) {
     }
 }
 
-Write-Host "Fetching commodity series (oil, lumber)..."
+Write-Host "Fetching commodity series (FX, oil)..."
 $yahooSeries = @(foreach ($cfg in $config.yahooSeries) {
     Write-Host "  - $($cfg.DisplayName)"
     Get-YahooSeries $cfg
@@ -865,6 +948,23 @@ $resinSeries = @(foreach ($cfg in $config.dceSeries) {
     Start-Sleep -Milliseconds 400
 })
 $resinSeries = @($resinSeries | Where-Object { $_ })
+
+# Empty by default - the plumbing is here so a future material is a config entry, not a code
+# change. Skips silently without a key, exactly like the Opinet card.
+$customsSeries = @()
+if ($config.customsSeries -and @($config.customsSeries).Count -gt 0) {
+    if ($env:DATA_GO_KR_KEY) {
+        Write-Host "Fetching 관세청 수입 단가..."
+        $customsSeries = @(foreach ($cfg in $config.customsSeries) {
+            Write-Host "  - $($cfg.DisplayName)"
+            Get-CustomsImportSeries $cfg
+            Start-Sleep -Milliseconds 400
+        })
+        $customsSeries = @($customsSeries | Where-Object { $_ })
+    } else {
+        Write-Warning "DATA_GO_KR_KEY 미설정 - 관세청 수입 단가 카드를 건너뜁니다."
+    }
+}
 
 Write-Host "Fetching SCFI..."
 $scfi = Get-ScfiIndex
@@ -904,7 +1004,7 @@ $priceCards += @($yahooSeries | Where-Object { $_.id -eq "wti" -or $_.id -eq "br
 # are the upstream half of the same story the film and strapping prices below tell.
 $priceCards += @($resinSeries)
 $priceCards += @($fuel)
-$priceCards += @($yahooSeries | Where-Object { $_.id -eq "lumber" })
+$priceCards += @($customsSeries)
 if ($kcl) { $priceCards += $kcl }
 $priceCards = @($priceCards)
 

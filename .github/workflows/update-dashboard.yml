@@ -30,6 +30,8 @@ jobs:
         env:
           # Optional: unset simply skips the 국내 경유/휘발유 card, everything else still runs.
           OPINET_API_KEY: ${{ secrets.OPINET_API_KEY }}
+          # Also optional: unset simply skips whatever 관세청 수입단가 cards customsSeries lists.
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
         run: ./Update-WorkDashboard.ps1
 
       # Opinet serves 7 days and SSE's SCFI history is subscriber-only, so the only way these

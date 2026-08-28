@@ -39,17 +39,11 @@
       "Decimals": 2,
       "Note": "ICE 브렌트유 선물",
       "NewsQuery": "브렌트유 국제유가 OPEC"
-    },
-    {
-      "Id": "lumber",
-      "Symbol": "LBR=F",
-      "DisplayName": "미국산 목재 (제재목 선물)",
-      "Unit": "/1000bf",
-      "Decimals": 1,
-      "Note": "CME 제재목 선물 · 1,000 보드피트당",
-      "NewsQuery": "미국 목재 가격 제재목 선물"
     }
   ],
+
+  "//customsSeries": "관세청 수출입실적(data.go.kr) 기반 수입 단가 카드. 항목을 넣으면 카드가 생기고, 비워두면 아무것도 조회하지 않습니다. 필수: Id, DisplayName, HsSgn. 선택: CntyCd(국가코드), StatKorMatch(품목명 부분일치), Unit, Note, NewsQuery. 검증된 HS 코드와 주의사항은 README 참고.",
+  "customsSeries": [],
   "dceSeries": [
     {
       "Id": "pp",
