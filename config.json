@@ -34,6 +34,11 @@
   ],
   "materials": [
     {
+      "Id": "koh-k2co3",
+      "DisplayName": "수산화칼륨(KOH) · 탄산칼륨(K2CO3)",
+      "NewsQueries": ["수산화칼륨 가성칼륨 가격", "탄산칼륨 K2CO3 가격", "caustic potash potassium carbonate price"]
+    },
+    {
       "Id": "pp-pe",
       "DisplayName": "폴리프로필렌(PP) · 폴리에틸렌(PE)",
       "NewsQueries": ["폴리프로필렌 PP 가격", "폴리에틸렌 PE 가격 수급", "석유화학 원자재 가격 동향"]

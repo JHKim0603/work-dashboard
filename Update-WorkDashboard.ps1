@@ -494,11 +494,21 @@ function Get-NewsHeadlines {
             if ($title -match '^(.*) - ([^-]{1,40})$') {
                 $title = $matches[1].Trim(); $source = $matches[2].Trim()
             }
-            $pubDate = [System.DateTimeOffset]::Parse($it.pubDate)
+            # RSS pubDate is RFC-822 with English month/day names ("Tue, 26 Aug 2026 ..."), which
+            # a non-English culture can't parse - and an unguarded throw here loses every headline
+            # from the whole feed, not just the one bad item. Parse invariantly, skip on failure.
+            $dateStr = ""
+            try {
+                $dateStr = [System.DateTimeOffset]::Parse(
+                    $it.pubDate, [System.Globalization.CultureInfo]::InvariantCulture
+                ).ToString("yyyy-MM-dd")
+            } catch {
+                Write-Warning "  (pubDate 파싱 실패, 날짜 생략: '$($it.pubDate)')"
+            }
             [PSCustomObject]@{
                 title  = $title
                 source = $source
-                date   = $pubDate.ToString("yyyy-MM-dd")
+                date   = $dateStr
                 link   = $it.link
             }
         })
@@ -555,7 +565,9 @@ if ($kcl) {
         displayName = "KCl (염화칼륨)"
         unit        = "/mt"
         currency    = "$"
-        note        = "비료용 염화칼륨 · 월간 국제가"
+        # KCl is the feedstock for both KOH (KCl brine electrolysis) and K2CO3 (KOH + CO2),
+        # neither of which has a free price series - so this doubles as their cost indicator.
+        note        = "월간 국제가 · KOH/K2CO3 원료"
         source      = $kcl.source
         points      = $kcl.points
     }
@@ -772,6 +784,7 @@ $materialsHtml = foreach ($m in $materials) {
 }
 
 $dashboardUrl = "https://jhkim0603.github.io/work-dashboard/"
+$updateUrl = "https://github.com/JHKim0603/work-dashboard/actions/workflows/update-dashboard.yml"
 
 $emailHtml = @"
 <!DOCTYPE html>
@@ -781,6 +794,7 @@ $emailHtml = @"
   <div style="font-size:12px;color:#898781;margin-bottom:14px;">$emailDateStr 기준</div>
   <div style="margin-bottom:16px;">
     <a href="$dashboardUrl" style="display:inline-block;background:#2a78d6;color:#ffffff;font-size:13px;font-weight:bold;text-decoration:none;padding:10px 18px;border-radius:6px;">📋 대시보드 열기 →</a>
+    <a href="$updateUrl" style="display:inline-block;margin-left:8px;background:#ffffff;color:#2a78d6;border:1px solid #cfe0f5;font-size:13px;font-weight:bold;text-decoration:none;padding:9px 16px;border-radius:6px;">🔄 지금 업데이트</a>
   </div>
   $holidayHtml
   $typhoonHtml

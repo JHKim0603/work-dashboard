@@ -70,6 +70,23 @@
   }
   .topbar h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; letter-spacing: -0.01em; }
   .topbar .sub { font-size: 13px; color: var(--ink-muted); }
+  .topbar .sub .age { font-weight: 600; }
+  .topbar .sub .age.stale { color: var(--bad); }
+
+  .update-btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    font-size: 13px; font-weight: 650; font-family: inherit;
+    padding: 9px 16px; cursor: pointer; text-decoration: none;
+    transition: filter .15s ease;
+  }
+  .update-btn:hover { filter: brightness(1.08); }
+  .update-btn:focus-visible { outline: 2px solid var(--ink-primary); outline-offset: 2px; }
+  .update-btn .ico { font-size: 14px; line-height: 1; }
+  .update-hint {
+    font-size: 11px; color: var(--ink-muted); margin-top: 6px; text-align: right; line-height: 1.5;
+  }
+  .topbar .actions { display: flex; flex-direction: column; align-items: flex-end; }
 
   .wrap { max-width: 1480px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
 
@@ -267,6 +284,16 @@
       <h1>업무 참고자료 Dashboard</h1>
       <div class="sub" id="fetchedAtLabel"></div>
     </div>
+    <div class="actions">
+      <a class="update-btn"
+         href="https://github.com/JHKim0603/work-dashboard/actions/workflows/update-dashboard.yml"
+         target="_blank" rel="noopener">
+        <span class="ico">🔄</span> 지금 업데이트
+      </a>
+      <div class="update-hint">
+        GitHub Actions에서 <b>Run workflow</b> 클릭 → 약 1분 뒤 전체 데이터 갱신
+      </div>
+    </div>
   </div>
 
   <div class="wrap">
@@ -324,7 +351,24 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 
-document.getElementById("fetchedAtLabel").textContent = FETCHED_AT ? `업데이트: ${FETCHED_AT.replace("T", " ").slice(0, 16)}` : "";
+// Every number on this page is baked in at build time, so how old the build is *is* how old
+// the data is - surfaced as a relative age, turning red past a day so a stale page can't be
+// mistaken for a live one.
+(function renderFetchedAt() {
+  const el = document.getElementById("fetchedAtLabel");
+  if (!FETCHED_AT) { el.textContent = ""; return; }
+  const stamp = FETCHED_AT.replace("T", " ").slice(0, 16);
+  const then = new Date(FETCHED_AT);
+  let ageHtml = "";
+  if (!isNaN(then)) {
+    const mins = Math.max(0, Math.round((Date.now() - then.getTime()) / 60000));
+    const txt = mins < 1 ? "방금" : mins < 60 ? `${mins}분 전`
+      : mins < 1440 ? `${Math.floor(mins / 60)}시간 전`
+      : `${Math.floor(mins / 1440)}일 전`;
+    ageHtml = ` · <span class="age${mins >= 1440 ? " stale" : ""}">${txt}</span>`;
+  }
+  el.innerHTML = `데이터 기준: ${esc(stamp)}${ageHtml}`;
+})();
 
 function advisoryBadges(advisories) {
   if (!Array.isArray(advisories) || advisories.length === 0) return "";
@@ -646,10 +690,15 @@ if (!MATERIALS || MATERIALS.length === 0) {
     const news = (m.news && m.news.length)
       ? m.news.map(n => `<div class="news-item">· <a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a><span class="src">${esc(n.source || "")} · ${esc(n.date)}</span></div>`).join("")
       : `<div class="empty-note">관련 뉴스 없음</div>`;
+    // KOH/K2CO3 have no free price series either, but unlike PP/PE their upstream feedstock
+    // (KCl) is charted above - worth pointing at rather than leaving the card as a dead end.
+    const caveat = m.id === "koh-k2co3"
+      ? `공개 수치 API 없음 (전량 유료 구독) — 원료인 <b>KCl 가격 차트</b>를 원가 지표로 참고하세요`
+      : `공개 수치 API 없음 — 관련 뉴스`;
     return `
       <div class="card">
         <h3>${esc(m.displayName)}</h3>
-        <div class="news-caveat">공개 수치 API 없음 — 관련 뉴스</div>
+        <div class="news-caveat">${caveat}</div>
         ${news}
       </div>`;
   }).join("");
