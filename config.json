@@ -13,7 +13,8 @@
       "DisplayName": "국제유가 (WTI)",
       "Unit": "/bbl",
       "Decimals": 2,
-      "Note": "NYMEX 서부텍사스산 원유 선물"
+      "Note": "NYMEX 서부텍사스산 원유 선물",
+      "NewsQuery": "국제유가 WTI 유가 전망"
     },
     {
       "Id": "brent",
@@ -21,7 +22,8 @@
       "DisplayName": "국제유가 (브렌트)",
       "Unit": "/bbl",
       "Decimals": 2,
-      "Note": "ICE 브렌트유 선물"
+      "Note": "ICE 브렌트유 선물",
+      "NewsQuery": "브렌트유 국제유가 OPEC"
     },
     {
       "Id": "lumber",
@@ -29,14 +31,19 @@
       "DisplayName": "미국산 목재 (제재목 선물)",
       "Unit": "/1000bf",
       "Decimals": 1,
-      "Note": "CME 제재목 선물 · 1,000 보드피트당"
+      "Note": "CME 제재목 선물 · 1,000 보드피트당",
+      "NewsQuery": "미국 목재 가격 제재목 선물"
     }
   ],
+  "priceNewsQueries": {
+    "kcl": "염화칼륨 가격",
+    "scfi": "컨테이너 운임 해상운임 SCFI"
+  },
   "materials": [
     {
       "Id": "koh-k2co3",
       "DisplayName": "수산화칼륨(KOH) · 탄산칼륨(K2CO3)",
-      "NewsQueries": ["수산화칼륨 가성칼륨 가격", "탄산칼륨 K2CO3 가격", "caustic potash potassium carbonate price"]
+      "NewsQueries": ["수산화칼륨 가성칼륨 가격", "탄산칼륨 가격", "가성칼륨 수급 유니드"]
     },
     {
       "Id": "pp-pe",

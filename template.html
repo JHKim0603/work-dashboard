@@ -218,6 +218,60 @@
   .ch-tip .td { opacity: 0.72; font-size: 10.5px; }
 
   .chart-note { font-size: 11px; color: var(--ink-muted); margin-top: 6px; }
+
+  .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .detail-btn {
+    flex: none; background: transparent; color: var(--accent); cursor: pointer;
+    border: 1px solid var(--border); border-radius: 6px; font-family: inherit;
+    font-size: 11px; font-weight: 650; padding: 4px 9px; transition: background .15s ease;
+  }
+  .detail-btn:hover { background: var(--accent-wash); }
+  .detail-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* detail modal */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 100;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+    opacity: 0; pointer-events: none; transition: opacity .16s ease;
+  }
+  .modal-backdrop.open { opacity: 1; pointer-events: auto; }
+  .modal {
+    background: var(--surface-raised); border: 1px solid var(--border); border-radius: 14px;
+    width: min(760px, 100%); max-height: 88vh; overflow-y: auto;
+    padding: 22px 26px 26px; box-shadow: 0 18px 50px rgba(0,0,0,0.32);
+    transform: translateY(8px); transition: transform .16s ease;
+  }
+  .modal-backdrop.open .modal { transform: none; }
+  .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+  .modal-head h2 { margin: 0; font-size: 19px; font-weight: 700; }
+  .modal-close {
+    flex: none; background: transparent; border: none; color: var(--ink-muted);
+    font-size: 22px; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 6px;
+    font-family: inherit;
+  }
+  .modal-close:hover { background: var(--gridline); color: var(--ink-primary); }
+  .modal-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .modal .m-sub { font-size: 12px; color: var(--ink-muted); margin-bottom: 14px; }
+
+  .m-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; margin: 16px 0 6px; }
+  .m-stat {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  }
+  .m-stat .sl { font-size: 10.5px; color: var(--ink-muted); font-weight: 600; }
+  .m-stat .sn { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .m-stat .sn.up { color: var(--bad); }
+  .m-stat .sn.down { color: var(--good); }
+
+  .m-section-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--ink-muted); margin: 20px 0 8px; padding-top: 14px; border-top: 1px solid var(--gridline);
+  }
+  .m-read {
+    font-size: 13px; line-height: 1.65; color: var(--ink-secondary);
+    background: var(--accent-wash); border-radius: 8px; padding: 12px 14px;
+  }
+  .m-read b { color: var(--ink-primary); }
+  .m-note { font-size: 11.5px; color: var(--ink-muted); margin-top: 12px; line-height: 1.6; }
   .news-caveat { font-size: 10.5px; color: var(--ink-muted); margin-bottom: 8px; font-style: italic; }
 
   /* SCFI has no free historical series, so it renders as a stat tile rather than a chart */
@@ -322,6 +376,16 @@
     <div>
       <div class="section-title">수급 뉴스</div>
       <div class="grid" id="materialsGrid"></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal" id="modalBox">
+      <div class="modal-head">
+        <h2 id="modalTitle"></h2>
+        <button class="modal-close" id="modalClose" aria-label="닫기">&times;</button>
+      </div>
+      <div id="modalBody"></div>
     </div>
   </div>
 
@@ -607,6 +671,138 @@ function attachChartHover(wrap) {
   svg.addEventListener("pointerleave", () => wrap.classList.remove("active"));
 }
 
+// ---- detail modal ---------------------------------------------------------------------
+const CARD_BY_ID = {};
+
+function parseLabel(lbl) {
+  // labels are either yyyy-MM-dd (weekly series) or yyyy-MM (monthly series)
+  const d = new Date((lbl.length === 7 ? lbl + "-01" : lbl) + "T00:00:00");
+  return isNaN(d) ? null : d;
+}
+
+// Change over a lookback window, measured from the point nearest that date rather than a
+// fixed index - weekly and monthly series have very different point spacing.
+function changeOver(points, days) {
+  const last = points[points.length - 1];
+  const lastDate = parseLabel(last.label);
+  if (!lastDate) return null;
+  const target = new Date(lastDate.getTime() - days * 86400000);
+  let best = null, bestDist = Infinity;
+  for (const p of points) {
+    const d = parseLabel(p.label);
+    if (!d || d > lastDate) continue;
+    const dist = Math.abs(d.getTime() - target.getTime());
+    if (dist < bestDist) { bestDist = dist; best = p; }
+  }
+  // reject if the nearest point is more than a third of the window away - the series
+  // simply doesn't reach back that far, and a bogus "1년 변화" would be worse than none
+  if (!best || best === last || bestDist > days * 86400000 / 3) return null;
+  const diff = last.value - best.value;
+  return { diff, pct: best.value ? (diff / best.value) * 100 : null, from: best };
+}
+
+function statBox(label, ch, unit) {
+  if (!ch) return `<div class="m-stat"><div class="sl">${esc(label)}</div><div class="sn">–</div></div>`;
+  const up = ch.diff >= 0;
+  const pct = ch.pct === null ? "" : `${up ? "+" : ""}${ch.pct.toFixed(1)}%`;
+  return `<div class="m-stat">
+    <div class="sl">${esc(label)}</div>
+    <div class="sn ${up ? "up" : "down"}">${pct || (up ? "+" : "") + ch.diff.toFixed(1)}</div>
+  </div>`;
+}
+
+// Plain-language read of the series: direction and magnitude over the recent window, plus
+// where the latest value sits inside the full observed range.
+function trendSentence(c) {
+  const pts = c.points;
+  const last = pts[pts.length - 1];
+  const vals = pts.map(p => p.value);
+  const hi = Math.max(...vals), lo = Math.min(...vals);
+  const span = hi - lo;
+  const posPct = span ? ((last.value - lo) / span) * 100 : 50;
+
+  const m3 = changeOver(pts, 90) || changeOver(pts, 30);
+  let dir = "뚜렷한 방향성이 없습니다";
+  if (m3 && m3.pct !== null) {
+    const a = Math.abs(m3.pct);
+    const word = m3.pct >= 0 ? "상승" : "하락";
+    dir = a < 2 ? `최근 <b>보합권</b>입니다 (${m3.pct >= 0 ? "+" : ""}${m3.pct.toFixed(1)}%)`
+        : a < 10 ? `최근 완만한 <b>${word}세</b>입니다 (${m3.pct >= 0 ? "+" : ""}${m3.pct.toFixed(1)}%)`
+        : `최근 뚜렷한 <b>${word}세</b>입니다 (${m3.pct >= 0 ? "+" : ""}${m3.pct.toFixed(1)}%)`;
+  }
+
+  const band = posPct >= 80 ? "관측 구간 <b>상단</b>" : posPct >= 55 ? "구간 중상단"
+             : posPct >= 45 ? "구간 <b>중간</b>" : posPct >= 20 ? "구간 중하단" : "관측 구간 <b>하단</b>";
+
+  return `${dir} 현재가는 이 기간 최저 ${c.currency}${lo} · 최고 ${c.currency}${hi} 중 ${band}에 있습니다.`;
+}
+
+function openDetail(id) {
+  const c = CARD_BY_ID[id];
+  if (!c) return;
+  document.getElementById("modalTitle").textContent = c.displayName;
+
+  const pts = c.points || [];
+  let body = "";
+
+  if (pts.length) {
+    const chartId = "modal-" + id;
+    CHART_DATA[chartId] = { points: pts, currency: c.currency || "", unit: c.unit || "", decimals: 2 };
+    const last = pts[pts.length - 1];
+    body += `<div class="m-sub">${esc(c.note || "")} · 출처 ${esc(c.source || "")}</div>
+      <div class="price-now">
+        <span class="pv">${esc(c.currency || "")}${last.value}</span>
+        <span class="pu">${esc(c.unit || "")}</span>
+        <span class="pd">${esc(last.label)} 기준 · ${pts.length}개 시점</span>
+      </div>
+      <div class="chart-wrap">${priceChartSvg(pts, chartId)}<div class="ch-tip"></div></div>
+      <div class="m-stats">
+        ${statBox("1개월", changeOver(pts, 30))}
+        ${statBox("3개월", changeOver(pts, 90))}
+        ${statBox("6개월", changeOver(pts, 180))}
+        ${statBox("1년", changeOver(pts, 365))}
+      </div>
+      <div class="m-section-title">추이 해설</div>
+      <div class="m-read">${trendSentence(c)}</div>`;
+  } else if (c.isScfi) {
+    const up = c.change >= 0;
+    body += `<div class="m-sub">${esc(c.note || "")} · 출처 ${esc(c.source || "")}</div>
+      <div class="price-now">
+        <span class="pv">${c.current.toLocaleString()}</span>
+        <span class="chg ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(c.change)} (${c.changePct}%)</span>
+        <span class="pd">${esc(c.currentDate)} 기준</span>
+      </div>
+      <div class="m-section-title">추이 해설</div>
+      <div class="m-read">전주(${esc(c.lastDate)}) <b>${c.previous.toLocaleString()}</b>에서
+        금주 <b>${c.current.toLocaleString()}</b>으로 ${up ? "상승" : "하락"}했습니다
+        (${up ? "+" : ""}${c.changePct}%). 운임지수가 오르면 수입 부자재의 물류비 부담이 커지고,
+        통상 선복 부족·항만 적체·성수기 수요와 함께 움직입니다.</div>
+      <div class="m-note">과거 시계열은 SSE 구독 계정 전용이라 주간 값과 전주 대비 변화만 제공됩니다.</div>`;
+  }
+
+  const news = c.news || [];
+  body += `<div class="m-section-title">가격 변동 배경 뉴스</div>`;
+  body += news.length
+    ? news.map(n => `<div class="news-item">· <a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a><span class="src">${esc(n.source || "")}${n.date ? " · " + esc(n.date) : ""}</span></div>`).join("")
+    : `<div class="empty-note">관련 뉴스를 찾지 못했습니다.</div>`;
+  body += `<div class="m-note">해설은 시계열 수치에서 자동 계산한 요약이고, 뉴스는 해당 품목 검색 결과입니다.
+    기사와 가격 움직임의 인과관계가 검증된 것은 아니니 참고용으로만 보세요.</div>`;
+
+  document.getElementById("modalBody").innerHTML = body;
+  document.getElementById("modalBackdrop").classList.add("open");
+  document.querySelectorAll("#modalBody .chart-wrap").forEach(attachChartHover);
+  document.getElementById("modalClose").focus();
+}
+
+function closeDetail() {
+  document.getElementById("modalBackdrop").classList.remove("open");
+}
+document.getElementById("modalClose").addEventListener("click", closeDetail);
+document.getElementById("modalBackdrop").addEventListener("click", e => {
+  if (e.target.id === "modalBackdrop") closeDetail();
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeDetail(); });
+
 function priceCardHtml(c, idx) {
   const pts = c.points || [];
   if (!pts.length) return "";
@@ -615,6 +811,7 @@ function priceCardHtml(c, idx) {
   const decimals = Number.isInteger(latest.value) ? 0 : (String(latest.value).split(".")[1] || "").length;
   const chartId = "ch" + idx;
   CHART_DATA[chartId] = { points: pts, currency: c.currency || "", unit: c.unit || "", decimals: Math.min(decimals, 2) };
+  CARD_BY_ID[c.id] = c;
 
   let changeHtml = "";
   if (prior) {
@@ -626,7 +823,10 @@ function priceCardHtml(c, idx) {
 
   return `
     <div class="card">
-      <h3>${esc(c.displayName)}</h3>
+      <div class="card-head">
+        <h3>${esc(c.displayName)}</h3>
+        <button class="detail-btn" data-detail="${esc(c.id)}">상세 ↗</button>
+      </div>
       <div class="price-now">
         <span class="pv">${esc(c.currency || "")}${latest.value}</span>
         <span class="pu">${esc(c.unit || "")}</span>
@@ -646,9 +846,13 @@ const priceCards = [];
 
 if (SCFI) {
   const up = SCFI.change >= 0;
+  CARD_BY_ID["scfi"] = Object.assign({}, SCFI, { isScfi: true, points: [] });
   priceCards.push(`
     <div class="card stat-tile">
-      <h3>${esc(SCFI.displayName)}</h3>
+      <div class="card-head">
+        <h3>${esc(SCFI.displayName)}</h3>
+        <button class="detail-btn" data-detail="scfi">상세 ↗</button>
+      </div>
       <div class="stat-row">
         <span class="sv">${SCFI.current.toLocaleString()}</span>
         <span class="sc ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(SCFI.change)} (${SCFI.changePct}%)</span>
@@ -680,7 +884,10 @@ pricesGrid.innerHTML = priceCards.length
   ? priceCards.join("")
   : `<div class="empty-note">가격 정보를 가져오지 못했습니다.</div>`;
 
-document.querySelectorAll(".chart-wrap").forEach(attachChartHover);
+document.querySelectorAll("#pricesGrid .chart-wrap").forEach(attachChartHover);
+document.querySelectorAll("[data-detail]").forEach(btn =>
+  btn.addEventListener("click", () => openDetail(btn.dataset.detail))
+);
 
 const materialsGrid = document.getElementById("materialsGrid");
 if (!MATERIALS || MATERIALS.length === 0) {

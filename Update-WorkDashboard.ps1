@@ -203,8 +203,20 @@ function Get-TyphoonWatch {
     param($hubs)
 
     try {
+        # GDACS routinely takes 7-15s to answer and intermittently fails outright; a single
+        # attempt is what blanked this card in production. Retry a few times with a longer
+        # timeout before giving up.
         $uri = "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventtypes=TC"
-        $resp = Invoke-RestMethod -Uri $uri -Headers $headers
+        $resp = $null
+        for ($attempt = 1; $attempt -le 3 -and -not $resp; $attempt++) {
+            try {
+                $resp = Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 45
+            } catch {
+                if ($attempt -eq 3) { throw }
+                Write-Warning "  GDACS 응답 실패 ($attempt/3), 재시도: $($_.Exception.Message)"
+                Start-Sleep -Seconds 3
+            }
+        }
         $tcs = @($resp.features | Where-Object { $_.properties.eventtype -eq "TC" })
 
         $items = @(foreach ($f in $tcs) {
@@ -387,6 +399,7 @@ function Get-YahooSeries {
             source      = "Yahoo Finance"
             currency    = "$"
             points      = $points
+            newsQuery   = $cfg.NewsQuery
         }
     } catch {
         Write-Warning "Yahoo series fetch failed for '$($cfg.Symbol)': $($_.Exception.Message)"
@@ -595,6 +608,26 @@ $priceCards += @($fuel)
 $priceCards += @($yahooSeries | Where-Object { $_.id -eq "lumber" })
 if ($kcl) { $priceCards += $kcl }
 $priceCards = @($priceCards)
+
+# Attach "왜 움직였나" headlines to each price card - shown in the detail popup, so a move on
+# the chart can be read against what was reported around it rather than left unexplained.
+Write-Host "Fetching price driver news..."
+foreach ($c in $priceCards) {
+    $q = $c.newsQuery
+    if (-not $q) { $q = $config.priceNewsQueries.($c.id) }
+    if (-not $q) { continue }
+    Write-Host "  - $($c.displayName)"
+    $driverNews = @(Get-NewsHeadlines -query $q -max 5)
+    $c | Add-Member -NotePropertyName news -NotePropertyValue $driverNews -Force
+    Start-Sleep -Milliseconds 300
+}
+if ($scfi) {
+    $q = $config.priceNewsQueries.scfi
+    if ($q) {
+        Write-Host "  - $($scfi.displayName)"
+        $scfi | Add-Member -NotePropertyName news -NotePropertyValue @(Get-NewsHeadlines -query $q -max 5) -Force
+    }
+}
 
 Write-Host "Fetching material news..."
 $materials = @(foreach ($mat in $config.materials) {
