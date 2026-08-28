@@ -32,6 +32,21 @@ jobs:
           OPINET_API_KEY: ${{ secrets.OPINET_API_KEY }}
         run: ./Update-WorkDashboard.ps1
 
+      # Opinet serves 7 days and SSE's SCFI history is subscriber-only, so the only way these
+      # become long series is to keep what each run saw. Committing the store back is what
+      # makes that accumulation survive to the next run.
+      - name: Commit accumulated history
+        run: |
+          if [[ -n "$(git status --porcelain data-history.json)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data-history.json
+            git commit -m "chore: accumulate price history $(date -u +%Y-%m-%d)"
+            git push
+          else
+            echo "no history change"
+          fi
+
       - name: Read email subject
         id: subject
         run: echo "text=$(cat email-subject.txt)" >> "$GITHUB_OUTPUT"

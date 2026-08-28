@@ -178,6 +178,12 @@
     font-size: 10.5px; font-weight: 700; color: var(--ink-muted);
     background: var(--gridline); padding: 1px 6px; border-radius: 999px;
   }
+  .typhoon-row .imp {
+    display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px;
+    border-radius: 4px; margin-right: 4px; vertical-align: 1px;
+  }
+  .typhoon-row .imp.direct { background: var(--bad-wash, rgba(179,34,31,0.14)); color: var(--bad); }
+  .typhoon-row .imp.route { background: rgba(177,124,0,0.15); color: #a15c00; }
   .past-label {
     font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink-muted);
     text-transform: uppercase; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--gridline);
@@ -547,27 +553,40 @@ const typhoonSection = document.getElementById("typhoonSection");
 if (!TYPHOON) {
   typhoonSection.innerHTML = `<div class="empty-note">태풍 정보를 가져오지 못했습니다.</div>`;
 } else {
+  // "직접" = crossed Vietnam or came within 500km of a Vietnam hub.
+  // "항로" = crossed the South China Sea lane or hit a transshipment port Vietnam cargo
+  // routes through - these delay sailings without ever touching Vietnam itself.
+  const impactTag = t => t.impact === "direct"
+    ? `<span class="imp direct">직접</span>`
+    : `<span class="imp route">항로</span>`;
+
+  const whereText = t => t.impact === "direct"
+    ? `${esc(t.nearestHub)} ${t.distanceKm}km`
+    : (t.crossesScs ? "남중국해 통과" : "") +
+      (t.nearestPort ? `${t.crossesScs ? " · " : ""}${esc(t.nearestPort)} ${t.portDistanceKm}km` : "");
+
   const past = TYPHOON.past || [];
   const pastBlock = past.length
     ? `<div class="past-label">최근 발생 이력 · 다음 시기 가늠용</div>` +
       past.map(t => `
         <div class="typhoon-row past">
-          <b>${esc(t.name)}</b> <span class="ago">${t.daysAgo}일 전</span><br>
-          ${esc((t.toDate || "").slice(0, 10))} 소멸 · ${esc(t.nearestHub)} 인근 (${t.distanceKm}km)
+          ${impactTag(t)} <b>${esc(t.name)}</b> <span class="ago">${t.daysAgo}일 전</span><br>
+          ${esc((t.toDate || "").slice(0, 10))} 소멸 · ${whereText(t)}
           <a href="${esc(t.reportUrl)}" target="_blank" rel="noopener">리포트 →</a>
         </div>`).join("")
     : "";
 
   if (TYPHOON.active && TYPHOON.active.length > 0) {
+    const anyDirect = TYPHOON.active.some(t => t.impact === "direct");
     const rows = TYPHOON.active.map(t => `
       <div class="typhoon-row">
-        <b>${esc(t.name)}</b> (${esc(t.alertLevel)}) · ${esc(t.nearestHub)}까지 약 ${t.distanceKm}km<br>
-        ${esc(t.severityText)}
+        ${impactTag(t)} <b>${esc(t.name)}</b> (${esc(t.alertLevel)})<br>
+        ${whereText(t)} · ${esc(t.severityText)}
         <a href="${esc(t.reportUrl)}" target="_blank" rel="noopener">GDACS 리포트 →</a>
       </div>`).join("");
     typhoonSection.innerHTML = `
       <div class="typhoon-card alert">
-        <div class="headline">⚠ 태풍 활동 중 — 부자재 입고 지연 주의</div>
+        <div class="headline">⚠ ${anyDirect ? "태풍 직접 영향권" : "항로상 태풍 활동 중"} — 부자재 입고 지연 주의</div>
         ${rows}
         ${pastBlock}
       </div>`;
@@ -860,7 +879,14 @@ const priceCards = [];
 
 if (SCFI) {
   const up = SCFI.change >= 0;
-  CARD_BY_ID["scfi"] = Object.assign({}, SCFI, { isScfi: true, points: [] });
+  const pts = SCFI.points || [];
+  // SSE only publishes this week and last, so the chart is built from values this project has
+  // accumulated run by run - it needs a few weeks before a line is worth drawing.
+  const hasChart = pts.length >= 3;
+  CARD_BY_ID["scfi"] = Object.assign({}, SCFI, { isScfi: !hasChart, points: hasChart ? pts : [] });
+  const chartId = "ch-scfi";
+  if (hasChart) CHART_DATA[chartId] = { points: pts, currency: "", unit: "pt", decimals: 1 };
+
   priceCards.push(`
     <div class="card stat-tile">
       <div class="card-head">
@@ -872,8 +898,14 @@ if (SCFI) {
         <span class="sc ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(SCFI.change)} (${SCFI.changePct}%)</span>
         <span class="pd">${esc(SCFI.currentDate)}</span>
       </div>
-      <div class="prev-row"><span>전주 (${esc(SCFI.lastDate)})</span><span>${SCFI.previous.toLocaleString()}</span></div>
-      <div class="chart-note">${esc(SCFI.note || "")} · ${esc(SCFI.source || "")}<br>주간 발표 · 과거 시계열은 SSE 구독 계정 전용</div>
+      ${hasChart
+        ? `<div class="chart-wrap">${priceChartSvg(pts, chartId)}<div class="ch-tip"></div></div>`
+        : `<div class="prev-row"><span>전주 (${esc(SCFI.lastDate)})</span><span>${SCFI.previous.toLocaleString()}</span></div>`}
+      <div class="chart-note">${esc(SCFI.note || "")} · ${esc(SCFI.source || "")}<br>${
+        hasChart
+          ? `주간 발표 · 누적 ${pts.length}주 수집`
+          : `주간 발표 · 과거 시계열이 SSE 구독 전용이라 매주 직접 수집 중 (현재 ${pts.length}주, 3주부터 차트 표시)`
+      }</div>
     </div>`);
 }
 

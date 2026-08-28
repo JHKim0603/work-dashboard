@@ -3,8 +3,13 @@
     { "Id": "ulsan-namgu", "DisplayName": "울산 남구", "Country": "KR", "Lat": 35.5433, "Lon": 129.3300 }
   ],
   "typhoonWatchHubs": [
-    { "Id": "hanoi", "DisplayName": "하노이", "Lat": 21.0278, "Lon": 105.8342 },
+    { "Id": "hanoi", "DisplayName": "하노이/하이퐁", "Lat": 21.0278, "Lon": 105.8342 },
     { "Id": "hcmc", "DisplayName": "호치민", "Lat": 10.8231, "Lon": 106.6297 }
+  ],
+  "typhoonTransshipHubs": [
+    { "Id": "hkszx", "DisplayName": "홍콩/선전", "Lat": 22.3, "Lon": 114.1 },
+    { "Id": "kaohsiung", "DisplayName": "가오슝", "Lat": 22.6, "Lon": 120.3 },
+    { "Id": "shanghai", "DisplayName": "상하이/닝보", "Lat": 30.6, "Lon": 122.0 }
   ],
   "yahooSeries": [
     {

@@ -29,6 +29,74 @@ function Format-DateOnly {
     return $s
 }
 
+# --- Accumulated history store ------------------------------------------------------------
+# Opinet only serves the last 7 days and SSE gates SCFI history behind a subscriber login, so
+# neither can be charted over a year from a single call. Instead every run merges what it just
+# fetched into data-history.json, which the workflow commits back - the series then grows on
+# its own, and re-running is idempotent because points are keyed by date.
+$historyPath = Join-Path $root "data-history.json"
+$HISTORY_MAX_DAYS = 730
+
+function Read-HistoryStore {
+    if (-not (Test-Path $historyPath)) { return @{} }
+    try {
+        $raw = Get-Content -Path $historyPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $store = @{}
+        foreach ($prop in $raw.PSObject.Properties) {
+            $series = @{}
+            foreach ($pt in $prop.Value.PSObject.Properties) { $series[$pt.Name] = $pt.Value }
+            $store[$prop.Name] = $series
+        }
+        return $store
+    } catch {
+        Write-Warning "history store 읽기 실패, 새로 시작합니다: $($_.Exception.Message)"
+        return @{}
+    }
+}
+
+function Merge-HistorySeries {
+    # $points: objects with .label (yyyy-MM-dd) and .value. Returns the merged series as a
+    # sorted array of the same shape, so callers can chart the accumulated history directly.
+    param($store, [string]$key, $points)
+
+    if (-not $store.ContainsKey($key)) { $store[$key] = @{} }
+    $series = $store[$key]
+    foreach ($p in $points) {
+        if ($null -eq $p -or -not $p.label) { continue }
+        $series[[string]$p.label] = $p.value
+    }
+
+    $cutoff = (Get-Date).Date.AddDays(-$HISTORY_MAX_DAYS)
+    $kept = @{}
+    foreach ($k in $series.Keys) {
+        [DateTime]$parsed = Get-Date
+        if ([DateTime]::TryParse($k, [ref]$parsed) -and $parsed -ge $cutoff) { $kept[$k] = $series[$k] }
+    }
+    $store[$key] = $kept
+
+    @($kept.Keys | Sort-Object | ForEach-Object {
+        [PSCustomObject]@{ label = $_; value = $kept[$_] }
+    })
+}
+
+function Write-HistoryStore {
+    param($store)
+    try {
+        $ordered = [ordered]@{}
+        foreach ($k in ($store.Keys | Sort-Object)) {
+            $series = [ordered]@{}
+            foreach ($d in ($store[$k].Keys | Sort-Object)) { $series[$d] = $store[$k][$d] }
+            $ordered[$k] = $series
+        }
+        $json = ConvertTo-Json -InputObject $ordered -Depth 4
+        $utf8NoBomLocal = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($historyPath, $json, $utf8NoBomLocal)
+        Write-Host "History store updated: $historyPath"
+    } catch {
+        Write-Warning "history store 저장 실패: $($_.Exception.Message)"
+    }
+}
+
 # --- Weather ------------------------------------------------------------------------
 # Switched from wttr.in to Open-Meteo: free, no key, and (unlike wttr.in's free tier, which
 # caps at 3 days) supports a real week-ahead forecast in one call. Codes are WMO weather codes
@@ -198,9 +266,16 @@ function Get-HolidayBlock {
 }
 
 # --- Vietnam typhoon watch ---------------------------------------------------------------
-# Vietnam-sourced 부자재 shipments get delayed when a typhoon crosses the South China
-# Sea / Vietnam coast, so this tracks tropical cyclones near the two reference hubs
-# (하노이/호치민) instead of showing daily Vietnam weather.
+# Vietnam-sourced 부자재 shipments get delayed when a typhoon disrupts the route, so this
+# tracks tropical cyclones against the shipping corridor rather than only Vietnam itself.
+#
+# The first version compared one point - GDACS's last known storm position - to 하노이/호치민
+# and required <=800km or Vietnam in the affected-country list. That silently missed the
+# August 2026 storms a Vietnamese supplier actually reported delays for: NOUL-26 crossed the
+# South China Sea and passed 78km from Hong Kong/Shenzhen, while DOLPHIN-26 and SAUDEL-26 ran
+# up the Taiwan side. None list Vietnam and all ended far from it, yet each disrupts the
+# transshipment hubs Vietnam cargo moves through. So relevance is now judged on the storm's
+# whole track (fetched per event) against both the Vietnam hubs and those transshipment ports.
 function Get-HaversineKm {
     param([double]$lat1, [double]$lon1, [double]$lat2, [double]$lon2)
     $R = 6371.0
@@ -213,8 +288,47 @@ function Get-HaversineKm {
     [math]::Round($R * $c)
 }
 
+function Get-StormTrackPoints {
+    # GDACS's event list carries only the storm's latest position; the per-event geometry
+    # endpoint carries the whole track as LineString segments. Returns @() on any failure so
+    # a storm without a usable track just falls back to its single reported point.
+    param($eventId, $episodeId)
+    try {
+        $uri = "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=$eventId&episodeid=$episodeId"
+        $geo = Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 45
+        # Collect straight into an array. Accumulating into a List[object] and returning
+        # @($list) throws "Argument types do not match" on Windows PowerShell 5.1, which is
+        # what silently reduced every storm to its single last-known position.
+        $pts = @(foreach ($f in $geo.features) {
+            if ($f.geometry.type -ne "LineString") { continue }
+            foreach ($c in $f.geometry.coordinates) {
+                [PSCustomObject]@{ lat = [double]$c[1]; lon = [double]$c[0] }
+            }
+        })
+        return $pts
+    } catch {
+        Write-Warning "  태풍 경로 조회 실패 (event $eventId): $($_.Exception.Message)"
+        return @()
+    }
+}
+
+function Get-ClosestHub {
+    # Nearest approach of the whole track to any hub in the list.
+    param($track, $hubList)
+    $best = $null
+    foreach ($hub in $hubList) {
+        foreach ($tp in $track) {
+            $d = Get-HaversineKm -lat1 $tp.lat -lon1 $tp.lon -lat2 $hub.Lat -lon2 $hub.Lon
+            if ($null -eq $best -or $d -lt $best.km) {
+                $best = [PSCustomObject]@{ hub = $hub.DisplayName; km = $d }
+            }
+        }
+    }
+    $best
+}
+
 function Get-TyphoonWatch {
-    param($hubs)
+    param($hubs, $transshipHubs, $maxTracks = 10)
 
     try {
         # GDACS routinely takes 7-15s to answer and intermittently fails outright; a single
@@ -233,33 +347,57 @@ function Get-TyphoonWatch {
         }
         $tcs = @($resp.features | Where-Object { $_.properties.eventtype -eq "TC" })
 
-        $items = @(foreach ($f in $tcs) {
+        # Coarse pre-filter before spending a request per track: keep West-Pacific / SE-Asia
+        # storms only. Everything else (Atlantic, Indian Ocean) can never touch this route.
+        $candidates = @(foreach ($f in $tcs) {
             $p = $f.properties
-            $lon = $f.geometry.coordinates[0]
-            $lat = $f.geometry.coordinates[1]
+            $lon = [double]$f.geometry.coordinates[0]
+            $lat = [double]$f.geometry.coordinates[1]
+            $inRegion = ($lat -ge -5 -and $lat -le 45 -and $lon -ge 95 -and $lon -le 145)
+            $namesAsia = $p.country -match "Viet ?Nam|China|Philippines|Taiwan|Hong Kong|Japan|Cambodia|Laos|Thailand|Malaysia"
+            if (-not ($inRegion -or $namesAsia)) { continue }
+            [PSCustomObject]@{ f = $f; p = $p; lat = $lat; lon = $lon }
+        })
+        # newest first, capped - each track is a separate slow request
+        $candidates = @($candidates |
+            Sort-Object { if ($_.p.todate) { [DateTime]$_.p.todate } else { [DateTime]::MinValue } } -Descending |
+            Select-Object -First $maxTracks)
 
-            $distances = foreach ($hub in $hubs) {
-                [PSCustomObject]@{ hub = $hub.DisplayName; km = Get-HaversineKm -lat1 $lat -lon1 $lon -lat2 $hub.Lat -lon2 $hub.Lon }
-            }
-            $nearest = $distances | Sort-Object km | Select-Object -First 1
+        $items = @(foreach ($cand in $candidates) {
+            $p = $cand.p
+            $track = Get-StormTrackPoints -eventId $p.eventid -episodeId $p.episodeid
+            if ($track.Count -eq 0) { $track = @([PSCustomObject]@{ lat = $cand.lat; lon = $cand.lon }) }
+            Start-Sleep -Milliseconds 250
 
-            # "relevant" = GDACS already lists Vietnam among affected countries, or the storm's
-            # current/last position is within 800km of either hub (close enough to matter for
-            # inbound shipping even before Vietnam is formally listed as impacted).
+            $nearVn = Get-ClosestHub -track $track -hubList $hubs
+            $nearPort = if ($transshipHubs) { Get-ClosestHub -track $track -hubList $transshipHubs } else { $null }
+            # does the track cross the South China Sea lane Vietnam cargo sails through?
+            $crossesScs = @($track | Where-Object {
+                $_.lat -ge 5 -and $_.lat -le 23 -and $_.lon -ge 105 -and $_.lon -le 120
+            }).Count -gt 0
+
             $mentionsVietnam = $p.country -match "Viet ?Nam"
-            if (-not ($mentionsVietnam -or $nearest.km -le 800)) { continue }
+            $impact = $null
+            if ($mentionsVietnam -or ($nearVn -and $nearVn.km -le 500)) { $impact = "direct" }
+            elseif ($crossesScs -or ($nearPort -and $nearPort.km -le 400)) { $impact = "route" }
+            if (-not $impact) { continue }
 
             [PSCustomObject]@{
-                name         = ($p.name -replace "^Tropical Cyclone ", "")
-                alertLevel   = $p.alertlevel
-                isCurrent    = ($p.iscurrent -eq "true")
-                severityText = $p.severitydata.severitytext
-                country      = $p.country
-                fromDate     = $p.fromdate
-                toDate       = $p.todate
-                nearestHub   = $nearest.hub
-                distanceKm   = $nearest.km
-                reportUrl    = $p.url.report
+                name           = ($p.name -replace "^Tropical Cyclone ", "")
+                alertLevel     = $p.alertlevel
+                isCurrent      = ($p.iscurrent -eq "true")
+                severityText   = $p.severitydata.severitytext
+                country        = $p.country
+                fromDate       = $p.fromdate
+                toDate         = $p.todate
+                impact         = $impact
+                nearestHub     = $nearVn.hub
+                distanceKm     = $nearVn.km
+                nearestPort    = if ($nearPort) { $nearPort.hub } else { $null }
+                portDistanceKm = if ($nearPort) { $nearPort.km } else { $null }
+                crossesScs     = $crossesScs
+                trackPoints    = $track.Count
+                reportUrl      = $p.url.report
             }
         })
 
@@ -270,7 +408,7 @@ function Get-TyphoonWatch {
         # extrapolated against typhoon-season timing rather than only reacting to a live storm.
         $today = (Get-Date).Date
         $past = @($items | Where-Object { -not $_.isCurrent -and $_.toDate } |
-            Sort-Object { [DateTime]$_.toDate } -Descending | Select-Object -First 3 |
+            Sort-Object { [DateTime]$_.toDate } -Descending | Select-Object -First 6 |
             ForEach-Object {
                 $daysAgo = [math]::Round(($today - [DateTime]$_.toDate).TotalDays)
                 $_ | Add-Member -NotePropertyName daysAgo -NotePropertyValue $daysAgo -Force
@@ -587,7 +725,7 @@ Write-Host "Fetching holiday info..."
 $holiday = Get-HolidayBlock -todayKst $nowKst
 
 Write-Host "Fetching Vietnam typhoon watch..."
-$typhoon = Get-TyphoonWatch -hubs $config.typhoonWatchHubs
+$typhoon = Get-TyphoonWatch -hubs $config.typhoonWatchHubs -transshipHubs $config.typhoonTransshipHubs
 
 Write-Host "Fetching KCl price history..."
 $kcl = Get-KclPriceHistory
@@ -618,6 +756,25 @@ $scfi = Get-ScfiIndex
 
 Write-Host "Fetching domestic fuel prices..."
 $fuel = @(Get-DomesticFuelPrices | Where-Object { $_ })
+
+# Both of these upstreams serve only a short window, so merge into (and read back from) the
+# accumulated store - that is what turns 7 days of pump prices and 2 weeks of SCFI into a
+# series worth charting over months.
+$historyStore = Read-HistoryStore
+foreach ($f in $fuel) {
+    $merged = Merge-HistorySeries -store $historyStore -key "fuel-$($f.id)" -points $f.points
+    $f.points = $merged
+    $f.note = "전국 주유소 평균 · 누적 $($merged.Count)일"
+}
+if ($scfi) {
+    $scfiPoints = @(
+        [PSCustomObject]@{ label = $scfi.lastDate;    value = $scfi.previous }
+        [PSCustomObject]@{ label = $scfi.currentDate; value = $scfi.current }
+    ) | Where-Object { $_.label }
+    $scfiHistory = Merge-HistorySeries -store $historyStore -key "scfi" -points $scfiPoints
+    $scfi | Add-Member -NotePropertyName points -NotePropertyValue $scfiHistory -Force
+}
+Write-HistoryStore -store $historyStore
 
 # One flat list so the dashboard/email render every price card the same way regardless of
 # which upstream it came from. Order here is the display order.
