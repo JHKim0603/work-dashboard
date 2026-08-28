@@ -74,13 +74,19 @@
   .wrap { max-width: 1480px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
 
   /* 날씨 / 공휴일 / 태풍 sit side by side on wide screens, stack on narrow ones.
-     align-items defaults to stretch so all three columns match the tallest one; the
-     inner cards then take height:100% so their borders line up, not just the columns. */
+     The grid stretches all three columns to the tallest, but that only reaches the cards
+     if every wrapper between column and card is itself a stretching flex container -
+     otherwise the intermediate div collapses to its content height and the card's flex:1
+     resolves against nothing. Hence the full chain below. */
   .top-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
   .top-row > * { display: flex; flex-direction: column; min-width: 0; }
+  .top-row .section-title { flex: none; }
+  .top-row > * > #weatherGrid,
+  .top-row > * > #holidaySection,
+  .top-row > * > #typhoonSection { flex: 1; display: flex; flex-direction: column; }
   .top-row .card,
   .top-row .holiday-card,
-  .top-row .typhoon-card { flex: 1; }
+  .top-row .typhoon-card { flex: 1; display: flex; flex-direction: column; }
   @media (max-width: 1080px) {
     .top-row { grid-template-columns: 1fr; }
   }
@@ -218,17 +224,31 @@
 
   .holiday-card {
     background: var(--accent-wash); border: 1px solid var(--border); border-radius: 12px;
-    padding: 18px 20px;
+    padding: 16px 18px;
   }
-  .holiday-card .headline { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
-  .holiday-card .sub2 { font-size: 13px; color: var(--ink-secondary); margin-bottom: 10px; }
+  .hol-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .holiday-card .dday {
-    display: inline-block; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
-    padding: 3px 10px; border-radius: 999px; margin-right: 8px;
+    background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
+    padding: 3px 10px; border-radius: 999px; flex: none;
   }
-  .upcoming-list { margin-top: 12px; font-size: 12px; color: var(--ink-secondary); }
-  .upcoming-list .up-row { display: flex; justify-content: space-between; padding: 4px 0; border-top: 1px solid var(--gridline); }
+  .holiday-card .hol-name { font-size: 17px; font-weight: 700; }
+  .holiday-card .hol-range {
+    font-size: 13px; color: var(--ink-secondary); font-variant-numeric: tabular-nums;
+  }
+  .holiday-card .hol-len { font-weight: 700; color: var(--ink-primary); }
+
+  .upcoming-label {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink-muted);
+    text-transform: uppercase; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--gridline);
+  }
+  .upcoming-list { font-size: 12.5px; color: var(--ink-secondary); }
+  .upcoming-list .up-row {
+    display: flex; justify-content: space-between; gap: 10px; padding: 5px 0;
+    border-top: 1px solid var(--gridline); font-variant-numeric: tabular-nums;
+  }
   .upcoming-list .up-row:first-child { border-top: none; }
+  .upcoming-list .up-row .un { color: var(--ink-primary); }
+  .upcoming-list .up-row .ud { color: var(--ink-muted); white-space: nowrap; }
 
   .news-item { font-size: 12.5px; padding: 7px 0; border-top: 1px solid var(--gridline); }
   .news-item:first-child { border-top: none; }
@@ -379,15 +399,38 @@ if (!HOLIDAY) {
   holidaySection.innerHTML = `<div class="empty-note">공휴일 정보를 가져오지 못했습니다.</div>`;
 } else {
   const dDayText = HOLIDAY.dDay === 0 ? "오늘부터" : `D-${HOLIDAY.dDay}`;
-  const names = [...new Set(HOLIDAY.holidayNames || [])].join(", ");
-  const upcoming = (HOLIDAY.nextHolidays || []).map(h =>
-    `<div class="up-row"><span>${esc(h.name)}</span><span>${esc(h.date)}</span></div>`
-  ).join("");
+  const names = [...new Set(HOLIDAY.holidayNames || [])].join(", ") || "연휴";
+
+  // A multi-day holiday (추석, 설날) arrives as one row per day; collapsing consecutive
+  // same-name days into a single date range keeps the list readable instead of repeating
+  // the same name three times.
+  const grouped = [];
+  (HOLIDAY.nextHolidays || []).forEach(h => {
+    const last = grouped[grouped.length - 1];
+    if (last && last.name === h.name) {
+      const nextDay = new Date(last.end + "T00:00:00");
+      nextDay.setDate(nextDay.getDate() + 1);
+      if (nextDay.toISOString().slice(0, 10) === h.date) { last.end = h.date; return; }
+    }
+    grouped.push({ name: h.name, start: h.date, end: h.date });
+  });
+
+  const fmt = d => d.slice(5).replace("-", "/");
+  const upcoming = grouped.map(g => {
+    const range = g.start === g.end ? fmt(g.start) : `${fmt(g.start)}~${fmt(g.end)}`;
+    const year = g.start.slice(0, 4);
+    return `<div class="up-row"><span class="un">${esc(g.name)}</span><span class="ud">${year}. ${esc(range)}</span></div>`;
+  }).join("");
+
+  const rangeText = `${fmt(HOLIDAY.startDate)} ~ ${fmt(HOLIDAY.endDate)}`;
   holidaySection.innerHTML = `
     <div class="holiday-card">
-      <span class="dday">${dDayText}</span>
-      <span class="headline">가장 빠른 연휴: ${esc(HOLIDAY.startDate)} ~ ${esc(HOLIDAY.endDate)} (${HOLIDAY.days}일)</span>
-      <div class="sub2">${esc(names)}</div>
+      <div class="hol-head">
+        <span class="dday">${dDayText}</span>
+        <span class="hol-name">${esc(names)}</span>
+      </div>
+      <div class="hol-range">${HOLIDAY.startDate.slice(0, 4)}. ${esc(rangeText)} · <span class="hol-len">${HOLIDAY.days}일 연휴</span></div>
+      <div class="upcoming-label">다가오는 공휴일</div>
       <div class="upcoming-list">${upcoming}</div>
     </div>`;
 }
