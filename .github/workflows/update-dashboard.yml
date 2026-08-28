@@ -51,7 +51,10 @@ jobs:
         id: subject
         run: echo "text=$(cat email-subject.txt)" >> "$GITHUB_OUTPUT"
 
+      # Non-blocking: the published dashboard is the primary output, so a mail failure
+      # (missing/expired Gmail secret, SMTP outage) must not stop the Pages deploy below.
       - name: Send email summary
+        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
