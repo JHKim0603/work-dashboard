@@ -1,15 +1,5 @@
 # Work Dashboard
 
-> ### ⚠️ 설정 남음: Gmail 시크릿
-> 일일 이메일 발송이 아직 안 됩니다 — 이 저장소에 Gmail 시크릿이 없습니다.
-> ```powershell
-> gh secret set GMAIL_USERNAME --repo JHKim0603/work-dashboard
-> gh secret set GMAIL_APP_PASSWORD --repo JHKim0603/work-dashboard
-> ```
-> `stockdashboard`와 같은 계정·앱 비밀번호를 쓰면 됩니다. 자세한 내용은
-> [이슈 #1](https://github.com/JHKim0603/work-dashboard/issues/1).
-> **대시보드 배포 자체는 이 설정 없이도 정상 동작합니다.**
-
 Local reference dashboard for daily work-planning inputs. No backend, no build step — just
 PowerShell + a static HTML/JS template.
 
@@ -187,13 +177,16 @@ search terms; results across all queries are de-duplicated and capped at 8 headl
 The daily workflow (`.github/workflows/update-dashboard.yml`) emails `email-summary.html` to
 `jhyupkim@unid.co.kr` via Gmail SMTP after each run — same setup as the
 [stockdashboard](https://github.com/JHKim0603/stockdashboard) repo, reusing the same Gmail
-sending account (add the secrets to *this* repo too, since GitHub repo secrets aren't shared
-across repos):
+sending account. **`GMAIL_USERNAME`과 `GMAIL_APP_PASSWORD`는 이 저장소에 등록되어 있어
+발송까지 정상 동작합니다.** (GitHub 저장소 시크릿은 저장소 간에 공유되지 않으므로, 두
+저장소가 같은 Gmail 계정을 쓰더라도 앱 비밀번호는 각각 별도로 발급·등록되어 있습니다.)
 
-1. Repo **Settings → Secrets and variables → Actions → New repository secret**, add:
-   - `GMAIL_USERNAME` — the sending Gmail address
-   - `GMAIL_APP_PASSWORD` — the 16-character Gmail App Password
-2. To change the recipient, edit the `to:` line in the workflow's "Send email summary" step.
+- 앱 비밀번호를 교체하려면 [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+  에서 새로 발급한 뒤 `gh secret set GMAIL_APP_PASSWORD --repo JHKim0603/work-dashboard`.
+  구글은 발급 시점에 한 번만 값을 보여주므로 기존 값을 다시 읽어올 수는 없습니다.
+- 수신자를 바꾸려면 워크플로의 "Send email summary" 스텝에서 `to:` 줄을 수정하세요.
+- 메일 발송 스텝은 `continue-on-error: true`라 SMTP가 실패해도 대시보드 배포는 계속됩니다.
+  발송 여부는 스텝 로그에서 확인하세요.
 
 Local runs (`run.bat`) still generate `email-summary.html` for preview but never send it — only
 the Actions workflow has the secrets.
