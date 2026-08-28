@@ -860,18 +860,39 @@ function Get-AdvisoryHtml {
 
 $weatherRowsHtml = foreach ($w in $weather) {
     $curAdvisoryHtml = Get-AdvisoryHtml $w.advisories
-    $daysHtml = foreach ($d in $w.days) {
+    # The forecast used to be seven 11px grey sentences that ran together; as aligned columns
+    # the same data can be read down a single axis instead of parsed line by line.
+    $dayRows = foreach ($d in $w.days) {
         $dAdvisoryHtml = Get-AdvisoryHtml $d.advisories
-        $md = (Format-DateOnly $d.date)
-        if ($md.Length -ge 10) { $md = $md.Substring(5) }
-        "<div style='margin-top:2px;'><span style='display:inline-block;margin-right:10px;'>$md $($d.desc) $($d.minC)°/$($d.maxC)°C · 강수확률 $($d.chanceOfRain)%</span>$dAdvisoryHtml</div>"
+        $dateStr = Format-DateOnly $d.date
+        $md = if ($dateStr.Length -ge 10) { $dateStr.Substring(5) } else { $dateStr }
+        [DateTime]$parsedDay = Get-Date
+        $dow = if ([DateTime]::TryParse($dateStr, [ref]$parsedDay)) { $dayNames[[int]$parsedDay.DayOfWeek] } else { "" }
+        $isWeekend = $dow -eq "토" -or $dow -eq "일"
+        $dayColor = if ($isWeekend) { "#b3221f" } else { "#3d3b37" }
+        # Only call out rain worth planning around - colouring every row defeats the purpose.
+        $rainColor = if ([int]$d.chanceOfRain -ge 60) { "#2a78d6" } else { "#898781" }
+        $rainWeight = if ([int]$d.chanceOfRain -ge 60) { "700" } else { "400" }
+        @"
+<tr>
+  <td style="padding:4px 8px 4px 0;white-space:nowrap;color:$dayColor;font-weight:600;">$md ($dow)</td>
+  <td style="padding:4px 8px 4px 0;color:#52514e;">$($d.desc)</td>
+  <td style="padding:4px 8px 4px 0;white-space:nowrap;color:#0b0b0b;font-weight:600;">$($d.minC)° / $($d.maxC)°</td>
+  <td style="padding:4px 8px 4px 0;white-space:nowrap;color:$rainColor;font-weight:$rainWeight;">☂ $($d.chanceOfRain)%</td>
+  <td style="padding:4px 0;">$dAdvisoryHtml</td>
+</tr>
+"@
     }
     @"
 <tr>
-  <td style="padding:10px 12px;border-bottom:1px solid #e1e0d9;">
-    <div style="font-weight:600;font-size:13px;color:#0b0b0b;">$($w.displayName)</div>
-    <div style="font-size:12px;color:#52514e;margin-top:2px;">$($w.desc) · 현재 $($w.tempC)°C (체감 $($w.feelsLikeC)°C) · 습도 $($w.humidity)% $curAdvisoryHtml</div>
-    <div style="font-size:11px;color:#898781;margin-top:4px;">$($daysHtml -join "")</div>
+  <td style="padding:14px 16px;border-bottom:1px solid #e1e0d9;">
+    <div style="font-weight:700;font-size:13.5px;color:#0b0b0b;">$($w.displayName)</div>
+    <div style="margin-top:5px;">
+      <span style="font-size:20px;font-weight:700;color:#0b0b0b;">$($w.tempC)°C</span>
+      <span style="font-size:12px;color:#52514e;">체감 $($w.feelsLikeC)° · 습도 $($w.humidity)% · $($w.desc)</span>
+    </div>
+    <div style="margin-top:3px;">$curAdvisoryHtml</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;">$($dayRows -join "")</table>
   </td>
 </tr>
 "@
@@ -889,54 +910,201 @@ if ($holiday) {
 "@
 }
 
+function Format-TyphoonSeverity {
+    # GDACS answers in English prose ("Tropical Storm (maximum wind speed of 213 km/h)"), which
+    # in a Korean digest was both the longest line in the alert and the least scannable.
+    param($text)
+    if (-not $text) { return "" }
+    $wind = if ($text -match '(\d+(?:\.\d+)?)\s*km/h') { "최대풍속 $($matches[1])km/h" } else { "" }
+    $kind = switch -Regex ($text) {
+        'Severe Tropical'           { "강한 열대폭풍"; break }
+        'Tropical Depression'       { "열대저압부"; break }
+        'Tropical Storm'            { "열대폭풍"; break }
+        'Typhoon|Hurricane|Cyclone' { "태풍"; break }
+        default                     { "" }
+    }
+    $parts = @(@($kind, $wind) | Where-Object { $_ })
+    if ($parts.Count -eq 0) { return $text }
+    $parts -join " · "
+}
+
+function Get-TyphoonBadge {
+    param($impact)
+    $bg = if ($impact -eq "direct") { "#b3221f" } else { "#c2410c" }
+    $label = if ($impact -eq "direct") { "직접" } else { "항로" }
+    "<span style='background:$bg;color:#ffffff;font-size:11px;font-weight:700;padding:2px 7px;'>$label</span>"
+}
+
+function Get-TyphoonWhere {
+    # A route-impact storm is flagged for where it passed relative to the transshipment ports
+    # Vietnamese cargo moves through, so printing its Vietnam distance instead - 1,223km for
+    # SAUDEL-26 - made the alert read as "why am I being told this?". Report the distance that
+    # actually triggered the flag.
+    param($t)
+    if ($t.impact -eq "direct") { return "$($t.nearestHub) $($t.distanceKm)km" }
+    $parts = @()
+    if ($t.crossesScs) { $parts += "남중국해 항로 통과" }
+    if ($t.nearestPort) { $parts += "$($t.nearestPort) $($t.portDistanceKm)km" }
+    if ($parts.Count -eq 0) { return "$($t.nearestHub) $($t.distanceKm)km" }
+    $parts -join " · "
+}
+
 $typhoonHtml = ""
 if ($typhoon) {
+    # The old history list was six near-identical grey sentences that outweighed the one line
+    # that mattered. As a table the columns line up, so it scans as reference material.
     $pastRows = foreach ($t in $typhoon.past) {
-        "<div style='margin-top:4px;font-size:12px;color:#6e6c66;'>$($t.name) · $(Format-DateOnly $t.toDate) 소멸 (D+$($t.daysAgo)) · $($t.nearestHub) 인근</div>"
+        @"
+<tr>
+  <td style="padding:3px 8px 3px 0;white-space:nowrap;">$(Get-TyphoonBadge $t.impact)</td>
+  <td style="padding:3px 8px 3px 0;font-weight:600;color:#3d3b37;white-space:nowrap;">$($t.name)</td>
+  <td style="padding:3px 8px 3px 0;color:#0b0b0b;font-weight:600;white-space:nowrap;">$($t.daysAgo)일 전</td>
+  <td style="padding:3px 0;color:#6e6c66;">$(Format-DateOnly $t.toDate) 소멸 · $(Get-TyphoonWhere $t)</td>
+</tr>
+"@
     }
     $pastBlockHtml = if ($pastRows) {
-        "<div style='margin-top:8px;font-size:11px;color:#898781;'>최근 발생 이력 (다음 시기 가늠용)</div>" + ($pastRows -join "")
+        @"
+<div style="margin-top:12px;padding-top:10px;border-top:1px solid #e1e0d9;font-size:11px;color:#898781;">최근 발생 이력 · 다음 시기 가늠용</div>
+  <table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-top:4px;">$($pastRows -join "")</table>
+"@
     } else { "" }
 
+    # 직접/항로 is the whole point of this watch, but the email never said what they meant -
+    # the page carries that explanation and the mail was read on its own.
+    $legendHtml = "<div style='margin-top:10px;font-size:11px;color:#898781;line-height:1.6;'><b>직접</b> = 베트남 상륙 또는 하노이/호치민 500km 이내 · <b>항로</b> = 남중국해 항로 통과 또는 환적항(홍콩·선전/가오슝/상하이·닝보) 400km 이내. 항로 태풍은 베트남에 상륙하지 않아도 선적을 밀어냅니다.</div>"
+
     if ($typhoon.active.Count -gt 0) {
+        $anyDirect = @($typhoon.active | Where-Object { $_.impact -eq "direct" }).Count -gt 0
+        $headline = if ($anyDirect) { "태풍 직접 영향권 — 베트남 부자재 입고 지연 주의" } else { "항로상 태풍 활동 중 — 베트남 부자재 입고 지연 가능성" }
         $activeRows = foreach ($t in $typhoon.active) {
-            "<div style='margin-top:6px;'><b>$($t.name)</b> ($($t.alertLevel)) · $($t.nearestHub)까지 약 $($t.distanceKm)km · $($t.severityText)</div>"
+            $reportLink = if ($t.reportUrl) { " <a href='$($t.reportUrl)' style='color:#2a78d6;text-decoration:none;font-size:11px;'>GDACS 리포트 →</a>" } else { "" }
+            @"
+<div style="margin-top:9px;padding:9px 11px;background:#ffffff;border:1px solid #f3caca;">
+      <div>$(Get-TyphoonBadge $t.impact) <b style="font-size:14px;color:#0b0b0b;">$($t.name)</b> <span style="font-size:11px;color:#898781;">경보등급 $($t.alertLevel)</span></div>
+      <div style="font-size:12.5px;color:#0b0b0b;font-weight:600;margin-top:4px;">$(Get-TyphoonWhere $t)</div>
+      <div style="font-size:11.5px;color:#6e6c66;margin-top:2px;">$(Format-TyphoonSeverity $t.severityText)$reportLink</div>
+    </div>
+"@
         }
         $typhoonHtml = @"
-<div style="margin:16px 0;padding:12px 14px;background:#fdeeee;border:1px solid #f3caca;border-radius:8px;">
-  <div style="font-weight:650;font-size:13px;color:#b3221f;">⚠ 베트남 인근 태풍 활동 중 - 부자재 입고 지연 가능성 주의</div>
+<div style="margin:16px 0;padding:13px 15px;background:#fdeeee;border:1px solid #f3caca;border-left:4px solid #b3221f;">
+  <div style="font-weight:700;font-size:14px;color:#b3221f;">⚠ $headline</div>
   $($activeRows -join "")
+  $legendHtml
   $pastBlockHtml
 </div>
 "@
     } elseif ($pastRows) {
         $typhoonHtml = @"
-<div style="margin:16px 0;padding:12px 14px;background:#f5f4f0;border:1px solid #e1e0d9;border-radius:8px;">
-  <div style="font-weight:650;font-size:13px;color:#0b0b0b;">베트남 인근 활성 태풍 없음</div>
+<div style="margin:16px 0;padding:13px 15px;background:#f1f6f1;border:1px solid #cfe3cf;border-left:4px solid #0a6b0a;">
+  <div style="font-weight:700;font-size:14px;color:#0a6b0a;">✓ 베트남 인근 활성 태풍 없음 · 입고 일정 영향 없음</div>
+  $legendHtml
   $pastBlockHtml
 </div>
 "@
     } else {
         $typhoonHtml = @"
-<div style="margin:16px 0;padding:12px 14px;background:#f5f4f0;border:1px solid #e1e0d9;border-radius:8px;">
-  <div style="font-size:13px;color:#0b0b0b;">베트남 인근 태풍 활동 없음 · 부자재 입고 일정 영향 없음</div>
+<div style="margin:16px 0;padding:13px 15px;background:#f1f6f1;border:1px solid #cfe3cf;border-left:4px solid #0a6b0a;">
+  <div style="font-weight:700;font-size:14px;color:#0a6b0a;">✓ 베트남 인근 태풍 활동 없음 · 부자재 입고 일정 영향 없음</div>
 </div>
 "@
     }
 }
 
-function Get-Sparkline {
-    # Email clients can't reliably render inline SVG/canvas, but a plain-text sparkline made of
-    # Unicode block characters works everywhere - the same trick used by CLI tools.
-    param($values)
-    $blocks = [char[]]"▁▂▃▄▅▆▇█"
-    $min = ($values | Measure-Object -Minimum).Minimum
-    $max = ($values | Measure-Object -Maximum).Maximum
+function Format-PriceValue {
+    param($v)
+    if ($null -eq $v) { return "" }
+    $d = [double]$v
+    $r = if ([math]::Abs($d) -ge 1000) { [math]::Round($d, 1) } else { [math]::Round($d, 2) }
+    ((("{0:N2}" -f $r) -replace '0+$', '') -replace '\.$', '')
+}
+
+function Get-BarChartHtml {
+    # Replaces a Unicode-block sparkline ("▁▂▃▄"). That had only 8 height levels to spread two
+    # years of weekly closes across, and mail clients font-substituted the glyphs onto
+    # inconsistent baselines, so every series arrived looking like the same flat smear.
+    # Bars drawn as <td bgcolor> in a nested table are the one chart form Outlook's Word
+    # renderer draws like every other client, and the spacer row above each bar means the
+    # height never depends on valign being honoured.
+    param($values, $accent = "#2a78d6", $maxBars = 24, $height = 44)
+
+    $vals = @($values | Where-Object { $null -ne $_ } | ForEach-Object { [double]$_ })
+    if ($vals.Count -lt 2) { return "" }
+
+    # Average into buckets rather than sampling every Nth point - sampling drops the spikes
+    # that fall between two indices, which is the movement most worth seeing.
+    if ($vals.Count -gt $maxBars) {
+        $src = $vals
+        $bucket = $src.Count / $maxBars
+        $vals = @(for ($i = 0; $i -lt $maxBars; $i++) {
+            $from = [int][math]::Floor($i * $bucket)
+            $to = [int][math]::Floor(($i + 1) * $bucket) - 1
+            if ($to -lt $from) { $to = $from }
+            if ($to -gt $src.Count - 1) { $to = $src.Count - 1 }
+            ($src[$from..$to] | Measure-Object -Average).Average
+        })
+    }
+
+    $min = ($vals | Measure-Object -Minimum).Minimum
+    $max = ($vals | Measure-Object -Maximum).Maximum
     $range = $max - $min
-    -join ($values | ForEach-Object {
-        $idx = if ($range -eq 0) { 0 } else { [math]::Floor((($_ - $min) / $range) * ($blocks.Count - 1)) }
-        $blocks[[int]$idx]
-    })
+    $last = $vals.Count - 1
+    # Pump prices start life as 7 accumulated days; without widening, those draw a chart barely
+    # a thumbnail across while a 24-bucket series fills the column.
+    $barW = [math]::Max(4, [math]::Min(14, [int](340 / $vals.Count) - 2))
+
+    $cells = for ($i = 0; $i -lt $vals.Count; $i++) {
+        # Floor the height at 3px: a zero-height bar collapses and reads as missing data
+        # rather than as the low point of the series.
+        $h = if ($range -eq 0) { [int]($height / 2) } else { 3 + [int][math]::Round((($vals[$i] - $min) / $range) * ($height - 3)) }
+        $pad = $height - $h
+        $fill = if ($i -eq $last) { $accent } else { "#c3d5ea" }
+        $spacer = if ($pad -gt 0) { "<tr><td height='$pad' style='font-size:0;line-height:0;'>&nbsp;</td></tr>" } else { "" }
+        "<td style='padding:0 1px;font-size:0;line-height:0;'><table cellpadding='0' cellspacing='0' border='0' style='border-collapse:collapse;'>$spacer<tr><td height='$h' width='$barW' bgcolor='$fill' style='font-size:0;line-height:0;'>&nbsp;</td></tr></table></td>"
+    }
+    "<table cellpadding='0' cellspacing='0' border='0' style='border-collapse:collapse;'><tr>$($cells -join '')</tr></table>"
+}
+
+function Get-PriceChangeHtml {
+    # Returns both the rendered badge and the colour, because the chart's latest bar is tinted
+    # to match the move - one place decides whether today counts as up, down, or flat.
+    param($latestValue, $priorValue)
+    if ($null -eq $priorValue) { return [PSCustomObject]@{ html = ""; accent = "#2a78d6" } }
+    $diff = $latestValue - $priorValue
+    $pct = if ($priorValue -ne 0) { ($diff / $priorValue) * 100 } else { 0 }
+    # Pump prices move by fractions of a won, which the old "{0:N1}%" printed as "-0.0%" -
+    # that reads as a broken template rather than as "barely moved".
+    if ([math]::Abs($pct) -lt 0.05) {
+        return [PSCustomObject]@{ html = "<span style='color:#6e6c66;font-weight:600;'>보합</span>"; accent = "#8f9aa6" }
+    }
+    $up = $diff -ge 0
+    # Up is red: every series here is an input cost, so rising is the bad direction.
+    $accent = if ($up) { "#b3221f" } else { "#0a6b0a" }
+    $arrow = if ($up) { "▲" } else { "▼" }
+    $pctStr = "{0:N1}" -f [math]::Abs($pct)
+    $diffStr = Format-PriceValue ([math]::Abs($diff))
+    [PSCustomObject]@{
+        html   = "<span style='color:$accent;font-weight:700;'>$arrow $diffStr ($pctStr%)</span>"
+        accent = $accent
+    }
+}
+
+function Get-PriceChartHtml {
+    param($points, $accent, $currency)
+    $pts = @($points)
+    if ($pts.Count -lt 3) { return "" }
+    $vals = @($pts | ForEach-Object { $_.value })
+    $lo = Format-PriceValue (($vals | Measure-Object -Minimum).Minimum)
+    $hi = Format-PriceValue (($vals | Measure-Object -Maximum).Maximum)
+    $bars = Get-BarChartHtml -values $vals -accent $accent
+    if (-not $bars) { return "" }
+    # Bars are scaled to the series min/max, which makes a 0.5% drift fill the full height.
+    # Printing the band beside the chart is what stops the shape overstating the move.
+    @"
+<div style="margin-top:9px;">$bars</div>
+    <div style="font-size:11px;color:#898781;margin-top:4px;">차트 구간 $currency$lo ~ $currency$hi · $($pts[0].label) ~ $($pts[-1].label) ($($pts.Count)개 시점)</div>
+"@
 }
 
 $priceRowsHtml = foreach ($c in $priceCards) {
@@ -944,21 +1112,20 @@ $priceRowsHtml = foreach ($c in $priceCards) {
     if ($pts.Count -eq 0) { continue }
     $latest = $pts[-1]
     $prior = if ($pts.Count -gt 1) { $pts[-2] } else { $null }
-    $changeText = if ($prior) {
-        $diff = $latest.value - $prior.value
-        $sign = if ($diff -ge 0) { "+" } else { "" }
-        $color = if ($diff -ge 0) { "#b3221f" } else { "#0a6b0a" }
-        $pct = if ($prior.value -ne 0) { " ({0}{1:N1}%)" -f $sign, (($diff / $prior.value) * 100) } else { "" }
-        "<span style='color:$color;font-weight:600;'>$sign$([math]::Round($diff,2))$pct</span>"
-    } else { "" }
-    $spark = Get-Sparkline ($pts | ForEach-Object { $_.value })
+    $change = Get-PriceChangeHtml -latestValue $latest.value -priorValue $(if ($prior) { $prior.value } else { $null })
+    $chartHtml = Get-PriceChartHtml -points $pts -accent $change.accent -currency $c.currency
     @"
 <tr>
-  <td style="padding:10px 12px;border-bottom:1px solid #e1e0d9;">
-    <div style="font-weight:600;font-size:13px;color:#0b0b0b;">$($c.displayName)</div>
-    <div style="font-size:12px;color:#52514e;margin-top:3px;"><b>$($c.currency)$($latest.value)</b> <span style="color:#898781;">$($c.unit)</span> $changeText <span style="color:#898781;">· $($latest.label) 기준</span></div>
-    <div style="font-size:16px;letter-spacing:1px;margin-top:4px;color:#2a78d6;">$spark</div>
-    <div style="font-size:11px;color:#898781;margin-top:2px;">$($c.note) · $($c.source)</div>
+  <td style="padding:14px 16px;border-bottom:1px solid #e1e0d9;">
+    <div style="font-weight:700;font-size:13.5px;color:#0b0b0b;">$($c.displayName)</div>
+    <div style="margin-top:5px;">
+      <span style="font-size:20px;font-weight:700;color:#0b0b0b;">$($c.currency)$(Format-PriceValue $latest.value)</span>
+      <span style="font-size:12px;color:#898781;">$($c.unit)</span>
+      <span style="font-size:13px;margin-left:5px;">$($change.html)</span>
+      <span style="font-size:11px;color:#898781;">· $($latest.label) 기준</span>
+    </div>
+    $chartHtml
+    <div style="font-size:11px;color:#898781;margin-top:7px;">$($c.note) · $($c.source)</div>
   </td>
 </tr>
 "@
@@ -966,15 +1133,21 @@ $priceRowsHtml = foreach ($c in $priceCards) {
 
 $scfiHtml = ""
 if ($scfi) {
-    $up = $scfi.change -ge 0
-    $arrow = if ($up) { "▲" } else { "▼" }
-    $color = if ($up) { "#b3221f" } else { "#0a6b0a" }
+    $scfiChange = Get-PriceChangeHtml -latestValue $scfi.current -priorValue $scfi.previous
+    # SCFI only started accumulating when this repo did, so for the first few weeks there is
+    # nothing to draw - the note below already explains why the chart is missing.
+    $scfiChartHtml = Get-PriceChartHtml -points $scfi.points -accent $scfiChange.accent -currency ""
     $scfiHtml = @"
 <tr>
-  <td style="padding:10px 12px;border-bottom:1px solid #e1e0d9;">
-    <div style="font-weight:600;font-size:13px;color:#0b0b0b;">$($scfi.displayName)</div>
-    <div style="font-size:12px;color:#52514e;margin-top:3px;"><b>$($scfi.current)</b> <span style="color:$color;font-weight:600;">$arrow $([math]::Abs($scfi.change)) ($($scfi.changePct)%)</span> <span style="color:#898781;">· $($scfi.currentDate) 기준, 전주 $($scfi.previous)</span></div>
-    <div style="font-size:11px;color:#898781;margin-top:2px;">$($scfi.note) · $($scfi.source)</div>
+  <td style="padding:14px 16px;border-bottom:1px solid #e1e0d9;">
+    <div style="font-weight:700;font-size:13.5px;color:#0b0b0b;">$($scfi.displayName)</div>
+    <div style="margin-top:5px;">
+      <span style="font-size:20px;font-weight:700;color:#0b0b0b;">$(Format-PriceValue $scfi.current)</span>
+      <span style="font-size:13px;margin-left:5px;">$($scfiChange.html)</span>
+      <span style="font-size:11px;color:#898781;">· $($scfi.currentDate) 기준, 전주 $(Format-PriceValue $scfi.previous)</span>
+    </div>
+    $scfiChartHtml
+    <div style="font-size:11px;color:#898781;margin-top:7px;">$($scfi.note) · $($scfi.source)</div>
   </td>
 </tr>
 "@
@@ -982,15 +1155,37 @@ if ($scfi) {
 
 $materialsHtml = foreach ($m in $materials) {
     $newsLines = foreach ($n in ($m.news | Select-Object -First 3)) {
-        "<div style='font-size:12px;color:#52514e;margin-top:3px;'>· <a href='$($n.link)' style='color:#2a78d6;text-decoration:none;'>$($n.title)</a></div>"
+        # Outlet and date were already fetched but thrown away here, leaving three unattributed
+        # blue lines - knowing who ran it and when is most of what makes a headline worth trusting.
+        $meta = (@($n.source, $n.date) | Where-Object { $_ }) -join " · "
+        $metaHtml = if ($meta) { "<div style='font-size:11px;color:#898781;margin-top:1px;'>$meta</div>" } else { "" }
+        @"
+<div style="margin-top:7px;">
+      <a href="$($n.link)" style="font-size:12.5px;color:#2a78d6;text-decoration:none;line-height:1.45;">$($n.title)</a>
+      $metaHtml
+    </div>
+"@
     }
     @"
 <tr>
-  <td style="padding:10px 12px;border-bottom:1px solid #e1e0d9;">
-    <div style="font-weight:600;font-size:13px;color:#0b0b0b;">$($m.displayName)</div>
+  <td style="padding:14px 16px;border-bottom:1px solid #e1e0d9;">
+    <div style="font-weight:700;font-size:13.5px;color:#0b0b0b;">$($m.displayName)</div>
     $($newsLines -join "")
   </td>
 </tr>
+"@
+}
+
+function Get-EmailSection {
+    # The digest used to be one undivided table running weather straight into prices and then
+    # into news, so nothing signalled where one kind of information stopped.
+    param($title, $rowsHtml)
+    if (-not $rowsHtml -or $rowsHtml.Trim() -eq "") { return "" }
+    @"
+<div style="margin:22px 0 7px;font-size:11.5px;font-weight:700;color:#6e6c66;letter-spacing:0.6px;">$title</div>
+  <table style="width:100%;border-collapse:collapse;background:#ffffff;border:1px solid #e1e0d9;">
+    $rowsHtml
+  </table>
 "@
 }
 
@@ -1009,12 +1204,9 @@ $emailHtml = @"
   </div>
   $holidayHtml
   $typhoonHtml
-  <table style="width:100%;border-collapse:collapse;background:#ffffff;border:1px solid #e1e0d9;border-radius:8px;">
-    $($weatherRowsHtml -join "`n")
-    $scfiHtml
-    $($priceRowsHtml -join "`n")
-    $($materialsHtml -join "`n")
-  </table>
+  $(Get-EmailSection "날씨 · 온습도" ($weatherRowsHtml -join "`n"))
+  $(Get-EmailSection "원자재 · 물류 가격" ($scfiHtml + "`n" + ($priceRowsHtml -join "`n")))
+  $(Get-EmailSection "수급 뉴스" ($materialsHtml -join "`n"))
   <div style="margin-top:16px;font-size:11px;color:#898781;line-height:1.6;">
     날씨: Open-Meteo · 공휴일: Nager.Date · 태풍: GDACS · 유가/목재: Yahoo Finance · KCl: World Bank · 운임지수: Shanghai Shipping Exchange · 뉴스: Google 뉴스. 업무 참고용 요약입니다.<br>
     자세한 내용은 <a href="$dashboardUrl" style="color:#2a78d6;">대시보드</a>에서 확인하세요.
