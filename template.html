@@ -19,6 +19,13 @@
     --accent-wash:     rgba(42,120,214,0.08);
     --good:            #006300;
     --bad:             #b3221f;
+    /* Advisory chips used to hardcode #a15c00 and reach for an undefined --bad-wash, so the
+       one thing on the page that has to be read in a hurry - 폭염경보, 한파주의보, 직접/항로 -
+       kept its light-mode brown into dark mode and landed around 2.7:1 against its own chip.
+       Both tones are tokens now so each theme can state its own readable pair. */
+    --warn:            #a15c00;
+    --warn-wash:       rgba(177,124,0,0.14);
+    --bad-wash:        rgba(179,34,31,0.12);
   }
   @media (prefers-color-scheme: dark) {
     .viz-root {
@@ -35,6 +42,9 @@
       --accent-wash:     rgba(57,135,229,0.14);
       --good:            #0ca30c;
       --bad:             #e66767;
+      --warn:            #e8a33d;
+      --warn-wash:       rgba(232,163,61,0.16);
+      --bad-wash:        rgba(230,103,103,0.16);
     }
   }
   :root[data-theme="dark"] .viz-root {
@@ -44,6 +54,7 @@
     --gridline: #2c2c2a; --border: rgba(255,255,255,0.10);
     --accent: #3987e5; --accent-wash: rgba(57,135,229,0.14);
     --good: #0ca30c; --bad: #e66767;
+    --warn: #e8a33d; --warn-wash: rgba(232,163,61,0.16); --bad-wash: rgba(230,103,103,0.16);
   }
   :root[data-theme="light"] .viz-root {
     color-scheme: light;
@@ -52,6 +63,7 @@
     --gridline: #e1e0d9; --border: rgba(11,11,11,0.10);
     --accent: #2a78d6; --accent-wash: rgba(42,120,214,0.08);
     --good: #006300; --bad: #b3221f;
+    --warn: #a15c00; --warn-wash: rgba(177,124,0,0.14); --bad-wash: rgba(179,34,31,0.12);
   }
 
   .viz-root {
@@ -150,17 +162,20 @@
   }
   .week-day .wd-max { font-size: 11.5px; font-weight: 700; color: var(--ink-primary); }
   .week-day .wd-min { font-size: 10.5px; color: var(--ink-muted); }
-  .week-day .wd-rain { font-size: 9.5px; color: var(--accent); white-space: nowrap; }
+  /* Colouring every day accent-blue meant a 3% chance looked exactly as urgent as 96%, so the
+     strip read as "rain all week" at a glance. Only a plannable chance gets the accent. */
+  .week-day .wd-rain { font-size: 10px; color: var(--ink-muted); white-space: nowrap; }
+  .week-day .wd-rain.likely { color: var(--accent); font-weight: 700; }
   .week-day .wd-adv { width: 13px; height: 13px; border-radius: 50%; font-size: 8.5px; line-height: 13px; }
-  .week-day .wd-adv.warn { background: rgba(177,124,0,0.18); color: #a15c00; }
-  .week-day .wd-adv.danger { background: var(--bad-wash, rgba(179,34,31,0.16)); color: var(--bad); }
+  .week-day .wd-adv.warn { background: var(--warn-wash); color: var(--warn); }
+  .week-day .wd-adv.danger { background: var(--bad-wash); color: var(--bad); }
 
   .advisory-badge {
     display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 5px;
     margin-top: 6px; margin-right: 4px;
   }
-  .advisory-badge.warn { background: rgba(177,124,0,0.12); color: #a15c00; }
-  .advisory-badge.danger { background: var(--bad-wash, rgba(179,34,31,0.12)); color: var(--bad); }
+  .advisory-badge.warn { background: var(--warn-wash); color: var(--warn); }
+  .advisory-badge.danger { background: var(--bad-wash); color: var(--bad); }
 
   .typhoon-card {
     border-radius: 12px; padding: 16px 20px; border: 1px solid var(--border);
@@ -182,8 +197,8 @@
     display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px;
     border-radius: 4px; margin-right: 4px; vertical-align: 1px;
   }
-  .typhoon-row .imp.direct { background: var(--bad-wash, rgba(179,34,31,0.14)); color: var(--bad); }
-  .typhoon-row .imp.route { background: rgba(177,124,0,0.15); color: #a15c00; }
+  .typhoon-row .imp.direct { background: var(--bad-wash); color: var(--bad); }
+  .typhoon-row .imp.route { background: var(--warn-wash); color: var(--warn); }
   .past-label {
     font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink-muted);
     text-transform: uppercase; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--gridline);
@@ -280,7 +295,8 @@
   .m-note { font-size: 11.5px; color: var(--ink-muted); margin-top: 12px; line-height: 1.6; }
   .news-caveat { font-size: 10.5px; color: var(--ink-muted); margin-bottom: 8px; font-style: italic; }
 
-  /* SCFI has no free historical series, so it renders as a stat tile rather than a chart */
+  /* SCFI ships only this week and last, so it starts as a stat tile and switches to a chart
+     once data-history.json has accumulated enough weeks to plot. */
   .stat-tile .stat-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
   .stat-tile .sv { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .stat-tile .sc { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -490,7 +506,7 @@ if (!WEATHER || WEATHER.length === 0) {
           <span class="wd-max">${d.maxC}°</span>
           <div class="wd-bar-track"><div class="wd-bar" style="top:${topPct.toFixed(1)}%;bottom:${botPct.toFixed(1)}%"></div></div>
           <span class="wd-min">${d.minC}°</span>
-          <span class="wd-rain">💧${d.chanceOfRain}%</span>
+          <span class="wd-rain${d.chanceOfRain >= 60 ? " likely" : ""}">💧${d.chanceOfRain}%</span>
           ${advDot}
         </div>`;
     }).join("");
