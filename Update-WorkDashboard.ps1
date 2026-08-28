@@ -15,6 +15,20 @@ $headers = @{ "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb
 
 $config = Get-Content -Path (Join-Path $root "config.json") -Raw -Encoding UTF8 | ConvertFrom-Json
 
+# ConvertFrom-Json on pwsh 7 (the Linux Actions runner) turns a full ISO timestamp like
+# "2026-07-04T18:00:00" into a [DateTime], while Windows PowerShell 5.1 leaves it a [string] -
+# so calling .Substring() on it works locally and crashes in CI. Date-only strings such as
+# "2026-08-28" stay strings on both. Normalize before formatting rather than assuming either.
+function Format-DateOnly {
+    param($value)
+    if ($null -eq $value) { return "" }
+    if ($value -is [DateTime]) { return $value.ToString("yyyy-MM-dd") }
+    if ($value -is [DateTimeOffset]) { return $value.ToString("yyyy-MM-dd") }
+    $s = [string]$value
+    if ($s.Length -ge 10) { return $s.Substring(0, 10) }
+    return $s
+}
+
 # --- Weather ------------------------------------------------------------------------
 # Switched from wttr.in to Open-Meteo: free, no key, and (unlike wttr.in's free tier, which
 # caps at 3 days) supports a real week-ahead forecast in one call. Codes are WMO weather codes
@@ -71,7 +85,7 @@ function Get-WeatherSnapshot {
             $maxC = [int][math]::Round($daily.temperature_2m_max[$i])
             $minC = [int][math]::Round($daily.temperature_2m_min[$i])
             [PSCustomObject]@{
-                date         = $daily.time[$i]
+                date         = Format-DateOnly $daily.time[$i]
                 maxC         = $maxC
                 minC         = $minC
                 desc         = Get-WeatherDescKo $daily.weathercode[$i]
@@ -259,7 +273,12 @@ function Get-TyphoonWatch {
             Sort-Object { [DateTime]$_.toDate } -Descending | Select-Object -First 3 |
             ForEach-Object {
                 $daysAgo = [math]::Round(($today - [DateTime]$_.toDate).TotalDays)
-                $_ | Add-Member -NotePropertyName daysAgo -NotePropertyValue $daysAgo -PassThru
+                $_ | Add-Member -NotePropertyName daysAgo -NotePropertyValue $daysAgo -Force
+                # normalize so both the email and the page get a plain yyyy-MM-dd regardless
+                # of whether this came back as a string or a DateTime
+                $_.toDate = Format-DateOnly $_.toDate
+                $_.fromDate = Format-DateOnly $_.fromDate
+                $_
             })
 
         [PSCustomObject]@{
@@ -430,8 +449,8 @@ function Get-ScfiIndex {
             previous    = [math]::Round([double]$comp.lastContent, 1)
             change      = [math]::Round([double]$comp.absolute, 1)
             changePct   = [math]::Round([double]$comp.percentage, 2)
-            currentDate = $data.currentDate
-            lastDate    = $data.lastDate
+            currentDate = Format-DateOnly $data.currentDate
+            lastDate    = Format-DateOnly $data.lastDate
             note        = "상하이 → 세계 주요 13개 항로 수출 컨테이너 운임"
             source      = "Shanghai Shipping Exchange"
         }
@@ -686,7 +705,9 @@ $weatherRowsHtml = foreach ($w in $weather) {
     $curAdvisoryHtml = Get-AdvisoryHtml $w.advisories
     $daysHtml = foreach ($d in $w.days) {
         $dAdvisoryHtml = Get-AdvisoryHtml $d.advisories
-        "<div style='margin-top:2px;'><span style='display:inline-block;margin-right:10px;'>$($d.date.Substring(5)) $($d.desc) $($d.minC)°/$($d.maxC)°C · 강수확률 $($d.chanceOfRain)%</span>$dAdvisoryHtml</div>"
+        $md = (Format-DateOnly $d.date)
+        if ($md.Length -ge 10) { $md = $md.Substring(5) }
+        "<div style='margin-top:2px;'><span style='display:inline-block;margin-right:10px;'>$md $($d.desc) $($d.minC)°/$($d.maxC)°C · 강수확률 $($d.chanceOfRain)%</span>$dAdvisoryHtml</div>"
     }
     @"
 <tr>
@@ -714,7 +735,7 @@ if ($holiday) {
 $typhoonHtml = ""
 if ($typhoon) {
     $pastRows = foreach ($t in $typhoon.past) {
-        "<div style='margin-top:4px;font-size:12px;color:#6e6c66;'>$($t.name) · $($t.toDate.Substring(0,10)) 소멸 (D+$($t.daysAgo)) · $($t.nearestHub) 인근</div>"
+        "<div style='margin-top:4px;font-size:12px;color:#6e6c66;'>$($t.name) · $(Format-DateOnly $t.toDate) 소멸 (D+$($t.daysAgo)) · $($t.nearestHub) 인근</div>"
     }
     $pastBlockHtml = if ($pastRows) {
         "<div style='margin-top:8px;font-size:11px;color:#898781;'>최근 발생 이력 (다음 시기 가늠용)</div>" + ($pastRows -join "")
