@@ -607,6 +607,70 @@ function Get-YahooSeries {
     }
 }
 
+# --- PP / PE resin futures (Dalian Commodity Exchange, via Sina) ---------------------------
+# The README long listed PP/PE as unavailable: the Pink Sheet has no plastics column (checked -
+# 89 commodities, none), data.go.kr's petrochemical API is key-gated, SunSirs sits behind a
+# bot check, and FRED's resin PPI series answer empty. DCE is where Asian resin actually
+# trades, and Sina's daily K-line endpoint serves it keyless as dated JSON going back to 2007.
+#
+# Read it as a direction indicator, not as a quote: this is a Chinese onshore futures price in
+# CNY/t inclusive of VAT, not a Korean CFR purchase price. Northeast Asian resin moves together
+# closely enough that the trend is the useful part, which is why the card says so on its face.
+function Get-DceResinSeries {
+    param($cfg, $years = 2, $everyNth = 5)
+
+    try {
+        $uri = "https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_k=/InnerFuturesNewService.getDailyKLine?symbol=$([uri]::EscapeDataString($cfg.Symbol))"
+        # Sina rejects the request without a matching Referer, and answers GBK for the quote
+        # endpoint - this K-line one is plain ASCII JSON, which is the other reason to prefer it.
+        $resinHeaders = $headers.Clone()
+        $resinHeaders["Referer"] = "https://finance.sina.com.cn"
+        $resp = Invoke-WebRequest -Uri $uri -Headers $resinHeaders -UseBasicParsing -TimeoutSec 45
+
+        # Payload is a JSONP wrapper with an anti-hotlink <script> comment in front of it, so
+        # slice to the array rather than trying to strip a fixed prefix.
+        $content = $resp.Content
+        $start = $content.IndexOf('[')
+        $end = $content.LastIndexOf(']')
+        if ($start -lt 0 -or $end -le $start) { throw "K-line array not found in response" }
+        # Assign before wrapping: Windows PowerShell's ConvertFrom-Json emits a JSON array as one
+        # pipeline object, so @(... | ConvertFrom-Json) yields a 1-element array holding the whole
+        # array rather than the rows. @() on an already-assigned array is the no-op we want.
+        $parsed = ConvertFrom-Json ($content.Substring($start, $end - $start + 1))
+        $rows = @($parsed)
+        if ($rows.Count -eq 0) { throw "no rows returned" }
+
+        # yyyy-MM-dd sorts lexicographically, so a string compare is exact here and avoids
+        # per-row DateTime parsing across ~3,000 rows.
+        $cutoff = (Get-Date).AddYears(-$years).ToString("yyyy-MM-dd")
+        $recent = @($rows | Where-Object { $_.d -ge $cutoff })
+        if ($recent.Count -eq 0) { throw "no rows inside the $years-year window" }
+
+        # Every 5th trading day ~= weekly, matching the 1wk/2y shape the Yahoo cards already use
+        # so the charts sit side by side at the same density.
+        $sampled = @(for ($i = 0; $i -lt $recent.Count; $i += $everyNth) { $recent[$i] })
+        if ($sampled[-1].d -ne $recent[-1].d) { $sampled += $recent[-1] }  # always keep the latest close
+
+        $points = foreach ($r in $sampled) {
+            [PSCustomObject]@{ label = $r.d; value = [math]::Round([double]$r.c, 0) }
+        }
+
+        [PSCustomObject]@{
+            id          = $cfg.Id
+            displayName = $cfg.DisplayName
+            unit        = $cfg.Unit
+            note        = $cfg.Note
+            source      = "대련상품거래소(DCE) · Sina"
+            currency    = $cfg.Currency
+            points      = @($points)
+            newsQuery   = $cfg.NewsQuery
+        }
+    } catch {
+        Write-Warning "DCE resin fetch failed for '$($cfg.Symbol)': $($_.Exception.Message)"
+        $null
+    }
+}
+
 # --- SCFI (Shanghai Containerized Freight Index) ------------------------------------------
 # The AJAX endpoint behind SSE's own public SCFI page. Their historical-series endpoint
 # (/singleIndex/scfi) requires a subscriber login, so only the current and prior week are
@@ -794,6 +858,14 @@ $yahooSeries = @(foreach ($cfg in $config.yahooSeries) {
 })
 $yahooSeries = @($yahooSeries | Where-Object { $_ })
 
+Write-Host "Fetching DCE resin futures (PP/PE)..."
+$resinSeries = @(foreach ($cfg in $config.dceSeries) {
+    Write-Host "  - $($cfg.DisplayName)"
+    Get-DceResinSeries $cfg
+    Start-Sleep -Milliseconds 400
+})
+$resinSeries = @($resinSeries | Where-Object { $_ })
+
 Write-Host "Fetching SCFI..."
 $scfi = Get-ScfiIndex
 
@@ -828,6 +900,9 @@ $priceCards = @()
 # unless it is named here too.
 $priceCards += @($yahooSeries | Where-Object { $_.id -eq "usdkrw" })
 $priceCards += @($yahooSeries | Where-Object { $_.id -eq "wti" -or $_.id -eq "brent" })
+# Resin sits next to crude deliberately: PP/PE are naphtha derivatives, so the oil cards above
+# are the upstream half of the same story the film and strapping prices below tell.
+$priceCards += @($resinSeries)
 $priceCards += @($fuel)
 $priceCards += @($yahooSeries | Where-Object { $_.id -eq "lumber" })
 if ($kcl) { $priceCards += $kcl }

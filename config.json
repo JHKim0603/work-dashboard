@@ -50,6 +50,26 @@
       "NewsQuery": "미국 목재 가격 제재목 선물"
     }
   ],
+  "dceSeries": [
+    {
+      "Id": "pp",
+      "Symbol": "PP0",
+      "DisplayName": "폴리프로필렌 (PP)",
+      "Unit": "위안/톤",
+      "Currency": "¥",
+      "Note": "DCE 주력연속 · PP밴드·PP마대 원료 · 중국 내수 선물가(부가세 포함), 국내 조달가와는 방향성 참고",
+      "NewsQuery": "폴리프로필렌 PP 가격"
+    },
+    {
+      "Id": "pe",
+      "Symbol": "L0",
+      "DisplayName": "폴리에틸렌 (LLDPE)",
+      "Unit": "위안/톤",
+      "Currency": "¥",
+      "Note": "DCE 주력연속 · 스트레치필름·폴리백·에어캡 원료 · 중국 내수 선물가(부가세 포함), 방향성 참고",
+      "NewsQuery": "폴리에틸렌 PE 가격 수급"
+    }
+  ],
   "priceNewsQueries": {
     "kcl": "염화칼륨 가격",
     "scfi": "컨테이너 운임 해상운임 SCFI",
