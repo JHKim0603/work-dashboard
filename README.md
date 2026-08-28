@@ -8,9 +8,15 @@ workflow.
 
 ## What's on it
 
-1. **날씨 / 온습도** — 울산 남구 + 베트남 거점(하노이/호치민/붕따우) 현재 기온·습도·체감온도, 3일 예보
+1. **날씨 / 온습도** — 울산 남구 현재 기온·습도·체감온도, 3일 예보(강수확률 포함). 체감/최고기온이
+   기상청 특보 기준(단순화)을 넘으면 "폭염주의보/경보" 멘트가, 최저기온이 기준 이하면
+   "한파주의보/경보" 멘트가 자동으로 붙습니다.
 2. **공휴일 · 연휴** — 오늘 이후 가장 빠른 한국 공휴일 연휴 구간(주말과 이어진 실제 연휴 블록), D-day, 이후 공휴일 목록
-3. **원자재 수급** — PP/PE 가격·수급, 국내 목재 수급(수종별) 관련 최신 뉴스 헤드라인
+3. **베트남 태풍 감시** — 베트남에서 들어오는 부자재 입고 일정이 태풍으로 지연되는 걸 미리 파악하기
+   위한 섹션. 일별 날씨 대신, 하노이/호치민 두 거점 기준으로 GDACS가 추적하는 열대저기압 중
+   베트남 관련(국가 목록에 포함되거나 두 거점 800km 이내)인 것만 걸러서 보여줍니다. 활성 태풍이
+   있으면 경고, 없으면 최근 10일 내 소멸한 태풍(여파 참고용) 또는 "영향 없음"을 표시합니다.
+4. **원자재 수급** — PP/PE 가격·수급, 국내 목재 수급(수종별) 관련 최신 뉴스 헤드라인
 
 ## Files
 
@@ -38,6 +44,13 @@ powershell -ExecutionPolicy Bypass -File Update-WorkDashboard.ps1
 Edit `config.json` → `weatherLocations`. Each entry needs `Id`, `DisplayName`, `Country`, `Lat`,
 `Lon`. Coordinates only need to be roughly right — wttr.in resolves to the nearest weather
 station.
+
+### Changing the typhoon-watch hubs
+
+Edit `config.json` → `typhoonWatchHubs` (currently 하노이/호치민). A GDACS tropical cyclone is
+shown if it either lists Vietnam among its affected countries, or its current/last position is
+within 800km of any hub — adjust that radius in `Get-TyphoonWatch` in
+`Update-WorkDashboard.ps1` if it's too wide/narrow.
 
 ### Changing material search queries
 

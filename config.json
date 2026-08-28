@@ -1,9 +1,10 @@
 {
   "weatherLocations": [
-    { "Id": "ulsan-namgu", "DisplayName": "울산 남구", "Country": "KR", "Lat": 35.5433, "Lon": 129.3300 },
-    { "Id": "hanoi", "DisplayName": "하노이", "Country": "VN", "Lat": 21.0278, "Lon": 105.8342 },
-    { "Id": "hcmc", "DisplayName": "호치민", "Country": "VN", "Lat": 10.8231, "Lon": 106.6297 },
-    { "Id": "vungtau", "DisplayName": "붕따우", "Country": "VN", "Lat": 10.3460, "Lon": 107.0843 }
+    { "Id": "ulsan-namgu", "DisplayName": "울산 남구", "Country": "KR", "Lat": 35.5433, "Lon": 129.3300 }
+  ],
+  "typhoonWatchHubs": [
+    { "Id": "hanoi", "DisplayName": "하노이", "Lat": 21.0278, "Lon": 105.8342 },
+    { "Id": "hcmc", "DisplayName": "호치민", "Lat": 10.8231, "Lon": 106.6297 }
   ],
   "materials": [
     {
