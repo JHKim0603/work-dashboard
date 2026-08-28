@@ -1,9 +1,9 @@
 ﻿<#
   Update-WorkDashboard.ps1
-  Fetches weather + heat/cold advisories (wttr.in), the nearest upcoming Korean holiday block
-  (Nager.Date), Vietnam-area typhoon activity relative to the 하노이/호치민 hubs (GDACS), and
-  commodity/material news headlines (Google News RSS) listed in config.json, then regenerates
-  dashboard.html.
+  Fetches a 7-day forecast + heat/cold advisories (Open-Meteo), the nearest upcoming Korean
+  holiday block (Nager.Date), Vietnam-area typhoon activity and history relative to the
+  하노이/호치민 hubs (GDACS), KCl monthly prices (World Bank Pink Sheet), and commodity/material
+  news headlines (Google News RSS) listed in config.json, then regenerates dashboard.html.
   Run manually by double-clicking run.bat, or right-click > Run with PowerShell.
 #>
 
@@ -14,23 +14,20 @@ $headers = @{ "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb
 $config = Get-Content -Path (Join-Path $root "config.json") -Raw -Encoding UTF8 | ConvertFrom-Json
 
 # --- Weather ------------------------------------------------------------------------
-# wttr.in's own `lang=ko` translation table is inconsistent (falls back to English for
-# many phrases), so weather codes are mapped to Korean here instead - the codes themselves
-# (from World Weather Online) are stable regardless of language.
+# Switched from wttr.in to Open-Meteo: free, no key, and (unlike wttr.in's free tier, which
+# caps at 3 days) supports a real week-ahead forecast in one call. Codes are WMO weather codes
+# (0-99), a much smaller fixed set than wttr.in's WWO codes.
 $weatherCodeKo = @{
-    "113" = "맑음"; "116" = "부분 흐림"; "119" = "흐림"; "122" = "매우 흐림"
-    "143" = "안개"; "176" = "약한 비 가능"; "179" = "약한 눈 가능"; "182" = "진눈깨비 가능"
-    "185" = "약한 착빙성 이슬비 가능"; "200" = "뇌우 가능"; "227" = "눈날림"; "230" = "눈보라"
-    "248" = "안개"; "260" = "착빙 안개"; "263" = "약한 이슬비"; "266" = "이슬비"
-    "281" = "착빙성 이슬비"; "284" = "강한 착빙성 이슬비"; "293" = "약한 비"; "296" = "약한 비"
-    "299" = "간헐적 보통 비"; "302" = "보통 비"; "305" = "간헐적 강한 비"; "308" = "강한 비"
-    "311" = "약한 착빙성 비"; "314" = "보통·강한 착빙성 비"; "317" = "약한 진눈깨비"
-    "320" = "보통·강한 진눈깨비"; "323" = "약한 눈"; "326" = "약한 눈"; "329" = "약한·보통 눈"
-    "332" = "보통 눈"; "335" = "강한 눈 가능"; "338" = "강한 눈"; "350" = "우박"
-    "353" = "약한 소나기"; "356" = "보통·강한 소나기"; "359" = "폭우"; "362" = "약한 진눈깨비 소나기"
-    "365" = "보통·강한 진눈깨비 소나기"; "368" = "약한 눈 소나기"; "371" = "보통·강한 눈 소나기"
-    "374" = "약한 우박 소나기"; "377" = "보통·강한 우박 소나기"; "386" = "약한 비+뇌우"
-    "389" = "보통·강한 비+뇌우"; "392" = "약한 눈+뇌우"; "395" = "보통·강한 눈+뇌우"
+    "0" = "맑음"; "1" = "대체로 맑음"; "2" = "부분 흐림"; "3" = "흐림"
+    "45" = "안개"; "48" = "착빙 안개"
+    "51" = "약한 이슬비"; "53" = "이슬비"; "55" = "강한 이슬비"
+    "56" = "약한 착빙성 이슬비"; "57" = "강한 착빙성 이슬비"
+    "61" = "약한 비"; "63" = "보통 비"; "65" = "강한 비"
+    "66" = "약한 착빙성 비"; "67" = "강한 착빙성 비"
+    "71" = "약한 눈"; "73" = "보통 눈"; "75" = "강한 눈"; "77" = "싸락눈"
+    "80" = "약한 소나기"; "81" = "보통 소나기"; "82" = "강한 소나기"
+    "85" = "약한 눈 소나기"; "86" = "강한 눈 소나기"
+    "95" = "뇌우"; "96" = "우박 동반 뇌우"; "99" = "강한 우박 동반 뇌우"
 }
 
 function Get-WeatherDescKo {
@@ -59,26 +56,24 @@ function Get-TempAdvisories {
 function Get-WeatherSnapshot {
     param($loc)
 
-    $uri = "https://wttr.in/$($loc.Lat),$($loc.Lon)?format=j1"
+    $uri = "https://api.open-meteo.com/v1/forecast?latitude=$($loc.Lat)&longitude=$($loc.Lon)" +
+           "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode" +
+           "&current=temperature_2m,relative_humidity_2m,apparent_temperature,weathercode" +
+           "&timezone=Asia%2FSeoul&forecast_days=7"
     try {
         $resp = Invoke-RestMethod -Uri $uri -Headers $headers
-        $cur = $resp.current_condition[0]
+        $cur = $resp.current
+        $daily = $resp.daily
 
-        $days = @(foreach ($d in ($resp.weather | Select-Object -First 3)) {
-            # midday (12:00) hourly slot best represents "the day's weather" for the icon/description
-            $midday = $d.hourly | Where-Object { $_.time -eq "1200" } | Select-Object -First 1
-            if (-not $midday) { $midday = $d.hourly[[math]::Floor($d.hourly.Count / 2)] }
-            # max across the day's hourly slots, not just noon - a rain risk at any point in the
-            # working day matters more here than the single midday reading
-            $maxRainChance = ($d.hourly | ForEach-Object { [int]$_.chanceofrain } | Measure-Object -Maximum).Maximum
-            $maxC = [int]$d.maxtempC
-            $minC = [int]$d.mintempC
+        $days = @(for ($i = 0; $i -lt $daily.time.Count; $i++) {
+            $maxC = [int][math]::Round($daily.temperature_2m_max[$i])
+            $minC = [int][math]::Round($daily.temperature_2m_min[$i])
             [PSCustomObject]@{
-                date         = $d.date
+                date         = $daily.time[$i]
                 maxC         = $maxC
                 minC         = $minC
-                desc         = Get-WeatherDescKo $midday.weatherCode
-                chanceOfRain = $maxRainChance
+                desc         = Get-WeatherDescKo $daily.weathercode[$i]
+                chanceOfRain = [int]$daily.precipitation_probability_max[$i]
                 # @(...) at the call site (not just inside the function) matters here - without
                 # it, a function whose output happens to be an empty collection collapses to
                 # $null on capture, and ConvertTo-Json then renders that as {} instead of [],
@@ -87,16 +82,16 @@ function Get-WeatherSnapshot {
             }
         })
 
-        $curAdvisories = @(Get-TempAdvisories -heatRefC ([int]$cur.FeelsLikeC) -minC $null)
+        $curAdvisories = @(Get-TempAdvisories -heatRefC ([int][math]::Round($cur.apparent_temperature)) -minC $null)
 
         [PSCustomObject]@{
             id          = $loc.Id
             displayName = $loc.DisplayName
             country     = $loc.Country
-            tempC       = [int]$cur.temp_C
-            feelsLikeC  = [int]$cur.FeelsLikeC
-            humidity    = [int]$cur.humidity
-            desc        = Get-WeatherDescKo $cur.weatherCode
+            tempC       = [int][math]::Round($cur.temperature_2m)
+            feelsLikeC  = [int][math]::Round($cur.apparent_temperature)
+            humidity    = [int]$cur.relative_humidity_2m
+            desc        = Get-WeatherDescKo $cur.weathercode
             advisories  = $curAdvisories
             days        = $days
         }
@@ -241,17 +236,119 @@ function Get-TyphoonWatch {
         })
 
         $active = @($items | Where-Object { $_.isCurrent } | Sort-Object distanceKm)
-        $recentCutoff = (Get-Date).AddDays(-10)
-        $recent = @($items | Where-Object { -not $_.isCurrent -and $_.toDate -and ([DateTime]$_.toDate) -ge $recentCutoff } |
-            Sort-Object { [DateTime]$_.toDate } -Descending | Select-Object -First 3)
+
+        # Not time-limited (unlike an "active" check) - showing when the last few Vietnam-relevant
+        # typhoons actually happened, regardless of age, is what lets 부자재 shipping schedules be
+        # extrapolated against typhoon-season timing rather than only reacting to a live storm.
+        $today = (Get-Date).Date
+        $past = @($items | Where-Object { -not $_.isCurrent -and $_.toDate } |
+            Sort-Object { [DateTime]$_.toDate } -Descending | Select-Object -First 3 |
+            ForEach-Object {
+                $daysAgo = [math]::Round(($today - [DateTime]$_.toDate).TotalDays)
+                $_ | Add-Member -NotePropertyName daysAgo -NotePropertyValue $daysAgo -PassThru
+            })
 
         [PSCustomObject]@{
             active = $active
-            recent = $recent
+            past   = $past
         }
     } catch {
         Write-Warning "Typhoon watch fetch failed: $($_.Exception.Message)"
         $null
+    }
+}
+
+# --- KCl (염화칼륨/potash) price trend -----------------------------------------------------
+# World Bank's Pink Sheet is the only free, no-key numeric series found for either KCl or
+# PP/PE - data.go.kr has an official petrochemical price API but it needs account signup, and
+# SunSirs (the other PP/PE candidate) sits behind a bot-check challenge that only a real
+# browser can clear, so it's not something a scheduled script can rely on.
+function Get-ZipEntryXml {
+    param($zip, $name)
+    $entry = $zip.Entries | Where-Object { $_.FullName -eq $name }
+    if (-not $entry) { throw "zip entry not found: $name" }
+    $reader = New-Object System.IO.StreamReader($entry.Open())
+    try { [xml]$reader.ReadToEnd() } finally { $reader.Close() }
+}
+
+function Get-KclPriceHistory {
+    param($months = 30)
+
+    $tmpXlsx = [System.IO.Path]::GetTempFileName() + ".xlsx"
+    try {
+        $xlsxUrl = "https://thedocs.worldbank.org/en/doc/74e8be41ceb20fa0da750cda2f6b9e4e-0050012026/related/CMO-Historical-Data-Monthly.xlsx"
+        Invoke-WebRequest -Uri $xlsxUrl -Headers $headers -OutFile $tmpXlsx
+
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($tmpXlsx)
+        try {
+            $wbXml = Get-ZipEntryXml $zip "xl/workbook.xml"
+            $relsXml = Get-ZipEntryXml $zip "xl/_rels/workbook.xml.rels"
+
+            # sheet name -> rId -> zip-internal worksheet filename, resolved dynamically since
+            # the Pink Sheet's own internal sheet ordering isn't guaranteed stable release to release
+            $nsWb = New-Object System.Xml.XmlNamespaceManager($wbXml.NameTable)
+            $nsWb.AddNamespace("s", "http://schemas.openxmlformats.org/spreadsheetml/2006/main")
+            $nsWb.AddNamespace("r", "http://schemas.openxmlformats.org/officeDocument/2006/relationships")
+            $sheetNode = $wbXml.SelectSingleNode("//s:sheet[@name='Monthly Prices']", $nsWb)
+            $rId = $sheetNode.GetAttribute("id", "http://schemas.openxmlformats.org/officeDocument/2006/relationships")
+
+            $nsRels = New-Object System.Xml.XmlNamespaceManager($relsXml.NameTable)
+            $nsRels.AddNamespace("p", "http://schemas.openxmlformats.org/package/2006/relationships")
+            $relNode = $relsXml.SelectSingleNode("//p:Relationship[@Id='$rId']", $nsRels)
+            $target = $relNode.GetAttribute("Target")
+
+            $sheetXml = Get-ZipEntryXml $zip "xl/$target"
+            $sharedXml = Get-ZipEntryXml $zip "xl/sharedStrings.xml"
+            $nsSheet = New-Object System.Xml.XmlNamespaceManager($sheetXml.NameTable)
+            $nsSheet.AddNamespace("s", "http://schemas.openxmlformats.org/spreadsheetml/2006/main")
+
+            # .InnerText (not .t) so both plain <si><t>..</t></si> and rich-text-run
+            # <si><r><t>..</t></r>...</si> shared-string entries resolve the same way
+            $sharedStrings = @($sharedXml.sst.si | ForEach-Object { $_.InnerText })
+
+            # row 5 holds the column titles - find which column is Potassium chloride
+            $headerRow = $sheetXml.SelectSingleNode("//s:row[@r='5']", $nsSheet)
+            $kclCol = $null
+            foreach ($c in @($headerRow.c)) {
+                $colLetters = ($c.r -replace '\d+$', '')
+                $val = if ($c.t -eq "s") { $sharedStrings[[int]$c.v] } else { $c.v }
+                if ($val -eq "Potassium chloride **") { $kclCol = $colLetters; break }
+            }
+            if (-not $kclCol) { throw "Potassium chloride column not found in Pink Sheet" }
+
+            $dataRows = @($sheetXml.SelectNodes("//s:row", $nsSheet) | Where-Object { [int]$_.r -ge 7 })
+            $points = foreach ($row in $dataRows) {
+                $cells = @($row.c)
+                $dateCell = $cells | Where-Object { ($_.r -replace '\d+$', '') -eq "A" } | Select-Object -First 1
+                $valCell  = $cells | Where-Object { ($_.r -replace '\d+$', '') -eq $kclCol } | Select-Object -First 1
+                if (-not $dateCell -or -not $valCell) { continue }
+                $dateLabel = if ($dateCell.t -eq "s") { $sharedStrings[[int]$dateCell.v] } else { $dateCell.v }
+                if (-not $dateLabel -or $dateLabel -notmatch '^\d{4}M\d{2}$') { continue }
+                if ($valCell.t -eq "s") { continue }  # missing-data marker stored as text (e.g. "..")
+                $rawVal = $valCell.v
+                if (-not $rawVal -or $rawVal -notmatch '^-?[\d.]+$') { continue }
+                [PSCustomObject]@{
+                    label = ($dateLabel -replace 'M', '-')
+                    value = [math]::Round([double]$rawVal, 1)
+                }
+            }
+            $points = @($points | Select-Object -Last $months)
+            if ($points.Count -eq 0) { return $null }
+
+            [PSCustomObject]@{
+                unit   = "USD/mt"
+                source = "World Bank Pink Sheet"
+                points = $points
+            }
+        } finally {
+            $zip.Dispose()
+        }
+    } catch {
+        Write-Warning "KCl price fetch failed: $($_.Exception.Message)"
+        $null
+    } finally {
+        Remove-Item $tmpXlsx -ErrorAction SilentlyContinue
     }
 }
 
@@ -323,6 +420,9 @@ $holiday = Get-HolidayBlock -todayKst $nowKst
 Write-Host "Fetching Vietnam typhoon watch..."
 $typhoon = Get-TyphoonWatch -hubs $config.typhoonWatchHubs
 
+Write-Host "Fetching KCl price history..."
+$kcl = Get-KclPriceHistory
+
 Write-Host "Fetching material news..."
 $materials = @(foreach ($mat in $config.materials) {
     Write-Host "  - $($mat.DisplayName)"
@@ -344,11 +444,12 @@ function ConvertTo-JsonOrNull {
 $weatherJson = ConvertTo-Json -InputObject @($weather) -Depth 6
 $holidayJson = ConvertTo-JsonOrNull -InputObject $holiday -Depth 4
 $typhoonJson = ConvertTo-JsonOrNull -InputObject $typhoon -Depth 4
+$kclJson = ConvertTo-JsonOrNull -InputObject $kcl -Depth 4
 $materialsJson = ConvertTo-Json -InputObject @($materials) -Depth 6
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
-$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
+$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__KCL_JSON__", $kclJson).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8
@@ -375,7 +476,7 @@ function Get-AdvisoryHtml {
 
 $weatherRowsHtml = foreach ($w in $weather) {
     $curAdvisoryHtml = Get-AdvisoryHtml $w.advisories
-    $daysHtml = foreach ($d in ($w.days | Select-Object -First 3)) {
+    $daysHtml = foreach ($d in $w.days) {
         $dAdvisoryHtml = Get-AdvisoryHtml $d.advisories
         "<div style='margin-top:2px;'><span style='display:inline-block;margin-right:10px;'>$($d.date.Substring(5)) $($d.desc) $($d.minC)°/$($d.maxC)°C · 강수확률 $($d.chanceOfRain)%</span>$dAdvisoryHtml</div>"
     }
@@ -403,31 +504,76 @@ if ($holiday) {
 }
 
 $typhoonHtml = ""
-if ($typhoon -and $typhoon.active.Count -gt 0) {
-    $rows = foreach ($t in $typhoon.active) {
-        "<div style='margin-top:6px;'><b>$($t.name)</b> ($($t.alertLevel)) · $($t.nearestHub)까지 약 $($t.distanceKm)km · $($t.severityText)</div>"
+if ($typhoon) {
+    $pastRows = foreach ($t in $typhoon.past) {
+        "<div style='margin-top:4px;font-size:12px;color:#6e6c66;'>$($t.name) · $($t.toDate.Substring(0,10)) 소멸 (D+$($t.daysAgo)) · $($t.nearestHub) 인근</div>"
     }
-    $typhoonHtml = @"
+    $pastBlockHtml = if ($pastRows) {
+        "<div style='margin-top:8px;font-size:11px;color:#898781;'>최근 발생 이력 (다음 시기 가늠용)</div>" + ($pastRows -join "")
+    } else { "" }
+
+    if ($typhoon.active.Count -gt 0) {
+        $activeRows = foreach ($t in $typhoon.active) {
+            "<div style='margin-top:6px;'><b>$($t.name)</b> ($($t.alertLevel)) · $($t.nearestHub)까지 약 $($t.distanceKm)km · $($t.severityText)</div>"
+        }
+        $typhoonHtml = @"
 <div style="margin:16px 0;padding:12px 14px;background:#fdeeee;border:1px solid #f3caca;border-radius:8px;">
   <div style="font-weight:650;font-size:13px;color:#b3221f;">⚠ 베트남 인근 태풍 활동 중 - 부자재 입고 지연 가능성 주의</div>
-  $($rows -join "")
+  $($activeRows -join "")
+  $pastBlockHtml
 </div>
 "@
-} elseif ($typhoon -and $typhoon.recent.Count -gt 0) {
-    $rows = foreach ($t in $typhoon.recent) {
-        "<div style='margin-top:6px;'>$($t.name) · $($t.toDate.Substring(0,10)) 소멸 · $($t.nearestHub) 인근</div>"
-    }
-    $typhoonHtml = @"
+    } elseif ($pastRows) {
+        $typhoonHtml = @"
 <div style="margin:16px 0;padding:12px 14px;background:#f5f4f0;border:1px solid #e1e0d9;border-radius:8px;">
-  <div style="font-weight:650;font-size:13px;color:#0b0b0b;">베트남 인근 활성 태풍 없음 · 최근 소멸된 태풍 (여파 참고)</div>
-  $($rows -join "")
+  <div style="font-weight:650;font-size:13px;color:#0b0b0b;">베트남 인근 활성 태풍 없음</div>
+  $pastBlockHtml
 </div>
 "@
-} elseif ($typhoon) {
-    $typhoonHtml = @"
+    } else {
+        $typhoonHtml = @"
 <div style="margin:16px 0;padding:12px 14px;background:#f5f4f0;border:1px solid #e1e0d9;border-radius:8px;">
   <div style="font-size:13px;color:#0b0b0b;">베트남 인근 태풍 활동 없음 · 부자재 입고 일정 영향 없음</div>
 </div>
+"@
+    }
+}
+
+function Get-Sparkline {
+    # Email clients can't reliably render inline SVG/canvas, but a plain-text sparkline made of
+    # Unicode block characters works everywhere - the same trick used by CLI tools.
+    param($values)
+    $blocks = [char[]]"▁▂▃▄▅▆▇█"
+    $min = ($values | Measure-Object -Minimum).Minimum
+    $max = ($values | Measure-Object -Maximum).Maximum
+    $range = $max - $min
+    -join ($values | ForEach-Object {
+        $idx = if ($range -eq 0) { 0 } else { [math]::Floor((($_ - $min) / $range) * ($blocks.Count - 1)) }
+        $blocks[[int]$idx]
+    })
+}
+
+$kclHtml = ""
+if ($kcl -and $kcl.points.Count -gt 0) {
+    $pts = $kcl.points
+    $latest = $pts[-1]
+    $prior = if ($pts.Count -gt 1) { $pts[-2] } else { $null }
+    $changeText = if ($prior) {
+        $diff = $latest.value - $prior.value
+        $sign = if ($diff -ge 0) { "+" } else { "" }
+        $color = if ($diff -ge 0) { "#b3221f" } else { "#0a6b0a" }
+        "<span style='color:$color;font-weight:600;'>$sign$([math]::Round($diff,1)) (전월비)</span>"
+    } else { "" }
+    $spark = Get-Sparkline ($pts | ForEach-Object { $_.value })
+    $kclHtml = @"
+<tr>
+  <td style="padding:10px 12px;border-bottom:1px solid #e1e0d9;">
+    <div style="font-weight:600;font-size:13px;color:#0b0b0b;">KCl (염화칼륨) 국제가격</div>
+    <div style="font-size:12px;color:#52514e;margin-top:3px;">$($latest.label) 기준 <b>`$$($latest.value)/mt</b> $changeText</div>
+    <div style="font-size:16px;letter-spacing:1px;margin-top:4px;color:#2a78d6;">$spark</div>
+    <div style="font-size:11px;color:#898781;margin-top:2px;">최근 $($pts.Count)개월, World Bank Pink Sheet</div>
+  </td>
+</tr>
 "@
 }
 
@@ -460,10 +606,11 @@ $emailHtml = @"
   $typhoonHtml
   <table style="width:100%;border-collapse:collapse;background:#ffffff;border:1px solid #e1e0d9;border-radius:8px;">
     $($weatherRowsHtml -join "`n")
+    $kclHtml
     $($materialsHtml -join "`n")
   </table>
   <div style="margin-top:16px;font-size:11px;color:#898781;line-height:1.6;">
-    날씨 출처: wttr.in. 공휴일 출처: Nager.Date. 태풍 정보 출처: GDACS. 원자재 뉴스 출처: Google 뉴스. 업무 참고용 요약입니다.<br>
+    날씨 출처: Open-Meteo. 공휴일 출처: Nager.Date. 태풍 정보 출처: GDACS. KCl 가격 출처: World Bank. 원자재 뉴스 출처: Google 뉴스. 업무 참고용 요약입니다.<br>
     자세한 내용은 <a href="$dashboardUrl" style="color:#2a78d6;">대시보드</a>에서 확인하세요.
   </div>
 </div>

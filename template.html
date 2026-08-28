@@ -71,7 +71,13 @@
   .topbar h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; letter-spacing: -0.01em; }
   .topbar .sub { font-size: 13px; color: var(--ink-muted); }
 
-  .wrap { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  .wrap { max-width: 1480px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+
+  /* 날씨 / 공휴일 / 태풍 sit side by side on wide screens, stack on narrow ones */
+  .top-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: start; }
+  @media (max-width: 980px) {
+    .top-row { grid-template-columns: 1fr; }
+  }
 
   .section-title {
     font-size: 14px; font-weight: 650; color: var(--ink-secondary);
@@ -79,6 +85,9 @@
   }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  /* weather cards hold a 7-day horizontal strip, which needs real width to stay legible -
+     one wide card per location instead of a multi-column tile grid */
+  #weatherGrid.grid { grid-template-columns: 1fr; }
 
   .card {
     background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px;
@@ -92,13 +101,30 @@
   .weather-now .desc { font-size: 13px; color: var(--ink-secondary); }
   .weather-meta { font-size: 12px; color: var(--ink-muted); margin-bottom: 12px; }
 
-  .forecast-row { padding: 6px 0; border-top: 1px solid var(--gridline); }
-  .forecast-row:first-of-type { border-top: none; }
-  .forecast-row .row1 { display: flex; justify-content: space-between; font-size: 12px; }
-  .forecast-row .d { color: var(--ink-muted); width: 64px; }
-  .forecast-row .desc2 { color: var(--ink-secondary); flex: 1; text-align: left; padding-left: 6px; }
-  .forecast-row .rain { color: var(--accent); font-size: 11.5px; white-space: nowrap; padding: 0 8px; }
-  .forecast-row .range { color: var(--ink-primary); font-weight: 600; white-space: nowrap; }
+  .week-strip {
+    display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px;
+    margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--gridline);
+  }
+  .week-day {
+    display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center;
+    cursor: default;
+  }
+  .week-day .wd-label { font-size: 10.5px; color: var(--ink-muted); font-weight: 600; white-space: nowrap; }
+  .week-day .wd-label.today { color: var(--accent); }
+  .week-day .wd-icon { font-size: 15px; line-height: 1; }
+  .wd-bar-track {
+    position: relative; width: 7px; height: 52px; background: var(--gridline); border-radius: 4px;
+  }
+  .wd-bar {
+    position: absolute; left: 0; right: 0; border-radius: 4px;
+    background: linear-gradient(180deg, var(--bad) 0%, var(--accent) 55%, #4a90d9 100%);
+  }
+  .week-day .wd-max { font-size: 11.5px; font-weight: 700; color: var(--ink-primary); }
+  .week-day .wd-min { font-size: 10.5px; color: var(--ink-muted); }
+  .week-day .wd-rain { font-size: 9.5px; color: var(--accent); white-space: nowrap; }
+  .week-day .wd-adv { width: 13px; height: 13px; border-radius: 50%; font-size: 8.5px; line-height: 13px; }
+  .week-day .wd-adv.warn { background: rgba(177,124,0,0.18); color: #a15c00; }
+  .week-day .wd-adv.danger { background: var(--bad-wash, rgba(179,34,31,0.16)); color: var(--bad); }
 
   .advisory-badge {
     display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 5px;
@@ -114,10 +140,39 @@
   .typhoon-card.calm { background: var(--surface-raised); }
   .typhoon-card .headline { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
   .typhoon-card.alert .headline { color: var(--bad); }
-  .typhoon-row { font-size: 13px; color: var(--ink-secondary); padding: 6px 0; border-top: 1px solid var(--gridline); }
+  .typhoon-row { font-size: 12.5px; color: var(--ink-secondary); padding: 6px 0; border-top: 1px solid var(--gridline); line-height: 1.5; }
   .typhoon-row:first-of-type { border-top: none; }
   .typhoon-row b { color: var(--ink-primary); }
   .typhoon-row a { color: var(--accent); text-decoration: none; font-size: 11.5px; margin-left: 6px; }
+  .typhoon-row.past { font-size: 12px; }
+  .typhoon-row .ago {
+    font-size: 10.5px; font-weight: 700; color: var(--ink-muted);
+    background: var(--gridline); padding: 1px 6px; border-radius: 999px;
+  }
+  .past-label {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink-muted);
+    text-transform: uppercase; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--gridline);
+  }
+  .past-label + .typhoon-row { border-top: none; }
+
+  .card.wide { grid-column: 1 / -1; }
+  .price-now { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 2px 0 10px; }
+  .price-now .pv { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .price-now .pu { font-size: 12px; color: var(--ink-muted); margin-left: -4px; }
+  .price-now .pd { font-size: 11.5px; color: var(--ink-muted); }
+  .price-now .chg { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .price-now .chg.up { color: var(--bad); }
+  .price-now .chg.down { color: var(--good); }
+
+  .price-chart { width: 100%; height: auto; display: block; overflow: visible; }
+  .ch-grid { stroke: var(--gridline); stroke-width: 1; }
+  .ch-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .ch-area { fill: var(--accent-wash); stroke: none; }
+  .ch-dot { fill: var(--accent); }
+  .ch-ylabel { font-size: 9.5px; fill: var(--ink-muted); text-anchor: end; font-variant-numeric: tabular-nums; }
+  .ch-xlabel { font-size: 9.5px; fill: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .chart-note { font-size: 11px; color: var(--ink-muted); margin-top: 6px; }
+  .news-caveat { font-size: 10.5px; color: var(--ink-muted); margin-bottom: 8px; font-style: italic; }
 
   .holiday-card {
     background: var(--accent-wash); border: 1px solid var(--border); border-radius: 12px;
@@ -153,31 +208,35 @@
   </div>
 
   <div class="wrap">
-    <div>
-      <div class="section-title">날씨 / 온습도</div>
-      <div class="grid" id="weatherGrid"></div>
+    <div class="top-row">
+      <div>
+        <div class="section-title">날씨 / 온습도</div>
+        <div id="weatherGrid"></div>
+      </div>
+
+      <div>
+        <div class="section-title">공휴일 · 연휴</div>
+        <div id="holidaySection"></div>
+      </div>
+
+      <div>
+        <div class="section-title">베트남 태풍 감시 (하노이·호치민)</div>
+        <div id="typhoonSection"></div>
+      </div>
     </div>
 
     <div>
-      <div class="section-title">공휴일 · 연휴</div>
-      <div id="holidaySection"></div>
-    </div>
-
-    <div>
-      <div class="section-title">베트남 태풍 감시 (하노이·호치민 기준)</div>
-      <div id="typhoonSection"></div>
-    </div>
-
-    <div>
-      <div class="section-title">원자재 수급</div>
+      <div class="section-title">원자재 가격 · 수급</div>
       <div class="grid" id="materialsGrid"></div>
     </div>
   </div>
 
   <div class="footnote">
-    날씨 출처: wttr.in (World Weather Online 데이터, 폭염/한파 멘트는 기상청 특보 기준을 단순화한 참고용 임계값).
-    공휴일 출처: Nager.Date. 태풍 정보 출처: GDACS(UN 재해 알림 시스템). 원자재 뉴스 출처: Google 뉴스 검색 —
-    실제 가격·수급 수치가 아닌 관련 헤드라인입니다, 참고용으로만 사용하세요.
+    날씨 출처: Open-Meteo (폭염/한파 멘트는 기상청 특보 기준을 단순화한 참고용 임계값).
+    공휴일 출처: Nager.Date. 태풍 정보 출처: GDACS(UN 재해 알림 시스템).
+    KCl 가격 출처: World Bank Pink Sheet(월간, USD/mt).
+    PP/PE·목재는 무료 공개 수치 API가 없어 관련 뉴스 헤드라인으로 대체했습니다(Google 뉴스 검색).
+    모두 참고용으로만 사용하세요.
   </div>
 </div>
 
@@ -185,6 +244,7 @@
 const WEATHER = __WEATHER_JSON__;
 const HOLIDAY = __HOLIDAY_JSON__;
 const TYPHOON = __TYPHOON_JSON__;
+const KCL = __KCL_JSON__;
 const MATERIALS = __MATERIALS_JSON__;
 const FETCHED_AT = "__FETCHED_AT__";
 
@@ -200,28 +260,65 @@ function advisoryBadges(advisories) {
   return advisories.map(a => `<span class="advisory-badge ${a.tone === "danger" ? "danger" : "warn"}">⚠ ${esc(a.text)}</span>`).join("");
 }
 
+// WMO weather code -> emoji, matching the Korean labels the generator already assigns
+function weatherIcon(desc) {
+  if (!desc) return "·";
+  if (desc.includes("뇌우")) return "⛈️";
+  if (desc.includes("우박")) return "🌨️";
+  if (desc.includes("눈")) return "❄️";
+  if (desc.includes("소나기")) return "🌦️";
+  if (desc.includes("비") || desc.includes("이슬비")) return "🌧️";
+  if (desc.includes("안개")) return "🌫️";
+  if (desc.includes("흐림")) return "☁️";
+  if (desc.includes("맑음")) return "☀️";
+  return "·";
+}
+
+const DOW = ["일", "월", "화", "수", "목", "금", "토"];
+
 const weatherGrid = document.getElementById("weatherGrid");
 if (!WEATHER || WEATHER.length === 0) {
   weatherGrid.innerHTML = `<div class="empty-note">날씨 정보를 가져오지 못했습니다.</div>`;
 } else {
   weatherGrid.innerHTML = WEATHER.map(w => {
-    const days = (w.days || []).map(d => {
-      const md = d.date.slice(5).replace("-", "/");
-      return `<div class="forecast-row">
-        <div class="row1"><span class="d">${esc(md)}</span><span class="desc2">${esc(d.desc)}</span><span class="rain">💧${d.chanceOfRain}%</span><span class="range">${d.minC}° / ${d.maxC}°C</span></div>
-        ${advisoryBadges(d.advisories)}
-      </div>`;
+    const days = w.days || [];
+    // bars are scaled against this location's own week range, so the week's shape reads
+    // clearly instead of being flattened by an absolute temperature scale
+    const allTemps = days.flatMap(d => [d.minC, d.maxC]);
+    const lo = Math.min(...allTemps), hi = Math.max(...allTemps);
+    const span = (hi - lo) || 1;
+    const todayStr = (days[0] && days[0].date) || "";
+
+    const strip = days.map(d => {
+      const dt = new Date(d.date + "T00:00:00");
+      const label = `${dt.getMonth() + 1}/${dt.getDate()}(${DOW[dt.getDay()]})`;
+      const topPct = ((hi - d.maxC) / span) * 100;
+      const botPct = ((d.minC - lo) / span) * 100;
+      const adv = Array.isArray(d.advisories) && d.advisories.length ? d.advisories[0] : null;
+      const advDot = adv
+        ? `<span class="wd-adv ${adv.tone === "danger" ? "danger" : "warn"}" title="${esc(adv.text)}">!</span>`
+        : `<span class="wd-adv"></span>`;
+      return `
+        <div class="week-day" title="${esc(d.date)} ${esc(d.desc)} ${d.minC}~${d.maxC}°C, 강수확률 ${d.chanceOfRain}%">
+          <span class="wd-label${d.date === todayStr ? " today" : ""}">${esc(label)}</span>
+          <span class="wd-icon">${weatherIcon(d.desc)}</span>
+          <span class="wd-max">${d.maxC}°</span>
+          <div class="wd-bar-track"><div class="wd-bar" style="top:${topPct.toFixed(1)}%;bottom:${botPct.toFixed(1)}%"></div></div>
+          <span class="wd-min">${d.minC}°</span>
+          <span class="wd-rain">💧${d.chanceOfRain}%</span>
+          ${advDot}
+        </div>`;
     }).join("");
+
     return `
       <div class="card">
         <h3>${esc(w.displayName)}</h3>
-        <div class="flag">${esc(w.country)}</div>
         <div class="weather-now">
           <span class="temp">${w.tempC}°C</span>
           <span class="desc">${esc(w.desc)} · 체감 ${w.feelsLikeC}°C</span>
         </div>
         <div class="weather-meta">습도 ${w.humidity}% ${advisoryBadges(w.advisories)}</div>
-        ${days}
+        <div class="week-strip">${strip}</div>
       </div>`;
   }).join("");
 }
@@ -247,48 +344,119 @@ if (!HOLIDAY) {
 const typhoonSection = document.getElementById("typhoonSection");
 if (!TYPHOON) {
   typhoonSection.innerHTML = `<div class="empty-note">태풍 정보를 가져오지 못했습니다.</div>`;
-} else if (TYPHOON.active && TYPHOON.active.length > 0) {
-  const rows = TYPHOON.active.map(t => `
-    <div class="typhoon-row">
-      <b>${esc(t.name)}</b> (${esc(t.alertLevel)}) · ${esc(t.nearestHub)}까지 약 ${t.distanceKm}km<br>
-      ${esc(t.severityText)}
-      <a href="${esc(t.reportUrl)}" target="_blank" rel="noopener">GDACS 리포트 →</a>
-    </div>`).join("");
-  typhoonSection.innerHTML = `
-    <div class="typhoon-card alert">
-      <div class="headline">⚠ 베트남 인근 태풍 활동 중 — 부자재 입고 지연 가능성 주의</div>
-      ${rows}
-    </div>`;
-} else if (TYPHOON.recent && TYPHOON.recent.length > 0) {
-  const rows = TYPHOON.recent.map(t => `
-    <div class="typhoon-row">${esc(t.name)} · ${esc((t.toDate || "").slice(0, 10))} 소멸 · ${esc(t.nearestHub)} 인근</div>`).join("");
-  typhoonSection.innerHTML = `
-    <div class="typhoon-card calm">
-      <div class="headline">현재 활성 태풍 없음 · 최근 소멸된 태풍 (여파 참고용)</div>
-      ${rows}
-    </div>`;
 } else {
-  typhoonSection.innerHTML = `
-    <div class="typhoon-card calm">
-      <div class="headline">베트남 인근 태풍 활동 없음 · 부자재 입고 일정 영향 없음</div>
-    </div>`;
+  const past = TYPHOON.past || [];
+  const pastBlock = past.length
+    ? `<div class="past-label">최근 발생 이력 · 다음 시기 가늠용</div>` +
+      past.map(t => `
+        <div class="typhoon-row past">
+          <b>${esc(t.name)}</b> <span class="ago">${t.daysAgo}일 전</span><br>
+          ${esc((t.toDate || "").slice(0, 10))} 소멸 · ${esc(t.nearestHub)} 인근 (${t.distanceKm}km)
+          <a href="${esc(t.reportUrl)}" target="_blank" rel="noopener">리포트 →</a>
+        </div>`).join("")
+    : "";
+
+  if (TYPHOON.active && TYPHOON.active.length > 0) {
+    const rows = TYPHOON.active.map(t => `
+      <div class="typhoon-row">
+        <b>${esc(t.name)}</b> (${esc(t.alertLevel)}) · ${esc(t.nearestHub)}까지 약 ${t.distanceKm}km<br>
+        ${esc(t.severityText)}
+        <a href="${esc(t.reportUrl)}" target="_blank" rel="noopener">GDACS 리포트 →</a>
+      </div>`).join("");
+    typhoonSection.innerHTML = `
+      <div class="typhoon-card alert">
+        <div class="headline">⚠ 태풍 활동 중 — 부자재 입고 지연 주의</div>
+        ${rows}
+        ${pastBlock}
+      </div>`;
+  } else {
+    typhoonSection.innerHTML = `
+      <div class="typhoon-card calm">
+        <div class="headline">활성 태풍 없음 · 입고 일정 영향 없음</div>
+        ${pastBlock}
+      </div>`;
+  }
+}
+
+function priceChartSvg(points) {
+  const W = 560, H = 150, PAD_L = 44, PAD_R = 10, PAD_T = 12, PAD_B = 24;
+  const vals = points.map(p => p.value);
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const span = (hi - lo) || 1;
+  const x = i => PAD_L + (i / Math.max(points.length - 1, 1)) * (W - PAD_L - PAD_R);
+  const y = v => PAD_T + (1 - (v - lo) / span) * (H - PAD_T - PAD_B);
+
+  const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
+  const area = `${line} L${x(points.length - 1).toFixed(1)},${(H - PAD_B).toFixed(1)} L${x(0).toFixed(1)},${(H - PAD_B).toFixed(1)} Z`;
+
+  // 4 horizontal gridlines with value labels
+  const grid = [0, 0.33, 0.66, 1].map(f => {
+    const v = lo + f * span;
+    const yy = y(v);
+    return `<line x1="${PAD_L}" y1="${yy.toFixed(1)}" x2="${W - PAD_R}" y2="${yy.toFixed(1)}" class="ch-grid"/>
+            <text x="${PAD_L - 6}" y="${(yy + 3.5).toFixed(1)}" class="ch-ylabel">${Math.round(v)}</text>`;
+  }).join("");
+
+  // first / middle / last x labels only - a label per month would collide at this width
+  const tickIdx = [0, Math.floor((points.length - 1) / 2), points.length - 1];
+  const xlabels = tickIdx.map(i =>
+    `<text x="${x(i).toFixed(1)}" y="${H - 6}" class="ch-xlabel" text-anchor="${i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${esc(points[i].label)}</text>`
+  ).join("");
+
+  const lastX = x(points.length - 1), lastY = y(points[points.length - 1].value);
+
+  return `<svg viewBox="0 0 ${W} ${H}" class="price-chart" role="img" aria-label="가격 추이 차트">
+    ${grid}
+    <path d="${area}" class="ch-area"/>
+    <path d="${line}" class="ch-line"/>
+    <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3.5" class="ch-dot"/>
+    ${xlabels}
+  </svg>`;
 }
 
 const materialsGrid = document.getElementById("materialsGrid");
-if (!MATERIALS || MATERIALS.length === 0) {
-  materialsGrid.innerHTML = `<div class="empty-note">원자재 뉴스를 가져오지 못했습니다.</div>`;
-} else {
-  materialsGrid.innerHTML = MATERIALS.map(m => {
+const materialCards = [];
+
+if (KCL && KCL.points && KCL.points.length > 0) {
+  const pts = KCL.points;
+  const latest = pts[pts.length - 1];
+  const prior = pts.length > 1 ? pts[pts.length - 2] : null;
+  const diff = prior ? latest.value - prior.value : 0;
+  const up = diff >= 0;
+  const changeHtml = prior
+    ? `<span class="chg ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(diff).toFixed(1)} (전월비)</span>`
+    : "";
+  materialCards.push(`
+    <div class="card wide">
+      <h3>KCl (염화칼륨) 국제가격</h3>
+      <div class="price-now">
+        <span class="pv">$${latest.value}</span>
+        <span class="pu">/${esc((KCL.unit || "").replace("USD/", ""))}</span>
+        ${changeHtml}
+        <span class="pd">${esc(latest.label)} 기준</span>
+      </div>
+      ${priceChartSvg(pts)}
+      <div class="chart-note">최근 ${pts.length}개월 · ${esc(KCL.source || "")}</div>
+    </div>`);
+}
+
+if (MATERIALS && MATERIALS.length > 0) {
+  MATERIALS.forEach(m => {
     const news = (m.news && m.news.length)
       ? m.news.map(n => `<div class="news-item">· <a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a><span class="src">${esc(n.source || "")} · ${esc(n.date)}</span></div>`).join("")
       : `<div class="empty-note">관련 뉴스 없음</div>`;
-    return `
+    materialCards.push(`
       <div class="card">
         <h3>${esc(m.displayName)}</h3>
+        <div class="news-caveat">공개 수치 API 없음 — 관련 뉴스</div>
         ${news}
-      </div>`;
-  }).join("");
+      </div>`);
+  });
 }
+
+materialsGrid.innerHTML = materialCards.length
+  ? materialCards.join("")
+  : `<div class="empty-note">원자재 정보를 가져오지 못했습니다.</div>`;
 </script>
 </body>
 </html>
