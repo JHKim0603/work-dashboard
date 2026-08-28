@@ -13,6 +13,16 @@
   ],
   "yahooSeries": [
     {
+      "Id": "usdkrw",
+      "Symbol": "KRW=X",
+      "DisplayName": "원/달러 환율",
+      "Unit": "원/USD",
+      "Currency": "",
+      "Decimals": 2,
+      "Note": "수입 포장재·해상운임 결제 기준 · 상승 = 원화 약세 = 수입 단가 상승",
+      "NewsQuery": "원달러 환율 전망"
+    },
+    {
       "Id": "wti",
       "Symbol": "CL=F",
       "DisplayName": "국제유가 (WTI)",

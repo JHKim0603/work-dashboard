@@ -554,7 +554,9 @@ function Get-YahooSeries {
             unit        = $cfg.Unit
             note        = $cfg.Note
             source      = "Yahoo Finance"
-            currency    = "$"
+            # Every series here used to be dollar-denominated. The FX card is quoted the other
+            # way round - won per dollar - so a hardcoded "$" would print $1,374.6.
+            currency    = if ($null -ne $cfg.Currency) { $cfg.Currency } else { "$" }
             points      = $points
             newsQuery   = $cfg.NewsQuery
         }
@@ -779,6 +781,11 @@ Write-HistoryStore -store $historyStore
 # One flat list so the dashboard/email render every price card the same way regardless of
 # which upstream it came from. Order here is the display order.
 $priceCards = @()
+# FX leads: every imported packaging input and the whole ocean-freight bill is quoted in
+# dollars, so a won move resets the landed cost of every other card below it. Note this list
+# selects Yahoo series by explicit id - a series added to config.json is dropped silently
+# unless it is named here too.
+$priceCards += @($yahooSeries | Where-Object { $_.id -eq "usdkrw" })
 $priceCards += @($yahooSeries | Where-Object { $_.id -eq "wti" -or $_.id -eq "brent" })
 $priceCards += @($fuel)
 $priceCards += @($yahooSeries | Where-Object { $_.id -eq "lumber" })
