@@ -351,11 +351,25 @@
     text-transform: uppercase; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--gridline);
   }
   /* The three top-row cards are height-matched, so an unbounded two-year holiday list would
-     stretch 날씨 and 태풍 to match it. Scroll the list instead of truncating the years away. */
+     stretch 날씨 and 태풍 to match it. Scroll instead of truncating the years away - but with
+     a hairline bar, since the platform default is a chunky grey slab that reads as a browser
+     control bolted onto the card rather than part of it. */
   .upcoming-list {
     font-size: 12.5px; color: var(--ink-secondary);
-    max-height: 190px; overflow-y: auto; overscroll-behavior: contain;
+    max-height: 208px; overflow-y: auto; overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--gridline) transparent;
+    padding-right: 6px;
+    /* Fade the last row rather than slicing it mid-glyph, so it reads as "more below". */
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
   }
+  .upcoming-list::-webkit-scrollbar { width: 5px; }
+  .upcoming-list::-webkit-scrollbar-track { background: transparent; }
+  .upcoming-list::-webkit-scrollbar-thumb {
+    background: var(--gridline); border-radius: 3px;
+  }
+  .upcoming-list:hover::-webkit-scrollbar-thumb { background: var(--ink-muted); }
   .upcoming-list .up-row {
     display: flex; justify-content: space-between; gap: 10px; padding: 5px 0;
     border-top: 1px solid var(--gridline); font-variant-numeric: tabular-nums;
@@ -586,8 +600,12 @@ if (!HOLIDAY) {
   (HOLIDAY.nextHolidays || []).forEach(h => {
     const last = grouped[grouped.length - 1];
     if (last && last.name === h.name) {
-      const nextDay = new Date(last.end + "T00:00:00");
-      nextDay.setDate(nextDay.getDate() + 1);
+      // Must stay in UTC end to end. "2026-09-24T00:00:00" parses as local midnight, and
+      // toISOString() then converts back to UTC - which in KST lands on the previous day, so
+      // the +1 cancelled out and no two days ever looked consecutive. 추석 rendered as three
+      // identical rows instead of one range.
+      const nextDay = new Date(last.end + "T00:00:00Z");
+      nextDay.setUTCDate(nextDay.getUTCDate() + 1);
       if (nextDay.toISOString().slice(0, 10) === h.date) { last.end = h.date; return; }
     }
     grouped.push({ name: h.name, start: h.date, end: h.date });
