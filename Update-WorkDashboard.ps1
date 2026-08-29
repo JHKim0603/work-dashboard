@@ -1285,7 +1285,11 @@ function Get-BarChartHtml {
     # Bars drawn as <td bgcolor> in a nested table are the one chart form Outlook's Word
     # renderer draws like every other client, and the spacer row above each bar means the
     # height never depends on valign being honoured.
-    param($values, $accent = "#2a78d6", $maxBars = 24, $height = 44)
+    # 16 bars, not 24: each bar is a nested table costing ~250 bytes, and at 24 the nine charts
+    # alone were 45KB of an 85KB mail - 83% of the 102KB Gmail clips at, so one more card would
+    # have truncated the news off the bottom. Two years across 16 buckets is coarser per bar but
+    # the shape survives, and the dashboard still carries the full-resolution chart.
+    param($values, $accent = "#2a78d6", $maxBars = 16, $height = 44)
 
     $vals = @($values | Where-Object { $null -ne $_ } | ForEach-Object { [double]$_ })
     if ($vals.Count -lt 2) { return "" }
