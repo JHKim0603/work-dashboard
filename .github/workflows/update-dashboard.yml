@@ -2,10 +2,14 @@ name: Update Work Dashboard
 
 on:
   schedule:
-    # 07:00 KST every day. Cron runs on UTC, and KST is UTC+9, so 22:00 UTC lands as 07:00 KST
-    # the next day. Runs daily (not just weekdays) since weather/holiday info is relevant on
-    # weekends too.
-    - cron: '0 22 * * *'
+    # 08:30 KST, matching the stockdashboard repo so both digests land in the inbox together.
+    # Cron is UTC and KST is UTC+9, so this UTC Mon-Fri window arrives as KST Tue-Sat 08:30.
+    #
+    # Note what that costs here: stockdashboard skips KST Sun/Mon because no trading happened
+    # over the weekend, but this dashboard carries weather, holidays and typhoons, which do not
+    # stop on Sunday - so Monday morning now opens with Saturday's page. To send Mon-Fri KST
+    # instead, use '30 23 * * 0-4'; for every day, '30 23 * * *'.
+    - cron: '30 23 * * 1-5'
   workflow_dispatch: {}
 
 permissions:

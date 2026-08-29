@@ -350,26 +350,15 @@
     font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink-muted);
     text-transform: uppercase; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--gridline);
   }
-  /* The three top-row cards are height-matched, so an unbounded two-year holiday list would
-     stretch 날씨 and 태풍 to match it. Scroll instead of truncating the years away - but with
-     a hairline bar, since the platform default is a chunky grey slab that reads as a browser
-     control bolted onto the card rather than part of it. */
-  .upcoming-list {
-    font-size: 12.5px; color: var(--ink-secondary);
-    max-height: 208px; overflow-y: auto; overscroll-behavior: contain;
-    scrollbar-width: thin;
-    scrollbar-color: var(--gridline) transparent;
-    padding-right: 6px;
-    /* Fade the last row rather than slicing it mid-glyph, so it reads as "more below". */
-    mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
-    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
+  /* No scrolling. A scrollbar inside a card this small reads as a browser control bolted on,
+     styled or not, so the list is capped instead and a footer says how many are hidden -
+     the year is what mattered, and eight grouped rows already reach well into next year now
+     that multi-day holidays collapse into one row each. */
+  .upcoming-list { font-size: 12.5px; color: var(--ink-secondary); }
+  .upcoming-more {
+    font-size: 11px; color: var(--ink-muted); padding-top: 7px; margin-top: 3px;
+    border-top: 1px solid var(--gridline);
   }
-  .upcoming-list::-webkit-scrollbar { width: 5px; }
-  .upcoming-list::-webkit-scrollbar-track { background: transparent; }
-  .upcoming-list::-webkit-scrollbar-thumb {
-    background: var(--gridline); border-radius: 3px;
-  }
-  .upcoming-list:hover::-webkit-scrollbar-thumb { background: var(--ink-muted); }
   .upcoming-list .up-row {
     display: flex; justify-content: space-between; gap: 10px; padding: 5px 0;
     border-top: 1px solid var(--gridline); font-variant-numeric: tabular-nums;
@@ -612,11 +601,20 @@ if (!HOLIDAY) {
   });
 
   const fmt = d => d.slice(5).replace("-", "/");
-  const upcoming = grouped.map(g => {
+  const SHOW = 8;
+  const shown = grouped.slice(0, SHOW);
+  const upcoming = shown.map(g => {
     const range = g.start === g.end ? fmt(g.start) : `${fmt(g.start)}~${fmt(g.end)}`;
     const year = g.start.slice(0, 4);
     return `<div class="up-row"><span class="un">${esc(g.name)}</span><span class="ud">${year}. ${esc(range)}</span></div>`;
   }).join("");
+  // Name the last year covered rather than just a count, so it is clear the list runs past
+  // the current year even though it stops short of the full two-year horizon.
+  const hiddenCount = grouped.length - shown.length;
+  const lastYear = grouped.length ? grouped[grouped.length - 1].start.slice(0, 4) : "";
+  const moreNote = hiddenCount > 0
+    ? `<div class="upcoming-more">${lastYear}년까지 ${hiddenCount}건 더 있음</div>`
+    : "";
 
   const rangeText = `${fmt(HOLIDAY.startDate)} ~ ${fmt(HOLIDAY.endDate)}`;
   holidaySection.innerHTML = `
@@ -628,6 +626,7 @@ if (!HOLIDAY) {
       <div class="hol-range">${HOLIDAY.startDate.slice(0, 4)}. ${esc(rangeText)} · <span class="hol-len">${HOLIDAY.days}일 연휴</span></div>
       <div class="upcoming-label">다가오는 공휴일</div>
       <div class="upcoming-list">${upcoming}</div>
+      ${moreNote}
     </div>`;
 }
 
