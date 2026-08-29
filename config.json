@@ -73,13 +73,14 @@
       "NewsQuery": "폴리에틸렌 PE 가격 수급"
     }
   ],
-  "//sseLanes": "CCFI 항로별 운임지수. SCFI는 무료 엔드포인트에서 항로별 값이 전부 null(구독 전용)이라 종합지수만 쓰고, 항로별은 CCFI에서 가져옵니다. 인도 항로는 CCFI에 없습니다.",
+  "//sseLanes": "CCFI 항로별 운임지수. SCFI는 무료 엔드포인트에서 항로별 값이 전부 null(구독 전용, India and Pakistan 항로 포함)이라 종합지수만 쓰고, 항로별은 CCFI에서 가져옵니다. 서남아/인도 항로는 CCFI·CICFI 어디에도 없습니다 - 페르시아만·홍해가 지리적으로 가장 가깝지만 인도 무역로가 아니라 중동 항로이며, 홍해·수에즈 정세에 좌우됩니다.",
   "sseLanes": [
     { "Id": "ccfi-sea",    "IndexName": "ccfi", "ItemType": "CCFI_S07", "Label": "동남아" },
     { "Id": "ccfi-europe", "IndexName": "ccfi", "ItemType": "CCFI_S02", "Label": "유럽" },
     { "Id": "ccfi-uswc",   "IndexName": "ccfi", "ItemType": "CCFI_S03", "Label": "미주 서안" },
     { "Id": "ccfi-usec",   "IndexName": "ccfi", "ItemType": "CCFI_S04", "Label": "미주 동안" },
-    { "Id": "ccfi-samer",  "IndexName": "ccfi", "ItemType": "CCFI_S13", "Label": "남미" }
+    { "Id": "ccfi-samer",  "IndexName": "ccfi", "ItemType": "CCFI_S13", "Label": "남미" },
+    { "Id": "ccfi-mideast","IndexName": "ccfi", "ItemType": "CCFI_S14", "Label": "페르시아만·홍해" }
   ],
 
   "priceNewsQueries": {
