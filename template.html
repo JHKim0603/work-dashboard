@@ -350,14 +350,15 @@
     font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink-muted);
     text-transform: uppercase; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--gridline);
   }
-  /* No scrolling. A scrollbar inside a card this small reads as a browser control bolted on,
-     styled or not, so the list is capped instead and a footer says how many are hidden -
-     the year is what mattered, and eight grouped rows already reach well into next year now
-     that multi-day holidays collapse into one row each. */
-  .upcoming-list { font-size: 12.5px; color: var(--ink-secondary); }
+  /* No scrolling - a scrollbar inside a card this small reads as a browser control bolted on,
+     styled or not. But the card is stretched to match 날씨/태풍 in the top row, so a short list
+     left the bottom third empty. The list takes the leftover space (flex: 1) and renders enough
+     rows to fill it, with the footer pinned to the bottom edge where it reads as a deliberate
+     end rather than as the list giving up early. */
+  .upcoming-list { font-size: 12.5px; color: var(--ink-secondary); flex: 1; }
   .upcoming-more {
     font-size: 11px; color: var(--ink-muted); padding-top: 7px; margin-top: 3px;
-    border-top: 1px solid var(--gridline);
+    border-top: 1px solid var(--gridline); flex: none;
   }
   .upcoming-list .up-row {
     display: flex; justify-content: space-between; gap: 10px; padding: 5px 0;
@@ -601,7 +602,9 @@ if (!HOLIDAY) {
   });
 
   const fmt = d => d.slice(5).replace("-", "/");
-  const SHOW = 8;
+  // Sized to fill the card rather than to a round number: the top row stretches all three cards
+  // to the tallest, so 8 rows left the bottom third of this one empty.
+  const SHOW = 12;
   const shown = grouped.slice(0, SHOW);
   const upcoming = shown.map(g => {
     const range = g.start === g.end ? fmt(g.start) : `${fmt(g.start)}~${fmt(g.end)}`;
