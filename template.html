@@ -322,6 +322,20 @@
     font-size: 12px; color: var(--ink-secondary); display: flex; justify-content: space-between;
     padding: 5px 0; border-top: 1px solid var(--gridline);
   }
+
+  /* Lanes share one card rather than getting a tile each: the point of having them is comparing
+     which lane moved, and five separate tiles scattered through the grid makes that a hunt. */
+  .lane-row {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: baseline;
+    padding: 7px 0; border-top: 1px solid var(--gridline); font-variant-numeric: tabular-nums;
+  }
+  .lane-row:first-of-type { border-top: none; }
+  .lane-row .ln { font-size: 13px; color: var(--ink-primary); font-weight: 600; }
+  .lane-row .lv { font-size: 14px; font-weight: 700; }
+  .lane-row .lc { font-size: 12px; font-weight: 700; min-width: 74px; text-align: right; }
+  .lane-row .lc.up { color: var(--bad); }
+  .lane-row .lc.down { color: var(--good); }
+  .lane-row .lc.flat { color: var(--ink-muted); }
   .locked-note {
     font-size: 12px; color: var(--ink-secondary); line-height: 1.6;
     background: var(--accent-wash); border: 1px dashed var(--border);
@@ -454,6 +468,7 @@ const HOLIDAY = __HOLIDAY_JSON__;
 const TYPHOON = __TYPHOON_JSON__;
 const PRICES = __PRICES_JSON__;
 const SCFI = __SCFI_JSON__;
+const SSE_LANES = __SSE_LANES_JSON__;
 const HAS_FUEL_KEY = __HAS_FUEL_KEY__;
 const HAS_KCL = __HAS_KCL__;
 const MATERIALS = __MATERIALS_JSON__;
@@ -990,6 +1005,34 @@ if (SCFI) {
           ? `주간 발표 · 누적 ${pts.length}주 수집`
           : `주간 발표 · 과거 시계열이 SSE 구독 전용이라 매주 직접 수집 중 (현재 ${pts.length}주, 3주부터 차트 표시)`
       }</div>
+    </div>`);
+}
+
+if (SSE_LANES && SSE_LANES.length) {
+  const laneRows = SSE_LANES.map(l => {
+    // Freight going up is a cost increase here, matching the up-is-red convention the price
+    // cards already use.
+    const cls = Math.abs(l.changePct) < 0.05 ? "flat" : (l.change >= 0 ? "up" : "down");
+    const mark = cls === "flat" ? "―" : (l.change >= 0 ? "▲" : "▼");
+    const chg = cls === "flat" ? "보합" : `${mark} ${Math.abs(l.change).toLocaleString()} (${Math.abs(l.changePct)}%)`;
+    return `
+      <div class="lane-row">
+        <span class="ln">${esc(l.displayName)}</span>
+        <span class="lv">${l.current.toLocaleString()}</span>
+        <span class="lc ${cls}">${chg}</span>
+      </div>`;
+  }).join("");
+
+  const anyLane = SSE_LANES[0];
+  priceCards.push(`
+    <div class="card">
+      <div class="card-head"><h3>CCFI 항로별 운임지수</h3></div>
+      <div class="flag">${esc(anyLane.currentDate)} 기준 · 전주 대비</div>
+      ${laneRows}
+      <div class="chart-note">
+        중국발 수출 컨테이너 운임(계약운임 포함) · Shanghai Shipping Exchange<br>
+        SCFI는 무료 공개 범위에서 항로별 값이 비어 있어 항로 비교는 CCFI를 씁니다. 인도 항로는 CCFI에 없습니다.
+      </div>
     </div>`);
 }
 

@@ -787,32 +787,44 @@ function Get-CustomsImportSeries {
 # The AJAX endpoint behind SSE's own public SCFI page. Their historical-series endpoint
 # (/singleIndex/scfi) requires a subscriber login, so only the current and prior week are
 # available - shown as a value + weekly change rather than a chart.
-function Get-ScfiIndex {
+# One fetcher for every Shanghai Shipping Exchange index, because the payload shape is identical
+# across them - only indexName and which dataItemTypeName row to pick differ.
+#
+# SCFI publishes its per-lane rates as null on the free endpoint (Korea 20ft Pusan included -
+# those are subscriber-only), so from SCFI only the composite is usable. CCFI carries values for
+# all 13 lanes, which is the reason both are fetched: the composite is a Shanghai-to-world
+# average weighted toward Europe and the Americas, lanes this cargo never touches.
+function Get-SseIndex {
+    param($indexName, $itemType, $id, $displayName, $note)
+
     try {
-        $scfiHeaders = $headers.Clone()
-        $scfiHeaders["Referer"] = "https://en.sse.net.cn/indices/scfinew.jsp"
-        $scfiHeaders["X-Requested-With"] = "XMLHttpRequest"
-        $resp = Invoke-RestMethod -Uri "https://en.sse.net.cn/currentIndex?indexName=scfi" -Headers $scfiHeaders
+        $sseHeaders = $headers.Clone()
+        $sseHeaders["Referer"] = "https://en.sse.net.cn/indices/scfinew.jsp"
+        $sseHeaders["X-Requested-With"] = "XMLHttpRequest"
+        $resp = Invoke-RestMethod -Uri "https://en.sse.net.cn/currentIndex?indexName=$indexName" -Headers $sseHeaders
 
         $data = $resp.data
         if (-not $data) { throw "no data node in response" }
-        $comp = $data.lineDataList | Where-Object { $_.dataItemTypeName -eq "SCFI_T" } | Select-Object -First 1
-        if (-not $comp) { throw "comprehensive index row not found" }
+        $row = $data.lineDataList | Where-Object { $_.dataItemTypeName -eq $itemType } | Select-Object -First 1
+        if (-not $row) { throw "row '$itemType' not found" }
+        # Lane rows exist but come back null when the value is subscriber-only; a null would
+        # otherwise round to a confident-looking 0.
+        if ($null -eq $row.currentContent) { throw "row '$itemType' has no value (구독 전용일 수 있음)" }
 
         [PSCustomObject]@{
-            id          = "scfi"
-            displayName = "컨테이너 운임지수 (SCFI)"
-            current     = [math]::Round([double]$comp.currentContent, 1)
-            previous    = [math]::Round([double]$comp.lastContent, 1)
-            change      = [math]::Round([double]$comp.absolute, 1)
-            changePct   = [math]::Round([double]$comp.percentage, 2)
+            id          = $id
+            displayName = $displayName
+            current     = [math]::Round([double]$row.currentContent, 1)
+            previous    = [math]::Round([double]$row.lastContent, 1)
+            change      = [math]::Round([double]$row.absolute, 1)
+            changePct   = [math]::Round([double]$row.percentage, 2)
             currentDate = Format-DateOnly $data.currentDate
             lastDate    = Format-DateOnly $data.lastDate
-            note        = "상하이 → 세계 주요 13개 항로 수출 컨테이너 운임"
+            note        = $note
             source      = "Shanghai Shipping Exchange"
         }
     } catch {
-        Write-Warning "SCFI fetch failed: $($_.Exception.Message)"
+        Write-Warning "SSE index fetch failed ($indexName/$itemType): $($_.Exception.Message)"
         $null
     }
 }
@@ -996,7 +1008,19 @@ if ($config.customsSeries -and @($config.customsSeries).Count -gt 0) {
 }
 
 Write-Host "Fetching SCFI..."
-$scfi = Get-ScfiIndex
+$scfi = Get-SseIndex -indexName "scfi" -itemType "SCFI_T" -id "scfi" `
+    -displayName "컨테이너 운임지수 (SCFI)" -note "상하이 → 세계 주요 13개 항로 수출 컨테이너 운임"
+
+# Lane-level rates, which the SCFI composite above averages away - it is weighted toward Europe
+# and the Americas, so a move on the lanes this cargo actually uses barely registers in it.
+Write-Host "Fetching CCFI 항로별 운임..."
+$sseLanes = @(foreach ($lane in $config.sseLanes) {
+    Write-Host "  - $($lane.Label)"
+    Get-SseIndex -indexName $lane.IndexName -itemType $lane.ItemType -id $lane.Id `
+        -displayName $lane.Label -note $null
+    Start-Sleep -Milliseconds 300
+})
+$sseLanes = @($sseLanes | Where-Object { $_ })
 
 Write-Host "Fetching domestic fuel prices..."
 $fuel = @(Get-DomesticFuelPrices | Where-Object { $_ })
@@ -1083,6 +1107,7 @@ $holidayJson = ConvertTo-JsonOrNull -InputObject $holiday -Depth 4
 $typhoonJson = ConvertTo-JsonOrNull -InputObject $typhoon -Depth 4
 $pricesJson = ConvertTo-Json -InputObject @($priceCards) -Depth 6
 $scfiJson = ConvertTo-JsonOrNull -InputObject $scfi -Depth 4
+$sseLanesJson = ConvertTo-Json -InputObject @($sseLanes) -Depth 4
 $hasFuelKey = if ($env:OPINET_API_KEY) { "true" } else { "false" }
 # A failed KCl fetch used to just not append a card, so the page came back one card shorter
 # with nothing saying so - indistinguishable from "we never tracked potash". Say it instead.
@@ -1091,7 +1116,7 @@ $materialsJson = ConvertTo-Json -InputObject @($materials) -Depth 6
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
-$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
+$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8
@@ -1415,6 +1440,38 @@ if ($scfi) {
 "@
 }
 
+$laneHtml = ""
+if ($sseLanes.Count -gt 0) {
+    # One row per lane in a single card, so the mail shows which lane moved rather than five
+    # separate blocks the reader has to line up themselves.
+    $laneRows = foreach ($l in $sseLanes) {
+        $flat = [math]::Abs($l.changePct) -lt 0.05
+        $up = $l.change -ge 0
+        $color = if ($flat) { "#6e6c66" } elseif ($up) { "#b3221f" } else { "#0a6b0a" }
+        $chg = if ($flat) { "보합" } else {
+            $arrow = if ($up) { "▲" } else { "▼" }
+            "$arrow $(Format-PriceValue ([math]::Abs($l.change))) ($([math]::Abs($l.changePct))%)"
+        }
+        @"
+<tr>
+  <td style="padding:5px 8px 5px 0;font-size:12.5px;font-weight:600;color:#0b0b0b;">$($l.displayName)</td>
+  <td style="padding:5px 8px 5px 0;font-size:13px;font-weight:700;color:#0b0b0b;text-align:right;white-space:nowrap;">$(Format-PriceValue $l.current)</td>
+  <td style="padding:5px 0;font-size:12px;font-weight:700;color:$color;text-align:right;white-space:nowrap;">$chg</td>
+</tr>
+"@
+    }
+    $laneHtml = @"
+<tr>
+  <td style="padding:14px 16px;border-bottom:1px solid #e1e0d9;">
+    <div style="font-weight:700;font-size:13.5px;color:#0b0b0b;">CCFI 항로별 운임지수</div>
+    <div style="font-size:11px;color:#898781;margin-top:2px;">$($sseLanes[0].currentDate) 기준 · 전주 대비</div>
+    <table style="width:100%;border-collapse:collapse;margin-top:7px;">$($laneRows -join "")</table>
+    <div style="font-size:11px;color:#898781;margin-top:7px;">중국발 수출 컨테이너 운임(계약운임 포함) · Shanghai Shipping Exchange</div>
+  </td>
+</tr>
+"@
+}
+
 $materialsHtml = foreach ($m in $materials) {
     $newsLines = foreach ($n in ($m.news | Select-Object -First 3)) {
         # Outlet and date were already fetched but thrown away here, leaving three unattributed
@@ -1467,7 +1524,7 @@ $emailHtml = @"
   $holidayHtml
   $typhoonHtml
   $(Get-EmailSection "날씨 · 온습도" ($weatherRowsHtml -join "`n"))
-  $(Get-EmailSection "원자재 · 물류 가격" ($scfiHtml + "`n" + ($priceRowsHtml -join "`n")))
+  $(Get-EmailSection "원자재 · 물류 가격" ($scfiHtml + "`n" + $laneHtml + "`n" + ($priceRowsHtml -join "`n")))
   $(Get-EmailSection "수급 뉴스" ($materialsHtml -join "`n"))
   <div style="margin-top:16px;font-size:11px;color:#898781;line-height:1.6;">
     날씨: Open-Meteo · 공휴일: Nager.Date · 태풍: GDACS · 유가/목재: Yahoo Finance · KCl: World Bank · 운임지수: Shanghai Shipping Exchange · 뉴스: Google 뉴스. 업무 참고용 요약입니다.<br>
