@@ -15,6 +15,27 @@ $headers = @{ "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb
 
 $config = Get-Content -Path (Join-Path $root "config.json") -Raw -Encoding UTF8 | ConvertFrom-Json
 
+# CI gets its keys from Actions secrets; a local run.bat had none, so the pump-price cards were
+# silently absent from the local page while the deployed one carried them. Reviewing the local
+# file then means reviewing something the recipient never sees. This closes that gap: drop the
+# keys in secrets.local.json (gitignored) and a local run renders exactly what CI renders.
+# Environment variables still win, so CI is unaffected.
+$secretsPath = Join-Path $root "secrets.local.json"
+if (Test-Path $secretsPath) {
+    try {
+        $localSecrets = Get-Content -Path $secretsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($name in @("OPINET_API_KEY", "DATA_GO_KR_KEY")) {
+            $val = $localSecrets.$name
+            if ($val -and -not (Get-Item "env:$name" -ErrorAction SilentlyContinue)) {
+                Set-Item "env:$name" $val
+                Write-Host "  secrets.local.json에서 $name 로드"
+            }
+        }
+    } catch {
+        Write-Warning "secrets.local.json을 읽지 못했습니다 (JSON 형식 확인): $($_.Exception.Message)"
+    }
+}
+
 # ConvertFrom-Json on pwsh 7 (the Linux Actions runner) turns a full ISO timestamp like
 # "2026-07-04T18:00:00" into a [DateTime], while Windows PowerShell 5.1 leaves it a [string] -
 # so calling .Substring() on it works locally and crashes in CI. Date-only strings such as

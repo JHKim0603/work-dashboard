@@ -129,12 +129,23 @@ workflow_dispatch 화면을 여는 링크이고, 거기서 **Run workflow**를 �
 경유·휘발유 카드는 무료 오피넷 API 키로 동작합니다 (1,500 calls/day).
 **저장소 시크릿 `OPINET_API_KEY`는 이미 등록되어 있어 Actions 실행 시 자동으로 채워집니다.**
 
-로컬에서 `run.bat`으로 돌릴 때만 환경변수를 직접 넣어주면 됩니다:
+로컬에서 `run.bat`으로 돌릴 때는 `secrets.local.json.example`을 **`secrets.local.json`으로 복사**하고
+키를 채워 넣으세요. 이 파일은 `.gitignore`에 있어 커밋되지 않습니다.
+
+```json
+{ "OPINET_API_KEY": "발급받은키" }
+```
+
+환경변수를 직접 넣어도 됩니다 (환경변수가 우선합니다):
 
 ```powershell
 $env:OPINET_API_KEY = "발급받은키"
 .\run.bat
 ```
+
+> **이걸 안 하면 로컬 페이지에는 경유·휘발유 카드가 통째로 빠집니다.** 배포된 페이지에는
+> 정상적으로 나오기 때문에, 로컬 파일만 보고 "오피넷 연동이 깨졌다"고 오해하기 쉽습니다.
+> 로컬 화면을 검토용으로 쓰려면 키를 채워 CI와 같은 화면을 보게 만드는 편이 낫습니다.
 
 > 키는 저장소 파일에 절대 넣지 마세요 — 이 저장소는 public입니다. 키는 GitHub Actions
 > 시크릿에만 두고, 스크립트는 `$env:OPINET_API_KEY`로만 읽습니다. 생성되는 `dashboard.html`
