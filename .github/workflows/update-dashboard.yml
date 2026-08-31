@@ -10,23 +10,27 @@ on:
     # Saturday's page. Every day costs two extra runs a week and keeps the page never more
     # than a morning old.
     #
-    # Two slots, and neither on the hour or half hour. GitHub drops scheduled runs under load
-    # and explicitly advises avoiding those peaks: this workflow sat on ':00' then ':30' and
-    # fired zero times in three days, while stockdashboard's ':30' slot did fire but drifted
-    # 15 minutes, then 5 hours, then 7. The second slot is a catch-up - if the first was
-    # dropped the digest still arrives before lunch. "Send email summary" is gated on whether
-    # a scheduled run already succeeded today (KST), so the catch-up never double-sends.
+    # Four slots, none on the hour or half hour: 08:23, 09:47, 11:23 and 13:41 KST.
+    #
+    # GitHub drops scheduled runs under load and documents those peaks as the thing to avoid.
+    # This workflow sat on ':00', then ':30', and fired zero times in three days; every run it
+    # has ever had was manual. stockdashboard's ':30' does fire, but has drifted 15 minutes,
+    # then 5 hours, then 7 - the same overloaded queue seen from the other side.
+    #
+    # So delivery does not depend on any single slot surviving. Each is an independent attempt
+    # and the first one to get through sends; the rest find the marker already set for today
+    # and only refresh the page. Public repos get unlimited Actions minutes, so the extra runs
+    # cost nothing, and a page refreshed four times a morning is not a downside.
     - cron: '23 23 * * *'
+    - cron: '47 0 * * *'
     - cron: '23 2 * * *'
+    - cron: '41 4 * * *'
   workflow_dispatch: {}
 
 permissions:
   contents: write
   pages: write
   id-token: write
-  # for the mail gate below to read this workflow's own earlier runs. Naming any permission
-  # drops the defaults for the rest, so it has to be listed explicitly.
-  actions: read
 
 concurrency:
   group: pages
@@ -49,66 +53,42 @@ jobs:
           DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
         run: ./Update-WorkDashboard.ps1
 
-      # Opinet serves 7 days and SSE's SCFI history is subscriber-only, so the only way these
-      # become long series is to keep what each run saw. Committing the store back is what
-      # makes that accumulation survive to the next run.
-      # Non-blocking, and it rebases before pushing. A plain push here races anything that lands
-      # on main while the run is in flight: a commit pushed mid-run makes this step's push
-      # rejected, and because the step was fatal that took the mail and the Pages deploy down
-      # with it - the two things the run actually exists to produce. Losing a day of accumulation
-      # costs nothing by comparison, and costs nothing at all in practice: the store is keyed by
-      # date and both upstreams still serve the recent window, so the next run re-merges it.
-      - name: Commit accumulated history
-        continue-on-error: true
-        run: |
-          if [[ -n "$(git status --porcelain data-history.json)" ]]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add data-history.json
-            git commit -m "chore: accumulate price history $(date -u +%Y-%m-%d)"
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
-            git push
-          else
-            echo "no history change"
-          fi
-
       - name: Read email subject
         id: subject
         run: echo "text=$(cat email-subject.txt)" >> "$GITHUB_OUTPUT"
 
-      # The catch-up slot exists because the first one gets dropped; on the days it is not
-      # dropped both slots run, and without this the inbox gets the same digest twice. A
-      # manual dispatch always sends - that is someone explicitly asking for it.
+      # Several slots fire each morning because any one of them can be dropped, so on a normal
+      # day more than one survives and the inbox would get the same digest repeatedly.
+      #
+      # The gate reads .last-digest, a committed marker holding the KST date of the last
+      # delivery that actually left the SMTP server. Deriving this from run history instead
+      # would be wrong in the case that matters most: the mail step is continue-on-error, so a
+      # run whose send failed still reports success, and every later slot would then treat the
+      # day as delivered and stay silent. Recording only after a confirmed send means a failed
+      # send leaves the marker stale and the next slot retries.
       - name: Check whether today's digest already went out
         id: mailgate
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          today=$(TZ=Asia/Seoul date +%F)
+          echo "today=$today" >> "$GITHUB_OUTPUT"
           if [[ "${{ github.event_name }}" != "schedule" ]]; then
             echo "send=true" >> "$GITHUB_OUTPUT"
-            echo "manual run - sending"
+            echo "manual run - sending regardless of marker"
             exit 0
           fi
-          today=$(TZ=Asia/Seoul date +%F)
-          sent=0
-          while read -r ts; do
-            [[ -z "$ts" ]] && continue
-            [[ "$(TZ=Asia/Seoul date -d "$ts" +%F)" == "$today" ]] && sent=1
-          done < <(gh run list --repo "$GITHUB_REPOSITORY" \
-                     --workflow "${{ github.workflow }}" --event schedule --status success \
-                     --limit 20 --json databaseId,createdAt \
-                     -q ".[] | select(.databaseId != ${{ github.run_id }}) | .createdAt")
-          if [[ "$sent" -eq 1 ]]; then
+          last=$(cat .last-digest 2>/dev/null | tr -d '[:space:]')
+          if [[ "$last" == "$today" ]]; then
             echo "send=false" >> "$GITHUB_OUTPUT"
-            echo "a scheduled run already succeeded on $today KST - skipping mail"
+            echo "already delivered for $today KST - skipping mail"
           else
             echo "send=true" >> "$GITHUB_OUTPUT"
-            echo "no successful scheduled run yet on $today KST - sending"
+            echo "last delivery was '${last:-never}', today is $today KST - sending"
           fi
 
       # Non-blocking: the published dashboard is the primary output, so a mail failure
       # (missing/expired Gmail secret, SMTP outage) must not stop the Pages deploy below.
       - name: Send email summary
+        id: mail
         if: steps.mailgate.outputs.send == 'true'
         continue-on-error: true
         uses: dawidd6/action-send-mail@v3
@@ -121,6 +101,37 @@ jobs:
           to: jhyupkim@unid.co.kr
           from: 업무 참고자료 Dashboard <${{ secrets.GMAIL_USERNAME }}>
           html_body: file://email-summary.html
+
+      - name: Mark today as delivered
+        if: steps.mail.outcome == 'success'
+        run: echo "${{ steps.mailgate.outputs.today }}" > .last-digest
+
+      # Both the accumulated series and the delivery marker go back in one commit, after the
+      # mail rather than before it. Opinet serves 7 days and SSE's SCFI history is
+      # subscriber-only, so keeping what each run saw is the only way those become long series.
+      #
+      # Non-blocking, and it rebases before pushing: a commit landing on main mid-run rejects
+      # a plain push, and while this step was fatal that took the mail and the Pages deploy
+      # with it - the two things the run exists to produce. Losing a day of accumulation costs
+      # nothing by comparison, and nothing at all in practice, since the store is keyed by date
+      # and both upstreams still serve the recent window for the next run to re-merge.
+      #
+      # If the marker's push is the part that loses the race, the day's mail has already gone
+      # out and a later slot will send a second copy. One duplicate beats a silent miss, which
+      # is the failure this whole ladder exists to prevent.
+      - name: Commit history and delivery marker
+        continue-on-error: true
+        run: |
+          if [[ -n "$(git status --porcelain data-history.json .last-digest)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data-history.json .last-digest
+            git commit -m "chore: accumulate price history $(date -u +%Y-%m-%d)"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+            git push
+          else
+            echo "nothing to commit"
+          fi
 
       - name: Prepare Pages content
         run: cp dashboard.html index.html
