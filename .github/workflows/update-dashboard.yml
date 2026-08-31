@@ -2,21 +2,31 @@ name: Update Work Dashboard
 
 on:
   schedule:
-    # 08:30 KST daily. Cron is UTC and KST is UTC+9, so 23:30 UTC arrives as 08:30 KST the
-    # next morning - the same delivery time stockdashboard uses, so both digests land together.
+    # Cron is UTC and KST is UTC+9, so these land at 08:23 and 11:23 KST the next morning.
     #
     # The day range deliberately differs from stockdashboard's Mon-Fri. That repo skips the
     # weekend because no trading happened, but weather, holidays and typhoons do not stop on
     # Sunday: under Mon-Fri UTC, Monday morning - a working day - would have opened on
     # Saturday's page. Every day costs two extra runs a week and keeps the page never more
     # than a morning old.
-    - cron: '30 23 * * *'
+    #
+    # Two slots, and neither on the hour or half hour. GitHub drops scheduled runs under load
+    # and explicitly advises avoiding those peaks: this workflow sat on ':00' then ':30' and
+    # fired zero times in three days, while stockdashboard's ':30' slot did fire but drifted
+    # 15 minutes, then 5 hours, then 7. The second slot is a catch-up - if the first was
+    # dropped the digest still arrives before lunch. "Send email summary" is gated on whether
+    # a scheduled run already succeeded today (KST), so the catch-up never double-sends.
+    - cron: '23 23 * * *'
+    - cron: '23 2 * * *'
   workflow_dispatch: {}
 
 permissions:
   contents: write
   pages: write
   id-token: write
+  # for the mail gate below to read this workflow's own earlier runs. Naming any permission
+  # drops the defaults for the rest, so it has to be listed explicitly.
+  actions: read
 
 concurrency:
   group: pages
@@ -66,9 +76,40 @@ jobs:
         id: subject
         run: echo "text=$(cat email-subject.txt)" >> "$GITHUB_OUTPUT"
 
+      # The catch-up slot exists because the first one gets dropped; on the days it is not
+      # dropped both slots run, and without this the inbox gets the same digest twice. A
+      # manual dispatch always sends - that is someone explicitly asking for it.
+      - name: Check whether today's digest already went out
+        id: mailgate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "${{ github.event_name }}" != "schedule" ]]; then
+            echo "send=true" >> "$GITHUB_OUTPUT"
+            echo "manual run - sending"
+            exit 0
+          fi
+          today=$(TZ=Asia/Seoul date +%F)
+          sent=0
+          while read -r ts; do
+            [[ -z "$ts" ]] && continue
+            [[ "$(TZ=Asia/Seoul date -d "$ts" +%F)" == "$today" ]] && sent=1
+          done < <(gh run list --repo "$GITHUB_REPOSITORY" \
+                     --workflow "${{ github.workflow }}" --event schedule --status success \
+                     --limit 20 --json databaseId,createdAt \
+                     -q ".[] | select(.databaseId != ${{ github.run_id }}) | .createdAt")
+          if [[ "$sent" -eq 1 ]]; then
+            echo "send=false" >> "$GITHUB_OUTPUT"
+            echo "a scheduled run already succeeded on $today KST - skipping mail"
+          else
+            echo "send=true" >> "$GITHUB_OUTPUT"
+            echo "no successful scheduled run yet on $today KST - sending"
+          fi
+
       # Non-blocking: the published dashboard is the primary output, so a mail failure
       # (missing/expired Gmail secret, SMTP outage) must not stop the Pages deploy below.
       - name: Send email summary
+        if: steps.mailgate.outputs.send == 'true'
         continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
