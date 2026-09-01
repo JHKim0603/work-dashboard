@@ -1253,6 +1253,21 @@ $priceCards += @($customsSeries)
 if ($kcl) { $priceCards += $kcl }
 $priceCards = @($priceCards)
 
+# Attach the long-form explanations by card id, after the list is assembled rather than inside
+# each fetcher. The cards arrive from six different sources - Yahoo, DCE, ECOS, Opinet, EPSIS,
+# World Bank - and half of them are built in code rather than from config, so keying off id here
+# is the one place that reaches all of them and keeps the prose in config.json.
+foreach ($c in $priceCards) {
+    $about = $config.cardAbout.($c.id)
+    if ($about) { $c | Add-Member -NotePropertyName about -NotePropertyValue $about -Force }
+}
+if ($scfi -and $config.cardAbout.scfi) {
+    $scfi | Add-Member -NotePropertyName about -NotePropertyValue $config.cardAbout.scfi -Force
+}
+# The lane card is one card built from several series, so its text is keyed by the card rather
+# than by any single lane id.
+$laneAbout = $config.cardAbout.'ccfi-lanes'
+
 # Attach "왜 움직였나" headlines to each price card - shown in the detail popup, so a move on
 # the chart can be read against what was reported around it rather than left unexplained.
 Write-Host "Fetching price driver news..."
@@ -1297,6 +1312,7 @@ $typhoonJson = ConvertTo-JsonOrNull -InputObject $typhoon -Depth 4
 $pricesJson = ConvertTo-Json -InputObject @($priceCards) -Depth 6
 $scfiJson = ConvertTo-JsonOrNull -InputObject $scfi -Depth 4
 $sseLanesJson = ConvertTo-Json -InputObject @($sseLanes) -Depth 4
+$laneAboutJson = ConvertTo-JsonOrNull -InputObject $laneAbout -Depth 2
 $hasFuelKey = if ($env:OPINET_API_KEY) { "true" } else { "false" }
 # A failed KCl fetch used to just not append a card, so the page came back one card shorter
 # with nothing saying so - indistinguishable from "we never tracked potash". Say it instead.
@@ -1305,7 +1321,7 @@ $materialsJson = ConvertTo-Json -InputObject @($materials) -Depth 6
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
-$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
+$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8
