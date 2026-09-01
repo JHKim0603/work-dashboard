@@ -396,6 +396,26 @@
   .empty-note { font-size: 12px; color: var(--ink-muted); font-style: italic; }
 
   .footnote { max-width: 1320px; margin: 32px auto 0; font-size: 11.5px; color: var(--ink-muted); line-height: 1.7; }
+
+  /* Sits under the source notes and separated from them: the notes are caveats about the data,
+     this is authorship, and running them together reads as one more disclaimer. */
+  .credit {
+    max-width: 1320px; margin: 18px auto 0; padding-top: 14px;
+    border-top: 1px solid var(--gridline);
+    display: flex; align-items: center; gap: 10px;
+    font-size: 12px; color: var(--ink-muted);
+  }
+  .credit .by { display: inline-flex; align-items: center; gap: 7px; }
+  .credit .mark {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 6px;
+    background: var(--accent); color: #fff;
+    font-size: 11px; font-weight: 700; letter-spacing: -0.02em;
+  }
+  .credit .name { color: var(--ink-primary); font-weight: 650; }
+  .credit a { color: var(--accent); text-decoration: none; }
+  .credit a:hover { text-decoration: underline; }
+  .credit a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>
 </head>
 <body>
@@ -456,15 +476,23 @@
     </div>
   </div>
 
+  <!-- Short on purpose. This used to spell out the PP/PE caveat and the advisory thresholds
+       here, but every card now carries that in its own 상세 popup, where it sits next to the
+       number it qualifies instead of in a block nobody reads at the bottom. -->
   <div class="footnote">
-    날씨: Open-Meteo (폭염/한파 멘트는 기상청 특보 기준을 단순화한 참고용 임계값) ·
-    공휴일: Nager.Date · 태풍: GDACS(UN 재해 알림 시스템) ·
-    환율·국제유가: Yahoo Finance 주간 종가 ·
-    PP·PE: 대련상품거래소(DCE) 주력연속 · KCl: World Bank Pink Sheet(월간) ·
-    컨테이너 운임: Shanghai Shipping Exchange(주간) · 국내 유가: 한국석유공사 오피넷 ·
-    뉴스: Google 뉴스 검색.<br>
-    PP·PE는 <b>부가세가 포함된 중국 내수 선물가(위안/톤)</b>이지 국내 매입가가 아닙니다 —
-    수준이 아니라 <b>방향</b>을 보는 지표입니다. 모두 참고용으로만 사용하세요.
+    출처 — 날씨 Open-Meteo · 공휴일 Nager.Date · 태풍 GDACS · 환율·유가 Yahoo Finance ·
+    수지 DCE/CZCE · 운임 Shanghai Shipping Exchange · KCl World Bank ·
+    국내 유가 오피넷 · 전기요금 EPSIS · 물가지수 한국은행 · 뉴스 Google 뉴스<br>
+    각 카드의 <b>상세 ↗</b>에 그 숫자가 무엇이고 어떻게 읽어야 하는지 적어두었습니다. 모두 참고용입니다.
+  </div>
+
+  <div class="credit">
+    <!-- Initials rather than a full name: this page is public, and the repo's commit history
+         already carries the identity for anyone who needs it. -->
+    <span class="by">
+      <span class="mark" aria-hidden="true">JH</span>
+      제작 <span class="name">JH</span>
+    </span>
   </div>
 </div>
 
