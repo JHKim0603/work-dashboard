@@ -1617,6 +1617,10 @@ function Get-PriceChartHtml {
 "@
 }
 
+# Rows carry their sort key so the mail can interleave the freight blocks, which are built
+# separately below, at the position config.cardOrder gives them. Concatenating the three groups
+# instead is what left the mail showing 운임 first while the page had already moved it into the
+# logistics group - the same two-lists-drift the page-side sort was meant to end.
 $priceRowsHtml = foreach ($c in $priceCards) {
     $pts = @($c.points)
     if ($pts.Count -eq 0) { continue }
@@ -1624,7 +1628,7 @@ $priceRowsHtml = foreach ($c in $priceCards) {
     $prior = if ($pts.Count -gt 1) { $pts[-2] } else { $null }
     $change = Get-PriceChangeHtml -latestValue $latest.value -priorValue $(if ($prior) { $prior.value } else { $null })
     $chartHtml = Get-PriceChartHtml -points $pts -accent $change.accent -currency $c.currency
-    @"
+    [PSCustomObject]@{ sort = $c.sort; html = @"
 <tr>
   <td style="padding:14px 16px;border-bottom:1px solid #e1e0d9;">
     <div style="font-weight:700;font-size:13.5px;color:#0b0b0b;">$($c.displayName)</div>
@@ -1638,7 +1642,7 @@ $priceRowsHtml = foreach ($c in $priceCards) {
     <div style="font-size:11px;color:#898781;margin-top:7px;">$($c.note) · $($c.source)</div>
   </td>
 </tr>
-"@
+"@ }
 }
 
 $scfiHtml = ""
@@ -1695,6 +1699,14 @@ if ($sseLanes.Count -gt 0) {
 "@
 }
 
+# One ordered list, same keys the page sorts by, so the mail and the dashboard cannot disagree
+# about what comes first.
+$priceSectionRows = @()
+$priceSectionRows += @($priceRowsHtml)
+if ($scfiHtml) { $priceSectionRows += [PSCustomObject]@{ sort = $scfiSort; html = $scfiHtml } }
+if ($laneHtml) { $priceSectionRows += [PSCustomObject]@{ sort = $laneSort; html = $laneHtml } }
+$priceSectionHtml = (@($priceSectionRows | Sort-Object sort | ForEach-Object { $_.html }) -join "`n")
+
 $materialsHtml = foreach ($m in $materials) {
     $newsLines = foreach ($n in ($m.news | Select-Object -First 3)) {
         # Outlet and date were already fetched but thrown away here, leaving three unattributed
@@ -1747,7 +1759,7 @@ $emailHtml = @"
   $holidayHtml
   $typhoonHtml
   $(Get-EmailSection "날씨 · 온습도" ($weatherRowsHtml -join "`n"))
-  $(Get-EmailSection "원자재 · 물류 가격" ($scfiHtml + "`n" + $laneHtml + "`n" + ($priceRowsHtml -join "`n")))
+  $(Get-EmailSection "원자재 · 물류 가격" $priceSectionHtml)
   $(Get-EmailSection "수급 뉴스" ($materialsHtml -join "`n"))
   <div style="margin-top:16px;font-size:11px;color:#898781;line-height:1.6;">
     날씨: Open-Meteo · 공휴일: Nager.Date · 태풍: GDACS · 유가/목재: Yahoo Finance · KCl: World Bank · 운임지수: Shanghai Shipping Exchange · 뉴스: Google 뉴스. 업무 참고용 요약입니다.<br>
