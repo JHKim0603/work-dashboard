@@ -882,14 +882,21 @@ function Get-DomesticFuelPrices {
 
 # --- News (materials) -------------------------------------------------------------------
 function Get-NewsHeadlines {
-    param($query, $max = 4)
+    # Google News RSS ranks by relevance, not date, and honours no recency unless the query
+    # says so. Taking the first N items therefore returned whatever matched best across all
+    # time: the 수급 뉴스 cards were showing headlines 322 and even 1,569 days old, with the
+    # freshest item on the page a month behind. Asking for a window and then sorting and
+    # filtering by date is what makes "오늘의 뉴스" actually mean today's.
+    param($query, $max = 4, $withinDays = 21)
 
-    $uri = "https://news.google.com/rss/search?q=" + [uri]::EscapeDataString($query) + "&hl=ko&gl=KR&ceid=KR:ko"
+    $scoped = if ($withinDays -gt 0) { "$query when:${withinDays}d" } else { $query }
+    $uri = "https://news.google.com/rss/search?q=" + [uri]::EscapeDataString($scoped) + "&hl=ko&gl=KR&ceid=KR:ko"
     try {
         $raw = Invoke-WebRequest -Uri $uri -Headers $headers -UseBasicParsing
         [xml]$rss = $raw.Content
-        $items = $rss.rss.channel.item | Select-Object -First $max
-        @(foreach ($it in $items) {
+        $cutoff = (Get-Date).ToUniversalTime().AddDays(-$withinDays)
+
+        $parsed = @(foreach ($it in $rss.rss.channel.item) {
             $title = $it.title
             $source = $null
             if ($title -match '^(.*) - ([^-]{1,40})$') {
@@ -898,21 +905,34 @@ function Get-NewsHeadlines {
             # RSS pubDate is RFC-822 with English month/day names ("Tue, 26 Aug 2026 ..."), which
             # a non-English culture can't parse - and an unguarded throw here loses every headline
             # from the whole feed, not just the one bad item. Parse invariantly, skip on failure.
-            $dateStr = ""
+            $when = $null
             try {
-                $dateStr = [System.DateTimeOffset]::Parse(
+                $when = [System.DateTimeOffset]::Parse(
                     $it.pubDate, [System.Globalization.CultureInfo]::InvariantCulture
-                ).ToString("yyyy-MM-dd")
+                )
             } catch {
                 Write-Warning "  (pubDate 파싱 실패, 날짜 생략: '$($it.pubDate)')"
             }
+            # An item whose date won't parse can't be shown to be recent, and the whole point
+            # here is recency - drop it rather than let an undateable headline pose as today's.
+            if ($null -eq $when -or $when.UtcDateTime -lt $cutoff) { continue }
+
             [PSCustomObject]@{
                 title  = $title
                 source = $source
-                date   = $dateStr
+                date   = $when.ToString("yyyy-MM-dd")
+                sortAt = $when.UtcDateTime
                 link   = $it.link
             }
         })
+
+        $fresh = @($parsed | Sort-Object sortAt -Descending | Select-Object -First $max)
+        if ($fresh.Count -eq 0) {
+            # ${} braces required: PowerShell would otherwise read the trailing Korean
+            # character as part of the variable name and print an empty number.
+            Write-Host "    (최근 ${withinDays}일 내 '$query' 기사 없음)"
+        }
+        @($fresh | Select-Object title, source, date, link)
     } catch {
         Write-Warning "News fetch failed for '$query': $($_.Exception.Message)"
         @()
