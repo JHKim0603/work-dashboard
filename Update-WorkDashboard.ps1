@@ -833,37 +833,67 @@ function Get-SseIndex {
 # Opinet's public API is free but key-gated (signup at opinet.co.kr, 1,500 calls/day). Without
 # a key the endpoint answers with an empty OIL array rather than an error, so this returns
 # $null and the dashboard shows a "키 필요" placeholder instead of a broken card.
-# --- SMP (계통한계가격) --------------------------------------------------------------------
-# Electrolysis is how KOH is made from KCl brine, so power is a first-order input cost here.
-# What a plant actually pays is KEPCO's regulated industrial tariff, which moves once or twice
-# a year by policy - a step function, not a trend worth charting. SMP is the wholesale market
-# clearing price underneath it: it moves daily and is what pushes the tariff, so it works as a
-# leading indicator. The card labels it that way rather than as "our electricity price".
+# --- 산업용 전기 판매단가 -------------------------------------------------------------------
+# Electrolysis is how KOH comes out of KCl brine, so power is a first-order input cost here.
 #
-# Source is the AJAX call behind KPX EPSIS's own public SMP page - no key, unlike data.go.kr's
-# SMP API which needs per-dataset 심의승인. It only serves today's 24 hourly prices (the gubun
-# parameter is ignored), so the daily mean goes into the accumulating store the same way pump
-# prices and SCFI do.
-function Get-SmpToday {
-    try {
-        $smpHeaders = $headers.Clone()
-        $smpHeaders["Referer"] = "https://epsis.kpx.or.kr/epsisnew/selectEkmaSmpShdChart.do?menuId=040202"
-        $smpHeaders["X-Requested-With"] = "XMLHttpRequest"
-        $resp = Invoke-WebRequest -Uri "https://epsis.kpx.or.kr/epsisnew/selectEkmaSmpShdChart.ajax" `
-            -Method Post -Headers $smpHeaders -Body @{ menuId = "040202" } -UseBasicParsing -TimeoutSec 30
+# This is what industrial customers are actually billed per kWh - KEPCO's revenue divided by
+# industrial sales - not SMP. SMP is the wholesale clearing price generators are paid; a plant
+# never sees it. An earlier version charted SMP because it moves daily and the tariff does not,
+# but a daily line of the wrong number is worse than an annual line of the right one: the
+# series below shows 105.48 in 2021 becoming 181.90 in 2025, a 72% step-change in the cost of
+# running a cell room, which SMP's daily wobble said nothing about.
+#
+# Caveat kept on the card: it is the industry-wide average, so a specific 계약종별·전압·시간대
+# contract will differ in level - the trend is what transfers, not the absolute number.
+#
+# EPSIS renders the series straight into its page as chart rows, so no key is needed. The
+# data.go.kr equivalent needs a second signup on 전력데이터개방포털 on top of the portal key.
+function Get-IndustrialPowerPrice {
+    param($years = 16)
 
-        $values = @([regex]::Matches($resp.Content, '"Value"\s*:\s*"([0-9.]+)"') |
-            ForEach-Object { [double]$_.Groups[1].Value } | Where-Object { $_ -gt 0 })
-        if ($values.Count -eq 0) { throw "SMP 값을 파싱하지 못했습니다" }
+    try {
+        $resp = Invoke-WebRequest -Uri "https://epsis.kpx.or.kr/epsisnew/selectEksaScfChart.do?menuId=060600" `
+            -Headers $headers -UseBasicParsing -TimeoutSec 30
+
+        # Series order is fixed by the chart legend: 주택용/일반용/교육용/산업용/농사용/가로등/심야,
+        # mapping onto Value, Value2 .. Value7 - so 산업용 is Value4. Verified against the
+        # published table: 2025 reads 농사용 88.55 (lowest, subsidised) and 산업용 181.90.
+        $legend = [regex]::Match($resp.Content, 'lineChartLayoutMake\("Date","([^"]+)"')
+        if ($legend.Success) {
+            $names = $legend.Groups[1].Value -split '/'
+            $idx = [array]::IndexOf($names, "산업용")
+            if ($idx -lt 0) { throw "범례에 산업용이 없습니다: $($legend.Groups[1].Value)" }
+            $valueKey = if ($idx -eq 0) { "Value" } else { "Value$($idx + 1)" }
+        } else {
+            $valueKey = "Value4"
+        }
+
+        $points = foreach ($m in [regex]::Matches($resp.Content, 'chartData\.push\(\{([^}]*)\}\)')) {
+            $blob = $m.Groups[1].Value
+            $year = [regex]::Match($blob, '"Date"\s*:\s*"(\d{4})"')
+            $val  = [regex]::Match($blob, "`"$valueKey`"\s*:\s*`"([0-9.]+)`"")
+            if (-not $year.Success -or -not $val.Success) { continue }
+            $v = [double]$val.Groups[1].Value
+            if ($v -le 0) { continue }   # pre-1973 rows are zero-filled placeholders
+            [PSCustomObject]@{ label = $year.Groups[1].Value; value = [math]::Round($v, 2) }
+        }
+
+        # the page repeats each year across chart and grid blocks - keep one row per year
+        $points = @($points | Group-Object label | ForEach-Object { $_.Group[0] } |
+            Sort-Object label | Select-Object -Last $years)
+        if ($points.Count -eq 0) { throw "산업용 판매단가를 파싱하지 못했습니다" }
 
         [PSCustomObject]@{
-            avg   = [math]::Round(($values | Measure-Object -Average).Average, 2)
-            min   = [math]::Round(($values | Measure-Object -Minimum).Minimum, 2)
-            max   = [math]::Round(($values | Measure-Object -Maximum).Maximum, 2)
-            hours = $values.Count
+            id          = "power"
+            displayName = "산업용 전기요금"
+            unit        = "원/kWh"
+            currency    = ""
+            note        = "한전 산업용 평균 판매단가 · 연 1회(7월경) 갱신 · 업계 평균이라 개별 계약 단가와는 차이"
+            source      = "전력거래소 EPSIS"
+            points      = $points
         }
     } catch {
-        Write-Warning "SMP fetch failed: $($_.Exception.Message)"
+        Write-Warning "산업용 전기요금 fetch failed: $($_.Exception.Message)"
         $null
     }
 }
@@ -1103,25 +1133,16 @@ if ($scfi) {
     $scfi | Add-Member -NotePropertyName points -NotePropertyValue $scfiHistory -Force
 }
 
-Write-Host "Fetching SMP (계통한계가격)..."
-$smpToday = Get-SmpToday
-$smp = $null
-if ($smpToday) {
-    $smpPoints = @(Merge-HistorySeries -store $historyStore -key "smp" `
-        -points @([PSCustomObject]@{ label = $nowKst.ToString("yyyy-MM-dd"); value = $smpToday.avg }))
-    Write-Host "  오늘 평균 $($smpToday.avg)원/kWh ($($smpToday.hours)시간, $($smpToday.min)~$($smpToday.max)) · 누적 $($smpPoints.Count)일"
-    $smp = [PSCustomObject]@{
-        id          = "smp"
-        displayName = "전력 도매가 (SMP)"
-        unit        = "원/kWh"
-        currency    = ""
-        note        = "육지 계통한계가격 일평균 · 전기분해 원가의 선행지표 (실제 납부액은 한전 산업용 요금) · 누적 $($smpPoints.Count)일"
-        source      = "전력거래소 EPSIS"
-        points      = $smpPoints
-    }
-}
-
 Write-HistoryStore -store $historyStore
+
+# Published annually and already carrying its own decades of history, so unlike pump prices or
+# SCFI this one needs no accumulation - it comes back whole on every fetch.
+Write-Host "Fetching 산업용 전기요금..."
+$power = Get-IndustrialPowerPrice
+if ($power) {
+    $latest = $power.points[-1]
+    Write-Host "  $($latest.label)년 $($latest.value)원/kWh (최근 $($power.points.Count)개년)"
+}
 
 # One flat list so the dashboard/email render every price card the same way regardless of
 # which upstream it came from. Order here is the display order.
@@ -1141,7 +1162,7 @@ $priceCards += @($resinSeries)
 $priceCards += @($fuel)
 # Power sits after the fuels because it is the same question - what energy costs this month -
 # but the one that lands hardest here: KOH comes out of an electrolysis cell.
-if ($smp) { $priceCards += $smp }
+if ($power) { $priceCards += $power }
 $priceCards += @($customsSeries)
 if ($kcl) { $priceCards += $kcl }
 $priceCards = @($priceCards)
