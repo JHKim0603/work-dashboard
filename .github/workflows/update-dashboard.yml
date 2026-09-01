@@ -25,7 +25,12 @@ on:
     - cron: '47 0 * * *'
     - cron: '23 2 * * *'
     - cron: '41 4 * * *'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force_email:
+        description: "오늘 이미 발송했더라도 메일을 다시 보냄"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -71,9 +76,14 @@ jobs:
         run: |
           today=$(TZ=Asia/Seoul date +%F)
           echo "today=$today" >> "$GITHUB_OUTPUT"
-          if [[ "${{ github.event_name }}" != "schedule" ]]; then
+          # Only an explicit force overrides the marker. A plain dispatch used to always send,
+          # which was fine while dispatch meant a person pressing the button - but an external
+          # scheduler calling the dispatch API to beat GitHub's queue delays would then send on
+          # every call, and the once-a-day guarantee would quietly be gone. The force input is
+          # what "send it to me now" means now.
+          if [[ "${{ inputs.force_email }}" == "true" ]]; then
             echo "send=true" >> "$GITHUB_OUTPUT"
-            echo "manual run - sending regardless of marker"
+            echo "force_email requested - sending regardless of marker"
             exit 0
           fi
           last=$(cat .last-digest 2>/dev/null | tr -d '[:space:]')
