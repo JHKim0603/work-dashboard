@@ -1,15 +1,46 @@
 {
   "weatherLocations": [
-    { "Id": "ulsan-namgu", "DisplayName": "울산 남구", "Country": "KR", "Lat": 35.5433, "Lon": 129.3300 }
+    {
+      "Id": "ulsan-namgu",
+      "DisplayName": "울산 남구",
+      "Country": "KR",
+      "Lat": 35.5433,
+      "Lon": 129.33
+    }
   ],
   "typhoonWatchHubs": [
-    { "Id": "hanoi", "DisplayName": "하노이/하이퐁", "Lat": 21.0278, "Lon": 105.8342 },
-    { "Id": "hcmc", "DisplayName": "호치민", "Lat": 10.8231, "Lon": 106.6297 }
+    {
+      "Id": "hanoi",
+      "DisplayName": "하노이/하이퐁",
+      "Lat": 21.0278,
+      "Lon": 105.8342
+    },
+    {
+      "Id": "hcmc",
+      "DisplayName": "호치민",
+      "Lat": 10.8231,
+      "Lon": 106.6297
+    }
   ],
   "typhoonTransshipHubs": [
-    { "Id": "hkszx", "DisplayName": "홍콩/선전", "Lat": 22.3, "Lon": 114.1 },
-    { "Id": "kaohsiung", "DisplayName": "가오슝", "Lat": 22.6, "Lon": 120.3 },
-    { "Id": "shanghai", "DisplayName": "상하이/닝보", "Lat": 30.6, "Lon": 122.0 }
+    {
+      "Id": "hkszx",
+      "DisplayName": "홍콩/선전",
+      "Lat": 22.3,
+      "Lon": 114.1
+    },
+    {
+      "Id": "kaohsiung",
+      "DisplayName": "가오슝",
+      "Lat": 22.6,
+      "Lon": 120.3
+    },
+    {
+      "Id": "shanghai",
+      "DisplayName": "상하이/닝보",
+      "Lat": 30.6,
+      "Lon": 122.0
+    }
   ],
   "yahooSeries": [
     {
@@ -50,7 +81,6 @@
       "NewsQuery": "유류할증료 항공 해상운임 유가"
     }
   ],
-
   "//customsSeries": "관세청 수출입실적(data.go.kr) 기반 수입 단가 카드. 항목을 넣으면 카드가 생기고, 비워두면 아무것도 조회하지 않습니다. 필수: Id, DisplayName, HsSgn. 선택: CntyCd(국가코드), StatKorMatch(품목명 부분일치), Unit, Note, NewsQuery. 검증된 HS 코드와 주의사항은 README 참고.",
   "customsSeries": [],
   "dceSeries": [
@@ -75,30 +105,68 @@
   ],
   "//sseLanes": "CCFI 항로별 운임지수. SCFI는 무료 엔드포인트에서 항로별 값이 전부 null(구독 전용, India and Pakistan 항로 포함)이라 종합지수만 쓰고, 항로별은 CCFI에서 가져옵니다. 서남아/인도 항로는 CCFI·CICFI 어디에도 없습니다 - 페르시아만·홍해가 지리적으로 가장 가깝지만 인도 무역로가 아니라 중동 항로이며, 홍해·수에즈 정세에 좌우됩니다.",
   "sseLanes": [
-    { "Id": "ccfi-sea",    "IndexName": "ccfi", "ItemType": "CCFI_S07", "Label": "동남아" },
-    { "Id": "ccfi-europe", "IndexName": "ccfi", "ItemType": "CCFI_S02", "Label": "유럽" },
-    { "Id": "ccfi-uswc",   "IndexName": "ccfi", "ItemType": "CCFI_S03", "Label": "미주 서안" },
-    { "Id": "ccfi-usec",   "IndexName": "ccfi", "ItemType": "CCFI_S04", "Label": "미주 동안" },
-    { "Id": "ccfi-samer",  "IndexName": "ccfi", "ItemType": "CCFI_S13", "Label": "남미" },
-    { "Id": "ccfi-mideast","IndexName": "ccfi", "ItemType": "CCFI_S14", "Label": "페르시아만·홍해" }
+    {
+      "Id": "ccfi-sea",
+      "IndexName": "ccfi",
+      "ItemType": "CCFI_S07",
+      "Label": "동남아"
+    },
+    {
+      "Id": "ccfi-europe",
+      "IndexName": "ccfi",
+      "ItemType": "CCFI_S02",
+      "Label": "유럽"
+    },
+    {
+      "Id": "ccfi-uswc",
+      "IndexName": "ccfi",
+      "ItemType": "CCFI_S03",
+      "Label": "미주 서안"
+    },
+    {
+      "Id": "ccfi-usec",
+      "IndexName": "ccfi",
+      "ItemType": "CCFI_S04",
+      "Label": "미주 동안"
+    },
+    {
+      "Id": "ccfi-samer",
+      "IndexName": "ccfi",
+      "ItemType": "CCFI_S13",
+      "Label": "남미"
+    },
+    {
+      "Id": "ccfi-mideast",
+      "IndexName": "ccfi",
+      "ItemType": "CCFI_S14",
+      "Label": "페르시아만·홍해"
+    }
   ],
-
   "priceNewsQueries": {
     "kcl": "염화칼륨 가격",
     "scfi": "컨테이너 운임 해상운임 SCFI",
     "D047": "경유 가격 주유소 유류세",
-    "B027": "휘발유 가격 주유소 유류세"
+    "B027": "휘발유 가격 주유소 유류세",
+    "smp": "산업용 전기요금 차등요금제"
   },
   "materials": [
     {
-      "Id": "koh-k2co3",
-      "DisplayName": "수산화칼륨(KOH) · 탄산칼륨(K2CO3)",
-      "NewsQueries": ["수산화칼륨 가성칼륨 가격", "탄산칼륨 가격", "가성칼륨 수급 유니드"]
+      "Id": "unid",
+      "DisplayName": "유니드 · 회사 동향",
+      "NewsQueries": [
+        "유니드",
+        "유니드 칼륨",
+        "유니드 실적 가동률"
+      ]
     },
     {
-      "Id": "timber",
-      "DisplayName": "국내 목재 수급 (수종별)",
-      "NewsQueries": ["국내 목재 수급", "원목 가격 국산", "소나무 낙엽송 목재 가격"]
+      "Id": "safety",
+      "DisplayName": "중대재해 · 화학공장 안전",
+      "NewsQueries": [
+        "화학공장 사고 중대재해",
+        "화학 플랜트 안전사고",
+        "석유화학 공장 사고 작업중지"
+      ]
     }
   ]
 }

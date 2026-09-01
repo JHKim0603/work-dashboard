@@ -833,6 +833,41 @@ function Get-SseIndex {
 # Opinet's public API is free but key-gated (signup at opinet.co.kr, 1,500 calls/day). Without
 # a key the endpoint answers with an empty OIL array rather than an error, so this returns
 # $null and the dashboard shows a "키 필요" placeholder instead of a broken card.
+# --- SMP (계통한계가격) --------------------------------------------------------------------
+# Electrolysis is how KOH is made from KCl brine, so power is a first-order input cost here.
+# What a plant actually pays is KEPCO's regulated industrial tariff, which moves once or twice
+# a year by policy - a step function, not a trend worth charting. SMP is the wholesale market
+# clearing price underneath it: it moves daily and is what pushes the tariff, so it works as a
+# leading indicator. The card labels it that way rather than as "our electricity price".
+#
+# Source is the AJAX call behind KPX EPSIS's own public SMP page - no key, unlike data.go.kr's
+# SMP API which needs per-dataset 심의승인. It only serves today's 24 hourly prices (the gubun
+# parameter is ignored), so the daily mean goes into the accumulating store the same way pump
+# prices and SCFI do.
+function Get-SmpToday {
+    try {
+        $smpHeaders = $headers.Clone()
+        $smpHeaders["Referer"] = "https://epsis.kpx.or.kr/epsisnew/selectEkmaSmpShdChart.do?menuId=040202"
+        $smpHeaders["X-Requested-With"] = "XMLHttpRequest"
+        $resp = Invoke-WebRequest -Uri "https://epsis.kpx.or.kr/epsisnew/selectEkmaSmpShdChart.ajax" `
+            -Method Post -Headers $smpHeaders -Body @{ menuId = "040202" } -UseBasicParsing -TimeoutSec 30
+
+        $values = @([regex]::Matches($resp.Content, '"Value"\s*:\s*"([0-9.]+)"') |
+            ForEach-Object { [double]$_.Groups[1].Value } | Where-Object { $_ -gt 0 })
+        if ($values.Count -eq 0) { throw "SMP 값을 파싱하지 못했습니다" }
+
+        [PSCustomObject]@{
+            avg   = [math]::Round(($values | Measure-Object -Average).Average, 2)
+            min   = [math]::Round(($values | Measure-Object -Minimum).Minimum, 2)
+            max   = [math]::Round(($values | Measure-Object -Maximum).Maximum, 2)
+            hours = $values.Count
+        }
+    } catch {
+        Write-Warning "SMP fetch failed: $($_.Exception.Message)"
+        $null
+    }
+}
+
 function Get-DomesticFuelPrices {
     $apiKey = $env:OPINET_API_KEY
     if (-not $apiKey) {
@@ -1050,7 +1085,12 @@ $fuel = @(Get-DomesticFuelPrices | Where-Object { $_ })
 # series worth charting over months.
 $historyStore = Read-HistoryStore
 foreach ($f in $fuel) {
-    $merged = Merge-HistorySeries -store $historyStore -key "fuel-$($f.id)" -points $f.points
+    # @() at the call site, not just inside the function: a function returning a one-element
+    # collection has it unrolled to a bare object on capture, and ConvertTo-Json then writes
+    # an object where the page expects an array - points.length goes undefined and the chart
+    # renders nothing. Only bites a series on its very first day, which is exactly when
+    # nobody is looking closely.
+    $merged = @(Merge-HistorySeries -store $historyStore -key "fuel-$($f.id)" -points $f.points)
     $f.points = $merged
     $f.note = "전국 주유소 평균 · 누적 $($merged.Count)일"
 }
@@ -1059,9 +1099,28 @@ if ($scfi) {
         [PSCustomObject]@{ label = $scfi.lastDate;    value = $scfi.previous }
         [PSCustomObject]@{ label = $scfi.currentDate; value = $scfi.current }
     ) | Where-Object { $_.label }
-    $scfiHistory = Merge-HistorySeries -store $historyStore -key "scfi" -points $scfiPoints
+    $scfiHistory = @(Merge-HistorySeries -store $historyStore -key "scfi" -points $scfiPoints)
     $scfi | Add-Member -NotePropertyName points -NotePropertyValue $scfiHistory -Force
 }
+
+Write-Host "Fetching SMP (계통한계가격)..."
+$smpToday = Get-SmpToday
+$smp = $null
+if ($smpToday) {
+    $smpPoints = @(Merge-HistorySeries -store $historyStore -key "smp" `
+        -points @([PSCustomObject]@{ label = $nowKst.ToString("yyyy-MM-dd"); value = $smpToday.avg }))
+    Write-Host "  오늘 평균 $($smpToday.avg)원/kWh ($($smpToday.hours)시간, $($smpToday.min)~$($smpToday.max)) · 누적 $($smpPoints.Count)일"
+    $smp = [PSCustomObject]@{
+        id          = "smp"
+        displayName = "전력 도매가 (SMP)"
+        unit        = "원/kWh"
+        currency    = ""
+        note        = "육지 계통한계가격 일평균 · 전기분해 원가의 선행지표 (실제 납부액은 한전 산업용 요금) · 누적 $($smpPoints.Count)일"
+        source      = "전력거래소 EPSIS"
+        points      = $smpPoints
+    }
+}
+
 Write-HistoryStore -store $historyStore
 
 # One flat list so the dashboard/email render every price card the same way regardless of
@@ -1080,6 +1139,9 @@ $priceCards += @($yahooSeries | Where-Object { $_.id -eq "distillate" })
 # are the upstream half of the same story the film and strapping prices below tell.
 $priceCards += @($resinSeries)
 $priceCards += @($fuel)
+# Power sits after the fuels because it is the same question - what energy costs this month -
+# but the one that lands hardest here: KOH comes out of an electrolysis cell.
+if ($smp) { $priceCards += $smp }
 $priceCards += @($customsSeries)
 if ($kcl) { $priceCards += $kcl }
 $priceCards = @($priceCards)
