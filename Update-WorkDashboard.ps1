@@ -689,13 +689,15 @@ function Get-DceResinSeries {
             displayName = $cfg.DisplayName
             unit        = $cfg.Unit
             note        = $cfg.Note
-            source      = "대련상품거래소(DCE) · Sina"
+            # Exchange comes from config: resin trades on Dalian, the alkalis on Zhengzhou.
+            # Sina serves both from one endpoint, so only the label differs.
+            source      = "$(if ($cfg.Exchange) { $cfg.Exchange } else { '대련상품거래소(DCE)' }) · Sina"
             currency    = $cfg.Currency
             points      = @($points)
             newsQuery   = $cfg.NewsQuery
         }
     } catch {
-        Write-Warning "DCE resin fetch failed for '$($cfg.Symbol)': $($_.Exception.Message)"
+        Write-Warning "중국 선물 조회 실패 '$($cfg.Symbol)': $($_.Exception.Message)"
         $null
     }
 }
@@ -1153,9 +1155,6 @@ $priceCards = @()
 # unless it is named here too.
 $priceCards += @($yahooSeries | Where-Object { $_.id -eq "usdkrw" })
 $priceCards += @($yahooSeries | Where-Object { $_.id -eq "wti" -or $_.id -eq "brent" })
-# Distillate sits with crude because it is the same barrel one refining step on, and it is the
-# cut that jet fuel and marine gasoil come from - which is what fuel surcharges are indexed to.
-$priceCards += @($yahooSeries | Where-Object { $_.id -eq "distillate" })
 # Resin sits next to crude deliberately: PP/PE are naphtha derivatives, so the oil cards above
 # are the upstream half of the same story the film and strapping prices below tell.
 $priceCards += @($resinSeries)

@@ -70,20 +70,21 @@
       "Decimals": 2,
       "Note": "ICE 브렌트유 선물",
       "NewsQuery": "브렌트유 국제유가 OPEC"
-    },
-    {
-      "Id": "distillate",
-      "Symbol": "HO=F",
-      "DisplayName": "중간유분 (ULSD 선물)",
-      "Unit": "/갤런",
-      "Decimals": 3,
-      "Note": "NYMEX 초저유황 경유 · 항공유·선박유와 같은 유분이라 유류할증료가 1~2개월 시차로 따라옵니다",
-      "NewsQuery": "유류할증료 항공 해상운임 유가"
     }
   ],
   "//customsSeries": "관세청 수출입실적(data.go.kr) 기반 수입 단가 카드. 항목을 넣으면 카드가 생기고, 비워두면 아무것도 조회하지 않습니다. 필수: Id, DisplayName, HsSgn. 선택: CntyCd(국가코드), StatKorMatch(품목명 부분일치), Unit, Note, NewsQuery. 검증된 HS 코드와 주의사항은 README 참고.",
   "customsSeries": [],
   "dceSeries": [
+    {
+      "Id": "naoh",
+      "Symbol": "SH0",
+      "DisplayName": "가성소다 (NaOH)",
+      "Unit": "위안/톤",
+      "Currency": "¥",
+      "Exchange": "정저우상품거래소(CZCE)",
+      "Note": "유니드 주력인 가성칼륨(KOH)의 나트륨 계열 대응재 · 같은 전해조 공정에서 나오는 가성알칼리라 KOH 판가 환경을 좌우 · 중국 내수 선물가, 방향성 참고",
+      "NewsQuery": "기초화학 소재 가격 업황"
+    },
     {
       "Id": "pp",
       "Symbol": "PP0",

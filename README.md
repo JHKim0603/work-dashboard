@@ -41,6 +41,7 @@ workflow.
    | 원/달러 환율 | Yahoo Finance (`KRW=X`) | 주간 종가 2년 | 차트 |
    | 컨테이너 운임지수 (SCFI) | Shanghai Shipping Exchange | 주간 | 값 + 전주비, **누적 3주부터 차트** |
    | 국제유가 WTI / 브렌트 | Yahoo Finance 선물 | 주간 종가 2년 | 차트 |
+   | 가성소다(NaOH) | 정저우상품거래소(CZCE) · Sina | 주간 종가 2년 | 차트 |
    | 폴리프로필렌(PP) / 폴리에틸렌(LLDPE) | 대련상품거래소(DCE) · Sina | 주간 종가 2년 | 차트 |
    | KCl (염화칼륨) | World Bank Pink Sheet | 월간 30개월 | 차트 |
    | 국내 경유·휘발유 (전국평균) | 한국석유공사 오피넷 | 일간 | 차트 (**누적**) |
