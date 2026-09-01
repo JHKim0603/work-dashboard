@@ -702,6 +702,79 @@ function Get-DceResinSeries {
     }
 }
 
+# --- 한국은행 ECOS 생산자물가지수 --------------------------------------------------------
+# The one domestic-price series here. Everything else priced in this section is a foreign
+# benchmark standing in for what Korea pays; this is what Korean producers actually realised.
+#
+# It exists because 염소 and 염산 have no free per-tonne price anywhere. Customs looks like it
+# should work and does not: HS 280110 exports run 1.5-12 tonne shipments at $9,000-23,600/t,
+# which is electronic-grade chlorine in cylinders. Bulk chlorine is hazardous and moves by
+# pipeline and tanker inside the country, so it never appears in trade data at all. Paid
+# subscriptions (ChemLocus, ChemAnalyst) are the only per-tonne sources, same as for KOH.
+#
+# So this is a category index, not a chlorine price: 기초무기화합물 bundles chlorine, HCl and
+# caustic soda together, and it is published as an index rather than 원/톤. The card says so.
+function Get-EcosSeries {
+    param($cfg, $months = 24)
+
+    # The public sample key works and is what runs without a secret; it caps a call at 10 rows,
+    # so pages are 10 wide regardless of key rather than branching on which one is in use.
+    $key = if ($env:ECOS_API_KEY) { $env:ECOS_API_KEY } else { "sample" }
+    $pageSize = 10
+
+    try {
+        # PPI lags about two months, so anchor on a month that is certainly published rather
+        # than on today - asking for an unpublished month returns nothing, not an error.
+        $end = (Get-Date).AddMonths(-1)
+        $start = $end.AddMonths(-($months - 1))
+        $startStr = $start.ToString("yyyyMM")
+        $endStr = $end.ToString("yyyyMM")
+
+        $rows = @()
+        for ($from = 1; $from -le $months; $from += $pageSize) {
+            $to = $from + $pageSize - 1
+            $uri = "https://ecos.bok.or.kr/api/StatisticSearch/$([uri]::EscapeDataString($key))/json/kr/$from/$to/" +
+                   "$($cfg.StatCode)/M/$startStr/$endStr/$($cfg.ItemCode)"
+            $resp = Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 30
+
+            if ($resp.RESULT) { throw "ECOS: $($resp.RESULT.CODE) $($resp.RESULT.MESSAGE)" }
+            $page = @($resp.StatisticSearch.row)
+            if ($page.Count -eq 0) { break }
+            $rows += $page
+            if ($page.Count -lt $pageSize) { break }
+            Start-Sleep -Milliseconds 250
+        }
+        if ($rows.Count -eq 0) { throw "no rows returned" }
+
+        $points = foreach ($r in $rows) {
+            $t = [string]$r.TIME
+            if ($t -notmatch '^\d{6}$') { continue }
+            $v = $r.DATA_VALUE
+            if (-not $v -or $v -notmatch '^-?[\d.]+$') { continue }
+            [PSCustomObject]@{
+                label = $t.Substring(0, 4) + "-" + $t.Substring(4, 2)
+                value = [math]::Round([double]$v, 2)
+            }
+        }
+        $points = @($points | Sort-Object label)
+        if ($points.Count -eq 0) { throw "no usable data points" }
+
+        [PSCustomObject]@{
+            id          = $cfg.Id
+            displayName = $cfg.DisplayName
+            unit        = $cfg.Unit
+            note        = $cfg.Note
+            source      = "한국은행 ECOS"
+            currency    = ""
+            points      = $points
+            newsQuery   = $cfg.NewsQuery
+        }
+    } catch {
+        Write-Warning "ECOS 지수 조회 실패 ($($cfg.Id)): $($_.Exception.Message)"
+        $null
+    }
+}
+
 # --- 관세청 수입 단가 (data.go.kr 품목별 국가별 수출입실적) --------------------------------
 # Deliberately generic: this is the one source here that can price nearly any traded input, so
 # it is driven entirely by config.customsSeries rather than wired to a particular commodity.
@@ -1079,6 +1152,17 @@ $resinSeries = @($resinSeries | Where-Object { $_ })
 
 # Empty by default - the plumbing is here so a future material is a config entry, not a code
 # change. Skips silently without a key, exactly like the Opinet card.
+$ecosSeries = @()
+if ($config.ecosSeries -and @($config.ecosSeries).Count -gt 0) {
+    Write-Host "Fetching 한국은행 물가지수..."
+    $ecosSeries = @(foreach ($cfg in $config.ecosSeries) {
+        Write-Host "  - $($cfg.DisplayName)"
+        Get-EcosSeries $cfg
+        Start-Sleep -Milliseconds 300
+    })
+    $ecosSeries = @($ecosSeries | Where-Object { $_ })
+}
+
 $customsSeries = @()
 if ($config.customsSeries -and @($config.customsSeries).Count -gt 0) {
     if ($env:DATA_GO_KR_KEY) {
@@ -1162,6 +1246,9 @@ $priceCards += @($fuel)
 # Power sits after the fuels because it is the same question - what energy costs this month -
 # but the one that lands hardest here: KOH comes out of an electrolysis cell.
 if ($power) { $priceCards += $power }
+# Right after the caustic-soda card: NaOH is the Chinese futures read on where the caustic pair
+# is heading, this is what Korean producers actually realised on the same shelf of chemicals.
+$priceCards += @($ecosSeries)
 $priceCards += @($customsSeries)
 if ($kcl) { $priceCards += $kcl }
 $priceCards = @($priceCards)
