@@ -504,6 +504,7 @@ const PRICES = __PRICES_JSON__;
 const SCFI = __SCFI_JSON__;
 const SSE_LANES = __SSE_LANES_JSON__;
 const LANE_ABOUT = __LANE_ABOUT_JSON__;
+const CARD_SORTS = __CARD_SORTS_JSON__;
 const HAS_FUEL_KEY = __HAS_FUEL_KEY__;
 const HAS_KCL = __HAS_KCL__;
 const MATERIALS = __MATERIALS_JSON__;
@@ -1031,7 +1032,11 @@ function priceCardHtml(c, idx) {
 }
 
 const pricesGrid = document.getElementById("pricesGrid");
+// Each entry carries the sort key config assigned, because these cards come from two places -
+// the freight ones are built here, the priced ones arrive already ordered from the generator -
+// and interleaving them by push order is what put KCl last.
 const priceCards = [];
+const pushCard = (sort, html) => priceCards.push({ sort, html });
 
 if (SCFI) {
   const up = SCFI.change >= 0;
@@ -1043,7 +1048,7 @@ if (SCFI) {
   const chartId = "ch-scfi";
   if (hasChart) CHART_DATA[chartId] = { points: pts, currency: "", unit: "pt", decimals: 1 };
 
-  priceCards.push(`
+  pushCard(CARD_SORTS.scfi, `
     <div class="card stat-tile">
       <div class="card-head">
         <h3>${esc(SCFI.displayName)}</h3>
@@ -1095,7 +1100,7 @@ if (SSE_LANES && SSE_LANES.length) {
       news: []
     };
   }
-  priceCards.push(`
+  pushCard(CARD_SORTS.lanes, `
     <div class="card">
       <div class="card-head">
         <h3>CCFI 항로별 운임지수</h3>
@@ -1112,11 +1117,12 @@ if (SSE_LANES && SSE_LANES.length) {
 
 (PRICES || []).forEach((c, i) => {
   const html = priceCardHtml(c, i);
-  if (html) priceCards.push(html);
+  // Ties keep source order, so a card the order list does not name lands where it was.
+  if (html) pushCard(typeof c.sort === "number" ? c.sort : 900, html);
 });
 
 if (!HAS_FUEL_KEY) {
-  priceCards.push(`
+  pushCard(950, `
     <div class="card">
       <h3>국내 경유 · 휘발유 (전국평균)</h3>
       <div class="locked-note">
@@ -1131,7 +1137,7 @@ if (!HAS_FUEL_KEY) {
 // resolves the workbook link from the World Bank's own page and retries, so landing here means
 // something changed at the source rather than a blip.
 if (!HAS_KCL) {
-  priceCards.push(`
+  pushCard(951, `
     <div class="card">
       <h3>KCl (염화칼륨)</h3>
       <div class="locked-note">
@@ -1143,8 +1149,10 @@ if (!HAS_KCL) {
     </div>`);
 }
 
+// Stable: Array.prototype.sort is stable in every engine this targets, so equal keys keep the
+// order they were pushed in.
 pricesGrid.innerHTML = priceCards.length
-  ? priceCards.join("")
+  ? priceCards.slice().sort((a, b) => a.sort - b.sort).map(c => c.html).join("")
   : `<div class="empty-note">가격 정보를 가져오지 못했습니다.</div>`;
 
 document.querySelectorAll("#pricesGrid .chart-wrap").forEach(attachChartHover);

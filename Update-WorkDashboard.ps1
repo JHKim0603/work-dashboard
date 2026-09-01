@@ -1261,6 +1261,23 @@ foreach ($c in $priceCards) {
     $about = $config.cardAbout.($c.id)
     if ($about) { $c | Add-Member -NotePropertyName about -NotePropertyValue $about -Force }
 }
+
+# Sort key rather than a fixed assembly order, because the freight cards are built in the page
+# rather than here - ordering by hand would mean keeping two lists in step, and they had already
+# drifted: KCl, the feedstock this company converts, was rendering last.
+$orderList = @($config.cardOrder)
+function Get-CardSort {
+    param($id)
+    $i = [array]::IndexOf($orderList, [string]$id)
+    # Unlisted ids keep their existing relative position, after everything listed.
+    if ($i -lt 0) { 900 } else { $i }
+}
+foreach ($c in $priceCards) {
+    $c | Add-Member -NotePropertyName sort -NotePropertyValue (Get-CardSort $c.id) -Force
+}
+$priceCards = @($priceCards | Sort-Object sort)
+$scfiSort = Get-CardSort "scfi"
+$laneSort = Get-CardSort "ccfi-lanes"
 if ($scfi -and $config.cardAbout.scfi) {
     $scfi | Add-Member -NotePropertyName about -NotePropertyValue $config.cardAbout.scfi -Force
 }
@@ -1313,6 +1330,7 @@ $pricesJson = ConvertTo-Json -InputObject @($priceCards) -Depth 6
 $scfiJson = ConvertTo-JsonOrNull -InputObject $scfi -Depth 4
 $sseLanesJson = ConvertTo-Json -InputObject @($sseLanes) -Depth 4
 $laneAboutJson = ConvertTo-JsonOrNull -InputObject $laneAbout -Depth 2
+$sortsJson = ConvertTo-Json -InputObject ([PSCustomObject]@{ scfi = $scfiSort; lanes = $laneSort }) -Depth 2 -Compress
 $hasFuelKey = if ($env:OPINET_API_KEY) { "true" } else { "false" }
 # A failed KCl fetch used to just not append a card, so the page came back one card shorter
 # with nothing saying so - indistinguishable from "we never tracked potash". Say it instead.
@@ -1321,7 +1339,7 @@ $materialsJson = ConvertTo-Json -InputObject @($materials) -Depth 6
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
-$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
+$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8
