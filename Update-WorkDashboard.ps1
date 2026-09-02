@@ -15,6 +15,10 @@ $headers = @{ "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb
 
 $config = Get-Content -Path (Join-Path $root "config.json") -Raw -Encoding UTF8 | ConvertFrom-Json
 
+$spamKeywords = @($config.newsBlocklist.keywords)
+$spamSources  = @($config.newsBlocklist.sources)
+$spamBlocked  = 0
+
 # CI gets its keys from Actions secrets; a local run.bat had none, so the pump-price cards were
 # silently absent from the local page while the deployed one carried them. Reviewing the local
 # file then means reviewing something the recipient never sees. This closes that gap: drop the
@@ -1021,6 +1025,37 @@ function Get-DomesticFuelPrices {
 }
 
 # --- News (materials) -------------------------------------------------------------------
+# Google News indexes SEO spam farms that publish Korean gambling copy on foreign domains, and
+# they match on almost any query - "엠카지노 도메인에 대한 궁금증을 해소하는 완벽한 가이드" from
+# an Italian site surfaced on both fuel cards at once. This digest is mailed to a work address
+# every morning, so a gambling link in it is not merely noise.
+#
+# Two checks, because either alone leaks. Keywords catch a new domain running the same copy;
+# the source list catches a farm that drops the obvious words. Both are in config.json so a
+# newly seen farm is one line, not a code change.
+#
+# Chosen to avoid false positives on this dashboard's actual subjects: "슬롯" is left out
+# because 선복 슬롯 is ordinary shipping vocabulary and the 해상운임 card would lose real
+# headlines to it; "슬롯머신" carries the meaning without the collision.
+function Test-SpamHeadline {
+    param([string]$title, [string]$source)
+
+    $haystack = "$title $source"
+    foreach ($word in $spamKeywords) {
+        if ($haystack -like "*$word*") {
+            $script:spamBlocked++
+            return $true
+        }
+    }
+    foreach ($bad in $spamSources) {
+        if ($source -and $source -like "*$bad*") {
+            $script:spamBlocked++
+            return $true
+        }
+    }
+    return $false
+}
+
 function Get-NewsHeadlines {
     # Google News RSS ranks by relevance, not date, and honours no recency unless the query
     # says so. Taking the first N items therefore returned whatever matched best across all
@@ -1056,6 +1091,8 @@ function Get-NewsHeadlines {
             # An item whose date won't parse can't be shown to be recent, and the whole point
             # here is recency - drop it rather than let an undateable headline pose as today's.
             if ($null -eq $when -or $when.UtcDateTime -lt $cutoff) { continue }
+
+            if (Test-SpamHeadline -title $title -source $source) { continue }
 
             [PSCustomObject]@{
                 title  = $title
@@ -1350,6 +1387,10 @@ if (-not $env:CI) {
 }
 
 # --- Email summary -----------------------------------------------------------------
+# Surfaced rather than silent: if this drops to zero for a long stretch the filter has
+# probably stopped matching what the farms now publish, and that is worth noticing.
+if ($spamBlocked -gt 0) { Write-Host "스팸 헤드라인 ${spamBlocked}건 차단됨" }
+
 Write-Host "Building email summary..."
 
 $dayNames = @("일", "월", "화", "수", "목", "금", "토")
