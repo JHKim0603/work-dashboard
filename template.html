@@ -236,6 +236,29 @@
   }
   .past-label + .typhoon-row { border-top: none; }
 
+  /* Seasonality panel. Quiet by design - it is background, not an alert, and must not
+     compete with an active storm sitting directly above it. */
+  .clim { margin-top: 14px; padding-top: 11px; border-top: 1px solid var(--gridline); }
+  .clim-head {
+    font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--ink-muted); margin-bottom: 6px;
+  }
+  .clim-lead { font-size: 12.5px; color: var(--ink-secondary); line-height: 1.5; }
+  .clim-lead b { color: var(--ink-primary); }
+  .clim-dim { color: var(--ink-muted); font-size: 11px; }
+  .clim-chart {
+    display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px;
+    align-items: end; margin: 9px 0 7px; height: 40px;
+  }
+  .clim-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+  .clim-bar { width: 100%; background: var(--gridline); border-radius: 2px 2px 0 0; }
+  .clim-col.now .clim-bar { background: var(--accent); }
+  .clim-m { font-size: 8.5px; color: var(--ink-muted); margin-top: 3px; }
+  .clim-col.now .clim-m { color: var(--accent); font-weight: 700; }
+  .clim-gap { font-size: 12.5px; color: var(--ink-secondary); }
+  .clim-gap b { color: var(--ink-primary); }
+  .clim-note { font-size: 10.5px; color: var(--ink-muted); line-height: 1.55; margin-top: 7px; }
+
   .card.wide { grid-column: 1 / -1; }
   .price-now { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 2px 0 10px; }
   .price-now .pv { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -580,6 +603,7 @@
 const WEATHER = __WEATHER_JSON__;
 const HOLIDAY = __HOLIDAY_JSON__;
 const TYPHOON = __TYPHOON_JSON__;
+const CLIMATOLOGY = __CLIMATOLOGY_JSON__;
 const PRICES = __PRICES_JSON__;
 const SCFI = __SCFI_JSON__;
 const SSE_LANES = __SSE_LANES_JSON__;
@@ -780,6 +804,49 @@ if (!TYPHOON) {
     : (t.crossesScs ? "남중국해 통과" : "") +
       (t.nearestPort ? `${t.crossesScs ? " · " : ""}${esc(t.nearestPort)} ${t.portDistanceKm}km` : "");
 
+  // Where this month sits in 47 years of storms. The card already showed what happened
+  // recently; this says whether that is normal for the date. Deliberately a base rate and
+  // never a forecast - typhoons are seasonal, not periodic, so "다음은 9월 15일쯤" would be
+  // a number with nothing behind it. The honest version is the historical gap and its spread.
+  function climatologyBlock() {
+    if (!CLIMATOLOGY || !CLIMATOLOGY.months) return "";
+    const m = new Date().getMonth() + 1;
+    const row = CLIMATOLOGY.months.find(x => x.month === m);
+    if (!row) return "";
+    const rank = (CLIMATOLOGY.monthRank || {})[String(m)];
+    const maxN = Math.max(...CLIMATOLOGY.months.map(x => x.direct + x.route));
+
+    const bars = CLIMATOLOGY.months.map(x => {
+      const n = x.direct + x.route;
+      const h = maxN ? Math.max(2, Math.round((n / maxN) * 26)) : 2;
+      return `<div class="clim-col${x.month === m ? " now" : ""}" title="${x.month}월 · 직접 ${x.direct}건 / 항로 ${x.route}건">
+                <div class="clim-bar" style="height:${h}px"></div>
+                <div class="clim-m">${x.month}</div>
+              </div>`;
+    }).join("");
+
+    const gap = row.gapMedian
+      ? `과거 이맘때 다음 태풍까지 <b>중앙값 ${row.gapMedian}일</b> <span class="clim-dim">(절반이 ${row.gapQ1}~${row.gapQ3}일 · 표본 ${row.gapN}건)</span>`
+      : `이 시기는 표본이 적어 간격을 내지 않습니다`;
+
+    return `
+      <div class="clim">
+        <div class="clim-head">계절성 · ${esc(CLIMATOLOGY.span)} ${CLIMATOLOGY.years}년</div>
+        <div class="clim-lead">
+          ${m}월은 연중 <b>${rank || "-"}번째</b>로 잦은 달입니다 —
+          직접 ${row.direct}건 · 항로 ${row.route}건
+          <span class="clim-dim">(연평균 직접 ${CLIMATOLOGY.directPerYear} · 항로 ${CLIMATOLOGY.routePerYear}건)</span>
+        </div>
+        <div class="clim-chart">${bars}</div>
+        <div class="clim-gap">${gap}</div>
+        <div class="clim-note">
+          정점은 <b>직접 ${CLIMATOLOGY.peakDirect}월 · 항로 ${CLIMATOLOGY.peakRoute}월</b>로 다릅니다 —
+          베트남에 직접 오는 태풍과 환적항을 스치는 태풍의 철이 갈립니다.
+          과거 빈도이지 예보가 아닙니다. 출처 ${esc(CLIMATOLOGY.source)}.
+        </div>
+      </div>`;
+  }
+
   const past = TYPHOON.past || [];
   const pastBlock = past.length
     ? `<div class="past-label">최근 발생 이력 · 다음 시기 가늠용</div>` +
@@ -804,12 +871,14 @@ if (!TYPHOON) {
         <div class="headline">⚠ ${anyDirect ? "태풍 직접 영향권" : "항로상 태풍 활동 중"} — 부자재 입고 지연 주의</div>
         ${rows}
         ${pastBlock}
+        ${climatologyBlock()}
       </div>`;
   } else {
     typhoonSection.innerHTML = `
       <div class="typhoon-card calm">
         <div class="headline">활성 태풍 없음 · 입고 일정 영향 없음</div>
         ${pastBlock}
+        ${climatologyBlock()}
       </div>`;
   }
 }

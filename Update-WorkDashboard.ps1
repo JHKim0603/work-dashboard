@@ -1494,6 +1494,18 @@ function ConvertTo-JsonOrNull {
 $weatherJson = ConvertTo-Json -InputObject @($weather) -Depth 6
 $holidayJson = ConvertTo-JsonOrNull -InputObject $holiday -Depth 4
 $typhoonJson = ConvertTo-JsonOrNull -InputObject $typhoon -Depth 4
+
+# Seasonality is a 47-year statistic, not a daily reading, so it ships as a file rather than
+# a fetch - IBTrACS is a 109MB CSV and re-deriving the same table every morning would be a
+# lot of bandwidth to arrive at yesterday's answer. Regenerate it when a season's worth of
+# new storms is worth folding in; the numbers move slowly.
+$climatologyJson = "null"
+$climPath = Join-Path $root "typhoon-climatology.json"
+if (Test-Path $climPath) {
+    $climatologyJson = (Get-Content -Path $climPath -Raw -Encoding UTF8).Trim()
+} else {
+    Write-Warning "typhoon-climatology.json 없음 - 계절성 표시를 건너뜁니다."
+}
 $pricesJson = ConvertTo-Json -InputObject @($priceCards) -Depth 6
 $scfiJson = ConvertTo-JsonOrNull -InputObject $scfi -Depth 4
 $sseLanesJson = ConvertTo-Json -InputObject @($sseLanes) -Depth 4
@@ -1507,7 +1519,7 @@ $materialsJson = ConvertTo-Json -InputObject @($materials) -Depth 6
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
-$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
+$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8
