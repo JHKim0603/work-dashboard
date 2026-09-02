@@ -1056,6 +1056,58 @@ function Test-SpamHeadline {
     return $false
 }
 
+# Scores a headline for "is this worth stopping on today".
+#
+# The scoring exists because the company's own name is a weak signal on its own: 유니드 appears
+# in auto-generated stock write-ups and in 조직문화 press releases as readily as in the piece
+# reporting 가동률 90%대 and 영업익 -44.6%. Name alone would rank those equally, so the noise
+# term is what does the real work - a headline can carry the company and still finish below
+# threshold.
+#
+# Impact keywords are events, not topics, deliberately. Every item on the 해상운임 card is about
+# freight, so "운임" separates nothing there; 급등·봉쇄·차질 do.
+#
+# Returns the score and the labels behind it, because the badge shown to the reader says what
+# they would get by clicking - "유니드 직접 · 실적" - rather than asserting "중요", which is a
+# claim with nothing in it.
+function Get-NewsImportance {
+    param([string]$title, [string]$source)
+
+    $cfg = $config.newsScoring
+    if (-not $cfg) { return $null }
+
+    $score = 0
+    $labels = New-Object System.Collections.Generic.List[string]
+
+    $hit = $false
+    foreach ($w in @($cfg.companyWords)) { if ($title -like "*$w*") { $hit = $true; break } }
+    if ($hit) { $score += $cfg.companyScore; $labels.Add($cfg.companyLabel) }
+    else {
+        foreach ($w in @($cfg.peerWords)) {
+            if ($title -like "*$w*") { $score += $cfg.peerScore; $labels.Add($cfg.peerLabel); break }
+        }
+    }
+
+    foreach ($grp in @($cfg.impactGroups)) {
+        foreach ($w in @($grp.words)) {
+            if ($title -like "*$w*") { $score += $grp.score; $labels.Add($grp.label); break }
+        }
+    }
+
+    # A figure in the headline usually means it reports something rather than describes it.
+    if ($title -match '\d') { $score += $cfg.numberScore }
+
+    foreach ($w in @($cfg.noiseWords)) {
+        if ("$title $source" -like "*$w*") { $score += $cfg.noiseScore; break }
+    }
+
+    [PSCustomObject]@{
+        score  = $score
+        flag   = ($score -ge $cfg.threshold)
+        reason = (($labels | Select-Object -Unique) -join " · ")
+    }
+}
+
 function Get-NewsHeadlines {
     # Google News RSS ranks by relevance, not date, and honours no recency unless the query
     # says so. Taking the first N items therefore returned whatever matched best across all
@@ -1094,22 +1146,33 @@ function Get-NewsHeadlines {
 
             if (Test-SpamHeadline -title $title -source $source) { continue }
 
+            $rank = Get-NewsImportance -title $title -source $source
             [PSCustomObject]@{
                 title  = $title
                 source = $source
                 date   = $when.ToString("yyyy-MM-dd")
                 sortAt = $when.UtcDateTime
                 link   = $it.link
+                score  = if ($rank) { $rank.score } else { 0 }
+                flag   = if ($rank) { $rank.flag } else { $false }
+                reason = if ($rank) { $rank.reason } else { "" }
             }
         })
 
-        $fresh = @($parsed | Sort-Object sortAt -Descending | Select-Object -First $max)
+        # Still newest-first inside the card - recency is what this feed is for. Selection of
+        # the few items shown is by date; the flagged ones get pulled up afterwards so a
+        # 9-point headline from three days ago does not sit under today's filler.
+        $fresh = @($parsed | Sort-Object sortAt -Descending | Select-Object -First $max |
+                   Sort-Object @{Expression={[int]$_.flag}; Descending=$true},
+                               @{Expression="sortAt"; Descending=$true})
         if ($fresh.Count -eq 0) {
             # ${} braces required: PowerShell would otherwise read the trailing Korean
             # character as part of the variable name and print an empty number.
             Write-Host "    (최근 ${withinDays}일 내 '$query' 기사 없음)"
         }
-        @($fresh | Select-Object title, source, date, link)
+        # sortAt is dropped (a DateTime the page has no use for); score/flag/reason are what
+        # the badge and the mail's "눈여겨볼 기사" block read.
+        @($fresh | Select-Object title, source, date, link, score, flag, reason)
     } catch {
         Write-Warning "News fetch failed for '$query': $($_.Exception.Message)"
         @()
@@ -1124,16 +1187,23 @@ function Get-MaterialSnapshot {
         $news += Get-NewsHeadlines -query $q -max 3
         Start-Sleep -Milliseconds 300
     }
-    # de-dup by link, keep first-seen order, cap at 8
+    # de-dup by link
     $seen = New-Object System.Collections.Generic.HashSet[string]
     $deduped = @(foreach ($n in $news) {
         if ($seen.Add($n.link)) { $n }
     })
 
+    # Order across the merged queries, not within each one. Keeping first-seen order meant a
+    # flagged headline from the third query sat behind everything the first query returned -
+    # invisible on the page's 8-item list, but the mail only prints the top 3 and was dropping
+    # it entirely. Sort once here so both surfaces slice the same ranking.
+    $ordered = @($deduped | Sort-Object @{Expression={[int]$_.flag}; Descending=$true},
+                                        @{Expression="date"; Descending=$true})
+
     [PSCustomObject]@{
         id          = $mat.Id
         displayName = $mat.DisplayName
-        news        = @($deduped | Select-Object -First 8)
+        news        = @($ordered | Select-Object -First 8)
     }
 }
 
@@ -1748,18 +1818,57 @@ if ($scfiHtml) { $priceSectionRows += [PSCustomObject]@{ sort = $scfiSort; html 
 if ($laneHtml) { $priceSectionRows += [PSCustomObject]@{ sort = $laneSort; html = $laneHtml } }
 $priceSectionHtml = (@($priceSectionRows | Sort-Object sort | ForEach-Object { $_.html }) -join "`n")
 
+# Flagged headlines lifted to the top of the mail. The mail is what most people actually read,
+# and the 수급 뉴스 section sits below weather and a dozen price cards - a headline worth acting
+# on should not depend on scrolling that far. Nothing is duplicated away: these still appear in
+# their own card below.
+$highlights = @($materials | ForEach-Object { $_.news } | Where-Object { $_ -and $_.flag } |
+    Sort-Object score -Descending | Select-Object -First 3)
+
+$highlightHtml = ""
+if ($highlights.Count -gt 0) {
+    $rows = foreach ($h in $highlights) {
+        $chip = if ($h.reason) {
+            "<span style='display:inline-block;font-size:10px;font-weight:700;background:#b3221f;color:#ffffff;padding:1px 7px;border-radius:4px;margin-right:6px;'>$($h.reason)</span>"
+        } else { "" }
+        $meta = (@($h.source, $h.date) | Where-Object { $_ }) -join " · "
+        "<div style='margin-top:8px;'>$chip<a href='$($h.link)' style='font-size:13px;font-weight:700;color:#0b0b0b;text-decoration:none;'>$($h.title)</a><div style='font-size:11px;color:#898781;margin-top:2px;'>$meta</div></div>"
+    }
+    $highlightHtml = @"
+<div style="margin:16px 0;padding:13px 15px;background:#fdeeee;border:1px solid #f3caca;border-radius:8px;">
+  <div style="font-size:12px;font-weight:700;color:#b3221f;">오늘 눈여겨볼 기사 $($highlights.Count)건</div>
+  $($rows -join "")
+  <div style="font-size:10.5px;color:#898781;margin-top:9px;">제목 키워드로 매긴 중요도입니다 — 기사를 읽고 판단한 것이 아니니 참고로만 보세요.</div>
+</div>
+"@
+}
+
 $materialsHtml = foreach ($m in $materials) {
     $newsLines = foreach ($n in ($m.news | Select-Object -First 3)) {
         # Outlet and date were already fetched but thrown away here, leaving three unattributed
         # blue lines - knowing who ran it and when is most of what makes a headline worth trusting.
         $meta = (@($n.source, $n.date) | Where-Object { $_ }) -join " · "
         $metaHtml = if ($meta) { "<div style='font-size:11px;color:#898781;margin-top:1px;'>$meta</div>" } else { "" }
-        @"
+        # Same left rule and reason chip the page uses, so a headline flagged there is
+        # recognisable here. Inline styles only - mail clients drop stylesheets.
+        if ($n.flag) {
+            $chip = if ($n.reason) {
+                "<span style='display:inline-block;font-size:10px;font-weight:700;background:#b3221f;color:#ffffff;padding:1px 7px;border-radius:4px;'>$($n.reason)</span><br>"
+            } else { "" }
+            @"
+<div style="margin-top:9px;border-left:3px solid #b3221f;padding-left:9px;">
+      $chip<a href="$($n.link)" style="font-size:12.5px;color:#0b0b0b;font-weight:700;text-decoration:none;line-height:1.45;">$($n.title)</a>
+      $metaHtml
+    </div>
+"@
+        } else {
+            @"
 <div style="margin-top:7px;">
       <a href="$($n.link)" style="font-size:12.5px;color:#2a78d6;text-decoration:none;line-height:1.45;">$($n.title)</a>
       $metaHtml
     </div>
 "@
+        }
     }
     @"
 <tr>
@@ -1798,6 +1907,7 @@ $emailHtml = @"
     <a href="$updateUrl" style="display:inline-block;margin-left:8px;background:#ffffff;color:#2a78d6;border:1px solid #cfe0f5;font-size:13px;font-weight:bold;text-decoration:none;padding:9px 16px;border-radius:6px;">🔄 지금 업데이트</a>
   </div>
   $holidayHtml
+  $highlightHtml
   $typhoonHtml
   $(Get-EmailSection "날씨 · 온습도" ($weatherRowsHtml -join "`n"))
   $(Get-EmailSection "원자재 · 물류 가격" $priceSectionHtml)

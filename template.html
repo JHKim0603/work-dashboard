@@ -415,6 +415,24 @@
   .news-item a { color: var(--accent); text-decoration: none; }
   .news-item a:hover { text-decoration: underline; }
   .news-item .src { color: var(--ink-muted); font-size: 11px; margin-left: 4px; }
+
+  /* Flagged headlines. The left rule and the weight do the pulling; the chip says what the
+     reader would get by opening it, which is the part that earns the click. Kept to a couple
+     of items a day on purpose - a badge on half the list is a background, not a signal. */
+  .news-item.flagged {
+    border-left: 3px solid var(--bad);
+    padding-left: 9px;
+    margin-left: -12px;
+    background: linear-gradient(90deg, var(--bad-wash) 0%, transparent 62%);
+  }
+  .news-item.flagged a { color: var(--ink-primary); font-weight: 650; }
+  .news-item.flagged a:hover { color: var(--accent); }
+  .news-reason {
+    display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .02em;
+    background: var(--bad); color: #fff; padding: 1px 7px; border-radius: 4px;
+    margin-bottom: 4px;
+  }
+  .news-caveat.scoring { font-style: normal; }
   .empty-note { font-size: 12px; color: var(--ink-muted); font-style: italic; }
 
   .footnote { max-width: 1320px; margin: 32px auto 0; font-size: 11.5px; color: var(--ink-muted); line-height: 1.7; }
@@ -1023,7 +1041,7 @@ function openDetail(id) {
   const news = c.news || [];
   body += `<div class="m-section-title">가격 변동 배경 뉴스</div>`;
   body += news.length
-    ? news.map(n => `<div class="news-item">· <a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a><span class="src">${esc(n.source || "")}${n.date ? " · " + esc(n.date) : ""}</span></div>`).join("")
+    ? news.map(newsItemHtml).join("")
     : `<div class="empty-note">관련 뉴스를 찾지 못했습니다.</div>`;
   body += `<div class="m-note">해설은 시계열 수치에서 자동 계산한 요약이고, 뉴스는 해당 품목 검색 결과입니다.
     기사와 가격 움직임의 인과관계가 검증된 것은 아니니 참고용으로만 보세요.</div>`;
@@ -1227,19 +1245,30 @@ document.querySelectorAll("[data-detail]").forEach(btn =>
   btn.addEventListener("click", () => openDetail(btn.dataset.detail))
 );
 
+// One renderer for both the 수급 뉴스 cards and the price-card popups, so a flagged headline
+// looks the same wherever it turns up.
+function newsItemHtml(n) {
+  const src = `<span class="src">${esc(n.source || "")}${n.date ? " · " + esc(n.date) : ""}</span>`;
+  const link = `<a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a>`;
+  if (!n.flag) return `<div class="news-item">· ${link}${src}</div>`;
+  const chip = n.reason ? `<div><span class="news-reason">${esc(n.reason)}</span></div>` : "";
+  return `<div class="news-item flagged">${chip}${link}${src}</div>`;
+}
+
 const materialsGrid = document.getElementById("materialsGrid");
 if (!MATERIALS || MATERIALS.length === 0) {
   materialsGrid.innerHTML = `<div class="empty-note">뉴스를 가져오지 못했습니다.</div>`;
 } else {
   materialsGrid.innerHTML = MATERIALS.map(m => {
     const news = (m.news && m.news.length)
-      ? m.news.map(n => `<div class="news-item">· <a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a><span class="src">${esc(n.source || "")} · ${esc(n.date)}</span></div>`).join("")
+      ? m.news.map(newsItemHtml).join("")
       : `<div class="empty-note">관련 뉴스 없음</div>`;
-    // KOH/K2CO3 have no free price series either, but unlike PP/PE their upstream feedstock
-    // (KCl) is charted above - worth pointing at rather than leaving the card as a dead end.
-    const caveat = m.id === "koh-k2co3"
-      ? `공개 수치 API 없음 (전량 유료 구독) — 원료인 <b>KCl 가격 차트</b>를 원가 지표로 참고하세요`
-      : `공개 수치 API 없음 — 관련 뉴스`;
+    const flagged = (m.news || []).filter(n => n.flag).length;
+    // Says the badge is a keyword rule rather than a reading of the article, in the same
+    // place and the same voice the price cards already use for their own limits.
+    const caveat = flagged
+      ? `제목 키워드로 매긴 중요도입니다 — 기사를 읽고 판단한 것이 아니니 참고로만 보세요`
+      : `관련 뉴스`;
     return `
       <div class="card">
         <h3>${esc(m.displayName)}</h3>
