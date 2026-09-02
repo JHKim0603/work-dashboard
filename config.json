@@ -42,6 +42,33 @@
       "Lon": 122.0
     }
   ],
+  "//typhoonArrivalHubs": "국내 입항 항만. 베트남에서 실어 보낸 화물이 마지막으로 지나는 구간이라 여기서 막히면 앞 구간이 아무리 순조로워도 입고가 밀립니다. 47년 통계로 연 4.0건이 400km 이내로 들어오고 그중 1.6건은 베트남·항로 어디에도 안 걸립니다.",
+  "typhoonArrivalHubs": [
+    {
+      "Id": "busan",
+      "DisplayName": "부산항",
+      "Lat": 35.1,
+      "Lon": 129.04
+    },
+    {
+      "Id": "ulsan",
+      "DisplayName": "울산항",
+      "Lat": 35.5,
+      "Lon": 129.39
+    },
+    {
+      "Id": "gwangyang",
+      "DisplayName": "광양항",
+      "Lat": 34.94,
+      "Lon": 127.7
+    },
+    {
+      "Id": "incheon",
+      "DisplayName": "인천항",
+      "Lat": 37.45,
+      "Lon": 126.6
+    }
+  ],
   "yahooSeries": [
     {
       "Id": "usdkrw",

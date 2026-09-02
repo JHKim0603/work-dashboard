@@ -251,10 +251,22 @@
     align-items: end; margin: 9px 0 7px; height: 40px;
   }
   .clim-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
-  .clim-bar { width: 100%; background: var(--gridline); border-radius: 2px 2px 0 0; }
-  .clim-col.now .clim-bar { background: var(--accent); }
+  .clim-stack { width: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
+  .clim-seg { width: 100%; }
+  .clim-seg:first-child { border-radius: 2px 2px 0 0; }
+  .clim-seg.origin  { background: var(--bad); }
+  .clim-seg.route   { background: var(--warn); }
+  .clim-seg.arrival { background: var(--accent); }
+  .clim-col.now .clim-stack { outline: 1px solid var(--ink-muted); outline-offset: 1px; }
   .clim-m { font-size: 8.5px; color: var(--ink-muted); margin-top: 3px; }
-  .clim-col.now .clim-m { color: var(--accent); font-weight: 700; }
+  .clim-col.now .clim-m { color: var(--ink-primary); font-weight: 700; }
+  .clim-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 7px; }
+  .clim-key { font-size: 10.5px; color: var(--ink-secondary); display: inline-flex; align-items: center; gap: 4px; }
+  .clim-key i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+  .clim-key i.origin  { background: var(--bad); }
+  .clim-key i.route   { background: var(--warn); }
+  .clim-key i.arrival { background: var(--accent); }
+  .typhoon-row .imp.arrival { background: var(--accent-wash); color: var(--accent); }
   .clim-gap { font-size: 12.5px; color: var(--ink-secondary); }
   .clim-gap b { color: var(--ink-primary); }
   .clim-note { font-size: 10.5px; color: var(--ink-muted); line-height: 1.55; margin-top: 7px; }
@@ -792,17 +804,18 @@ const typhoonSection = document.getElementById("typhoonSection");
 if (!TYPHOON) {
   typhoonSection.innerHTML = `<div class="empty-note">태풍 정보를 가져오지 못했습니다.</div>`;
 } else {
-  // "직접" = crossed Vietnam or came within 500km of a Vietnam hub.
-  // "항로" = crossed the South China Sea lane or hit a transshipment port Vietnam cargo
-  // routes through - these delay sailings without ever touching Vietnam itself.
-  const impactTag = t => t.impact === "direct"
-    ? `<span class="imp direct">직접</span>`
+  // A storm is tagged with every leg of the Vietnam → Korea chain it touches, not one:
+  // 출발지 (베트남 500km) · 항로 (남중국해·환적항) · 도착지 (국내 항만 400km). Showing all of
+  // them says where the delay would land - a storm on the arrival leg means cargo already at
+  // sea, which is a different problem from one still sitting over 하이퐁.
+  const LEG_CLASS = { origin: "direct", route: "route", arrival: "arrival" };
+  const impactTag = t => (t.legs && t.legs.length)
+    ? t.legs.map(l => `<span class="imp ${LEG_CLASS[l.code] || "route"}">${esc(l.label)}</span>`).join("")
     : `<span class="imp route">항로</span>`;
 
-  const whereText = t => t.impact === "direct"
-    ? `${esc(t.nearestHub)} ${t.distanceKm}km`
-    : (t.crossesScs ? "남중국해 통과" : "") +
-      (t.nearestPort ? `${t.crossesScs ? " · " : ""}${esc(t.nearestPort)} ${t.portDistanceKm}km` : "");
+  const whereText = t => (t.legs && t.legs.length)
+    ? t.legs.map(l => esc(l.detail)).filter(Boolean).join(" · ")
+    : "";
 
   // Where this month sits in 47 years of storms. The card already showed what happened
   // recently; this says whether that is normal for the date. Deliberately a base rate and
@@ -814,13 +827,21 @@ if (!TYPHOON) {
     const row = CLIMATOLOGY.months.find(x => x.month === m);
     if (!row) return "";
     const rank = (CLIMATOLOGY.monthRank || {})[String(m)];
-    const maxN = Math.max(...CLIMATOLOGY.months.map(x => x.direct + x.route));
+    const L = CLIMATOLOGY.legs || {};
+    const legOrder = ["origin", "route", "arrival"];
+    const sumOf = x => legOrder.reduce((a, k) => a + (x[k] || 0), 0);
+    const maxN = Math.max(...CLIMATOLOGY.months.map(sumOf));
 
+    // Stacked so the month's total height reads as overall risk while the split shows which
+    // leg carries it - the arrival leg all but disappears after September, which the totals
+    // alone would hide.
     const bars = CLIMATOLOGY.months.map(x => {
-      const n = x.direct + x.route;
-      const h = maxN ? Math.max(2, Math.round((n / maxN) * 26)) : 2;
-      return `<div class="clim-col${x.month === m ? " now" : ""}" title="${x.month}월 · 직접 ${x.direct}건 / 항로 ${x.route}건">
-                <div class="clim-bar" style="height:${h}px"></div>
+      const seg = legOrder.map(k => {
+        const h = maxN ? Math.round(((x[k] || 0) / maxN) * 30) : 0;
+        return h > 0 ? `<div class="clim-seg ${k}" style="height:${h}px"></div>` : "";
+      }).reverse().join("");
+      return `<div class="clim-col${x.month === m ? " now" : ""}" title="${x.month}월 · 출발 ${x.origin} / 항로 ${x.route} / 도착 ${x.arrival}">
+                <div class="clim-stack">${seg}</div>
                 <div class="clim-m">${x.month}</div>
               </div>`;
     }).join("");
@@ -829,19 +850,24 @@ if (!TYPHOON) {
       ? `과거 이맘때 다음 태풍까지 <b>중앙값 ${row.gapMedian}일</b> <span class="clim-dim">(절반이 ${row.gapQ1}~${row.gapQ3}일 · 표본 ${row.gapN}건)</span>`
       : `이 시기는 표본이 적어 간격을 내지 않습니다`;
 
+    const legLine = legOrder.map(k =>
+      `<span class="clim-key"><i class="${k}"></i>${esc((L[k] || {}).label || k)} ${row[k] || 0}건</span>`
+    ).join("");
+
     return `
       <div class="clim">
-        <div class="clim-head">계절성 · ${esc(CLIMATOLOGY.span)} ${CLIMATOLOGY.years}년</div>
+        <div class="clim-head">계절성 · ${esc(CLIMATOLOGY.span)} ${CLIMATOLOGY.years}년 · 베트남 → 국내 입항 전 구간</div>
         <div class="clim-lead">
-          ${m}월은 연중 <b>${rank || "-"}번째</b>로 잦은 달입니다 —
-          직접 ${row.direct}건 · 항로 ${row.route}건
-          <span class="clim-dim">(연평균 직접 ${CLIMATOLOGY.directPerYear} · 항로 ${CLIMATOLOGY.routePerYear}건)</span>
+          ${m}월은 연중 <b>${rank || "-"}번째</b>로 잦은 달입니다
         </div>
+        <div class="clim-legend">${legLine}</div>
         <div class="clim-chart">${bars}</div>
         <div class="clim-gap">${gap}</div>
         <div class="clim-note">
-          정점은 <b>직접 ${CLIMATOLOGY.peakDirect}월 · 항로 ${CLIMATOLOGY.peakRoute}월</b>로 다릅니다 —
-          베트남에 직접 오는 태풍과 환적항을 스치는 태풍의 철이 갈립니다.
+          구간별 정점이 다릅니다 —
+          ${legOrder.map(k => `<b>${esc((L[k] || {}).label || k)} ${(L[k] || {}).peak}월</b>`).join(" · ")}.
+          국내 입항 위험은 6~9월에 몰려 있어, 베트남이 정점인 10월에는 앞 구간만 조심하면 됩니다.
+          연평균 ${legOrder.map(k => `${esc((L[k] || {}).label || k)} ${(L[k] || {}).perYear}건`).join(" · ")}.
           과거 빈도이지 예보가 아닙니다. 출처 ${esc(CLIMATOLOGY.source)}.
         </div>
       </div>`;

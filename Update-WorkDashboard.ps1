@@ -361,7 +361,7 @@ function Get-ClosestHub {
 }
 
 function Get-TyphoonWatch {
-    param($hubs, $transshipHubs, $maxTracks = 10)
+    param($hubs, $transshipHubs, $arrivalHubs, $maxTracks = 10)
 
     try {
         # GDACS routinely takes 7-15s to answer and intermittently fails outright; a single
@@ -409,11 +409,41 @@ function Get-TyphoonWatch {
                 $_.lat -ge 5 -and $_.lat -le 23 -and $_.lon -ge 105 -and $_.lon -le 120
             }).Count -gt 0
 
+            $nearKr = if ($arrivalHubs) { Get-ClosestHub -track $track -hubList $arrivalHubs } else { $null }
+
+            # The shipment is only delivered when it is discharged in Korea, so the watch runs
+            # the whole chain rather than the origin alone: 출발지 → 항로 → 도착지. The arrival
+            # leg was missing entirely, and it is not covered by the other two - 47 years of
+            # tracks put 4.0 storms a year within 400km of the Korean ports, 1.6 of which touch
+            # neither Vietnam nor the transshipment route. A typhoon parked over 부산 stops the
+            # box just as surely as one over 하이퐁.
             $mentionsVietnam = $p.country -match "Viet ?Nam"
-            $impact = $null
-            if ($mentionsVietnam -or ($nearVn -and $nearVn.km -le 500)) { $impact = "direct" }
-            elseif ($crossesScs -or ($nearPort -and $nearPort.km -le 400)) { $impact = "route" }
-            if (-not $impact) { continue }
+            # Plain array, not List[object]: wrapping a generic list in @() throws
+            # "Argument types do not match" on Windows PowerShell 5.1, the same trap that once
+            # reduced every storm to its last reported point.
+            $legs = @(
+                if ($mentionsVietnam -or ($nearVn -and $nearVn.km -le 500)) {
+                    [PSCustomObject]@{ code = "origin"; label = "출발지"
+                        detail = "$($nearVn.hub) $($nearVn.km)km" }
+                }
+                if ($crossesScs -or ($nearPort -and $nearPort.km -le 400)) {
+                    $d = @()
+                    if ($crossesScs) { $d += "남중국해 통과" }
+                    if ($nearPort -and $nearPort.km -le 400) { $d += "$($nearPort.hub) $($nearPort.km)km" }
+                    [PSCustomObject]@{ code = "route"; label = "항로"; detail = ($d -join " · ") }
+                }
+                if ($nearKr -and $nearKr.km -le 400) {
+                    [PSCustomObject]@{ code = "arrival"; label = "도착지"
+                        detail = "$($nearKr.hub) $($nearKr.km)km" }
+                }
+            )
+            if ($legs.Count -eq 0) { continue }
+
+            # Primary leg drives the badge colour; arrival outranks route because cargo already
+            # at sea has no way to wait it out.
+            $impact = if ($legs.code -contains "origin") { "direct" }
+                      elseif ($legs.code -contains "arrival") { "arrival" }
+                      else { "route" }
 
             [PSCustomObject]@{
                 name           = ($p.name -replace "^Tropical Cyclone ", "")
@@ -429,6 +459,9 @@ function Get-TyphoonWatch {
                 nearestPort    = if ($nearPort) { $nearPort.hub } else { $null }
                 portDistanceKm = if ($nearPort) { $nearPort.km } else { $null }
                 crossesScs     = $crossesScs
+                legs           = $legs
+                arrivalHub     = if ($nearKr) { $nearKr.hub } else { $null }
+                arrivalKm      = if ($nearKr) { $nearKr.km } else { $null }
                 trackPoints    = $track.Count
                 reportUrl      = $p.url.report
             }
@@ -1223,7 +1256,7 @@ Write-Host "Fetching holiday info..."
 $holiday = Get-HolidayBlock -todayKst $nowKst
 
 Write-Host "Fetching Vietnam typhoon watch..."
-$typhoon = Get-TyphoonWatch -hubs $config.typhoonWatchHubs -transshipHubs $config.typhoonTransshipHubs
+$typhoon = Get-TyphoonWatch -hubs $config.typhoonWatchHubs -transshipHubs $config.typhoonTransshipHubs -arrivalHubs $config.typhoonArrivalHubs
 
 Write-Host "Fetching KCl price history..."
 $kcl = Get-KclPriceHistory

@@ -3,12 +3,27 @@
   "span": "1980~2026",
   "years": 47,
   "totalStorms": 1527,
-  "directTotal": 358,
-  "routeTotal": 433,
-  "directPerYear": 7.6,
-  "routePerYear": 9.2,
-  "peakDirect": 10,
-  "peakRoute": 8,
+  "relevantTotal": 868,
+  "legs": {
+    "origin": {
+      "total": 358,
+      "perYear": 7.6,
+      "peak": 10,
+      "label": "출발지(베트남)"
+    },
+    "route": {
+      "total": 789,
+      "perYear": 16.8,
+      "peak": 8,
+      "label": "항로(남중국해·환적항)"
+    },
+    "arrival": {
+      "total": 190,
+      "perYear": 4.0,
+      "peak": 8,
+      "label": "도착지(국내 항만)"
+    }
+  },
   "monthRank": {
     "8": 1,
     "7": 2,
@@ -26,24 +41,21 @@
   "months": [
     {
       "month": 1,
-      "direct": 4,
-      "route": 3,
-      "directPerYear": 0.09,
-      "routePerYear": 0.06
+      "origin": 4,
+      "route": 7,
+      "arrival": 0
     },
     {
       "month": 2,
-      "direct": 1,
-      "route": 4,
-      "directPerYear": 0.02,
-      "routePerYear": 0.09
+      "origin": 1,
+      "route": 5,
+      "arrival": 0
     },
     {
       "month": 3,
-      "direct": 6,
-      "route": 5,
-      "directPerYear": 0.13,
-      "routePerYear": 0.11,
+      "origin": 6,
+      "route": 11,
+      "arrival": 0,
       "gapMedian": 69,
       "gapQ1": 47,
       "gapQ3": 91,
@@ -51,83 +63,75 @@
     },
     {
       "month": 4,
-      "direct": 1,
-      "route": 6,
-      "directPerYear": 0.02,
-      "routePerYear": 0.13
+      "origin": 1,
+      "route": 7,
+      "arrival": 1
     },
     {
       "month": 5,
-      "direct": 7,
-      "route": 26,
-      "directPerYear": 0.15,
-      "routePerYear": 0.55,
+      "origin": 7,
+      "route": 33,
+      "arrival": 2,
       "gapMedian": 18,
       "gapQ1": 8,
-      "gapQ3": 40,
+      "gapQ3": 36,
       "gapN": 33
     },
     {
       "month": 6,
-      "direct": 29,
-      "route": 46,
-      "directPerYear": 0.62,
-      "routePerYear": 0.98,
+      "origin": 29,
+      "route": 75,
+      "arrival": 22,
       "gapMedian": 10,
       "gapQ1": 4,
-      "gapQ3": 19,
-      "gapN": 75
+      "gapQ3": 18,
+      "gapN": 79
     },
     {
       "month": 7,
-      "direct": 57,
-      "route": 82,
-      "directPerYear": 1.21,
-      "routePerYear": 1.74,
-      "gapMedian": 8,
-      "gapQ1": 4,
-      "gapQ3": 14,
-      "gapN": 139
+      "origin": 57,
+      "route": 139,
+      "arrival": 52,
+      "gapMedian": 7,
+      "gapQ1": 3,
+      "gapQ3": 13,
+      "gapN": 168
     },
     {
       "month": 8,
-      "direct": 61,
-      "route": 96,
-      "directPerYear": 1.3,
-      "routePerYear": 2.04,
+      "origin": 61,
+      "route": 157,
+      "arrival": 69,
       "gapMedian": 7,
-      "gapQ1": 4,
-      "gapQ3": 12,
-      "gapN": 156
+      "gapQ1": 3,
+      "gapQ3": 11,
+      "gapN": 184
     },
     {
       "month": 9,
-      "direct": 60,
-      "route": 76,
-      "directPerYear": 1.28,
-      "routePerYear": 1.62,
+      "origin": 60,
+      "route": 135,
+      "arrival": 39,
       "gapMedian": 8,
       "gapQ1": 3,
-      "gapQ3": 15,
-      "gapN": 136
+      "gapQ3": 13,
+      "gapN": 151
     },
     {
       "month": 10,
-      "direct": 67,
-      "route": 40,
-      "directPerYear": 1.43,
-      "routePerYear": 0.85,
+      "origin": 67,
+      "route": 107,
+      "arrival": 5,
       "gapMedian": 8,
       "gapQ1": 4,
-      "gapQ3": 21,
-      "gapN": 107
+      "gapQ3": 20,
+      "gapN": 108
     },
     {
       "month": 11,
-      "direct": 48,
-      "route": 26,
-      "directPerYear": 1.02,
-      "routePerYear": 0.55,
+      "origin": 48,
+      "route": 73,
+      "arrival": 0,
       "gapMedian": 14,
       "gapQ1": 5,
       "gapQ3": 39,
@@ -135,10 +139,9 @@
     },
     {
       "month": 12,
-      "direct": 17,
-      "route": 23,
-      "directPerYear": 0.36,
-      "routePerYear": 0.49,
+      "origin": 17,
+      "route": 40,
+      "arrival": 0,
       "gapMedian": 74,
       "gapQ1": 9,
       "gapQ3": 154,
