@@ -433,6 +433,18 @@
     margin-bottom: 4px;
   }
   .news-caveat.scoring { font-style: normal; }
+
+  /* Failed card. Muted rather than alarming - the number is missing, nothing is broken, and
+     it should not out-shout the flagged-news red. */
+  .card-failed { border-style: dashed; background: var(--surface); }
+  .card-failed h3 { color: var(--ink-muted); }
+  .fail-tag {
+    display: inline-block; font-size: 11px; font-weight: 700; color: var(--warn);
+    background: var(--warn-wash); padding: 2px 8px; border-radius: 5px; margin: 2px 0 8px;
+  }
+  .fail-last { font-size: 13px; color: var(--ink-secondary); font-variant-numeric: tabular-nums; }
+  .fail-last b { color: var(--ink-primary); font-size: 15px; }
+  .fail-when { color: var(--ink-muted); font-size: 11.5px; }
   .empty-note { font-size: 12px; color: var(--ink-muted); font-style: italic; }
 
   .footnote { max-width: 1320px; margin: 32px auto 0; font-size: 11.5px; color: var(--ink-muted); line-height: 1.7; }
@@ -1080,6 +1092,21 @@ function staleTag(label) {
 
 function priceCardHtml(c, idx) {
   const pts = c.points || [];
+  // A card that failed keeps its slot and says so. Dropping it would leave the page looking
+  // complete with one fewer number on it, and nothing to tell the reader which one went or
+  // whether it had ever been there.
+  if (c.failed) {
+    const last = (c.lastValue !== null && c.lastValue !== undefined)
+      ? `<div class="fail-last">마지막 수집값 <b>${esc(String(c.lastValue))}</b>${c.lastLabel ? ` <span class="fail-when">(${esc(c.lastLabel)} 기준)</span>` : ""}</div>`
+      : `<div class="fail-last">이전 수집값 없음</div>`;
+    return `
+      <div class="card card-failed">
+        <div class="card-head"><h3>${esc(c.displayName)}</h3></div>
+        <div class="fail-tag">⚠ 오늘 수집 실패</div>
+        ${last}
+        <div class="chart-note">데이터 출처가 응답하지 않았거나 형식이 바뀌었을 수 있습니다. 다음 실행에서 자동으로 다시 시도합니다.</div>
+      </div>`;
+  }
   if (!pts.length) return "";
   const latest = pts[pts.length - 1];
   const prior = pts.length > 1 ? pts[pts.length - 2] : null;

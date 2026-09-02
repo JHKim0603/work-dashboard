@@ -1360,6 +1360,67 @@ $priceCards += @($customsSeries)
 if ($kcl) { $priceCards += $kcl }
 $priceCards = @($priceCards)
 
+# --- Cards that were expected but did not arrive ------------------------------------------
+# Every fetcher returns $null on failure and the callers filter those out, so a card that
+# fails simply vanishes: eleven become ten, and nothing on the page says which one left or
+# whether it was ever meant to be there. That is the worst failure mode here, because the
+# page still looks complete.
+#
+# The staleness tag already established the principle - a figure two months old says so in
+# amber rather than passing as this morning's. Absence deserves the same treatment, so a
+# missing card keeps its slot and says it failed, carrying the last value seen on a previous
+# run so the reader is not left with nothing.
+$expectedCards = [ordered]@{}
+foreach ($y in @($config.yahooSeries))  { $expectedCards[[string]$y.Id] = $y.DisplayName }
+foreach ($d in @($config.dceSeries))    { $expectedCards[[string]$d.Id] = $d.DisplayName }
+foreach ($e in @($config.ecosSeries))   { $expectedCards[[string]$e.Id] = $e.DisplayName }
+foreach ($u in @($config.customsSeries)){ $expectedCards[[string]$u.Id] = $u.DisplayName }
+$expectedCards["kcl"]   = "KCl (염화칼륨)"
+$expectedCards["power"] = "산업용 전기요금"
+# Opinet's two only count as expected when a key exists - without one they are deliberately
+# skipped, and calling that a failure would cry wolf on every keyless run.
+if ($env:OPINET_API_KEY) {
+    $expectedCards["D047"] = "국내 경유 (전국평균)"
+    $expectedCards["B027"] = "국내 휘발유 (전국평균)"
+}
+
+# Remember what each card last looked like, so tomorrow's failure can still show a number.
+foreach ($c in $priceCards) {
+    $pts = @($c.points)
+    if ($pts.Count -eq 0) { continue }
+    $historyStore["lastSeen-$($c.id)"] = @{
+        $pts[-1].label = $pts[-1].value
+    }
+}
+
+$arrived = @($priceCards | ForEach-Object { [string]$_.id })
+$missingCards = @(foreach ($id in $expectedCards.Keys) {
+    if ($arrived -contains [string]$id) { continue }
+    $last = $historyStore["lastSeen-$id"]
+    $lastLabel = $null; $lastValue = $null
+    if ($last -and $last.Keys.Count -gt 0) {
+        $lastLabel = @($last.Keys)[0]
+        $lastValue = $last[$lastLabel]
+    }
+    [PSCustomObject]@{
+        id          = $id
+        displayName = $expectedCards[$id]
+        failed      = $true
+        lastLabel   = $lastLabel
+        lastValue   = $lastValue
+        points      = @()
+        note        = "오늘 데이터를 가져오지 못했습니다"
+        source      = ""
+        unit        = ""
+        currency    = ""
+    }
+})
+if ($missingCards.Count -gt 0) {
+    Write-Warning "수집 실패 카드 $($missingCards.Count)개: $(($missingCards | ForEach-Object { $_.displayName }) -join ', ')"
+    $priceCards = @($priceCards) + $missingCards
+}
+Write-HistoryStore -store $historyStore
+
 # Attach the long-form explanations by card id, after the list is assembled rather than inside
 # each fetcher. The cards arrive from six different sources - Yahoo, DCE, ECOS, Opinet, EPSIS,
 # World Bank - and half of them are built in code rather than from config, so keying off id here
@@ -1818,6 +1879,26 @@ if ($scfiHtml) { $priceSectionRows += [PSCustomObject]@{ sort = $scfiSort; html 
 if ($laneHtml) { $priceSectionRows += [PSCustomObject]@{ sort = $laneSort; html = $laneHtml } }
 $priceSectionHtml = (@($priceSectionRows | Sort-Object sort | ForEach-Object { $_.html }) -join "`n")
 
+# Collection failures go near the top of the mail, above the news. Someone maintaining this
+# needs to know a source went quiet on the day it happens - finding out weeks later, from a
+# chart with a hole in it, is how a broken feed becomes permanent.
+$failureHtml = ""
+if ($missingCards.Count -gt 0) {
+    $rows = foreach ($m in $missingCards) {
+        $last = if ($null -ne $m.lastValue) {
+            "<span style='color:#6e6c66;'>마지막 수집값 $($m.lastValue)$(if ($m.lastLabel) { " ($($m.lastLabel) 기준)" })</span>"
+        } else { "<span style='color:#6e6c66;'>이전 수집값 없음</span>" }
+        "<div style='margin-top:6px;font-size:12.5px;color:#0b0b0b;'>· <b>$($m.displayName)</b> — $last</div>"
+    }
+    $failureHtml = @"
+<div style="margin:16px 0;padding:13px 15px;background:#fdf6e7;border:1px solid #f0dcb4;border-radius:8px;">
+  <div style="font-size:12px;font-weight:700;color:#a15c00;">⚠ 오늘 수집하지 못한 항목 $($missingCards.Count)건</div>
+  $($rows -join "")
+  <div style="font-size:10.5px;color:#898781;margin-top:9px;">출처가 응답하지 않았거나 형식이 바뀌었을 수 있습니다. 다음 실행에서 자동 재시도하며, 계속 반복되면 점검이 필요합니다.</div>
+</div>
+"@
+}
+
 # Flagged headlines lifted to the top of the mail. The mail is what most people actually read,
 # and the 수급 뉴스 section sits below weather and a dozen price cards - a headline worth acting
 # on should not depend on scrolling that far. Nothing is duplicated away: these still appear in
@@ -1907,6 +1988,7 @@ $emailHtml = @"
     <a href="$updateUrl" style="display:inline-block;margin-left:8px;background:#ffffff;color:#2a78d6;border:1px solid #cfe0f5;font-size:13px;font-weight:bold;text-decoration:none;padding:9px 16px;border-radius:6px;">🔄 지금 업데이트</a>
   </div>
   $holidayHtml
+  $failureHtml
   $highlightHtml
   $typhoonHtml
   $(Get-EmailSection "날씨 · 온습도" ($weatherRowsHtml -join "`n"))
@@ -1924,3 +2006,61 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding $false
 [System.IO.File]::WriteAllText((Join-Path $root "email-summary.html"), $emailHtml, $utf8NoBom)
 [System.IO.File]::WriteAllText((Join-Path $root "email-subject.txt"), "업무 참고자료 Dashboard - $emailDateStr", $utf8NoBom)
 Write-Host "Email summary written: email-summary.html"
+
+# --- Output checks -------------------------------------------------------------------------
+# Everything above was verified by running it and reading the result. That worked while
+# someone was watching; on a schedule nobody is. These are the checks that were being made by
+# eye - and each one here is a mistake that actually shipped: a single-point series rendering
+# as a JSON object instead of an array and blanking its chart, headlines years old passing as
+# today's, a gambling link reaching the mail.
+#
+# Failing is the point. The workflow stops before the deploy step, so a bad page is never
+# published and yesterday's good one stays up. Losing a day of freshness beats publishing
+# something wrong to people who trust it.
+$problems = New-Object System.Collections.Generic.List[string]
+
+$renderedHtml = Get-Content -Path $outPath -Raw -Encoding UTF8
+
+foreach ($token in @("__WEATHER_JSON__", "__PRICES_JSON__", "__MATERIALS_JSON__", "__FETCHED_AT__")) {
+    if ($renderedHtml -like "*$token*") { $problems.Add("템플릿 치환 누락: $token") }
+}
+
+# A page with almost no cards means the run half-failed; publishing it looks like the sources
+# went away rather than that this run did.
+$liveCards = @($priceCards | Where-Object { -not $_.failed })
+if ($liveCards.Count -lt 5) {
+    $problems.Add("정상 가격 카드가 $($liveCards.Count)개뿐입니다 (최소 5개 기대)")
+}
+if ($missingCards.Count -gt 3) {
+    $problems.Add("수집 실패 카드가 $($missingCards.Count)개입니다 (3개 초과)")
+}
+
+# Every chartable card must carry a real array. The one-element-array collapse produced a
+# JSON object here and left the chart blank without erroring.
+foreach ($c in $liveCards) {
+    if (@($c.points).Count -eq 0) { $problems.Add("$($c.displayName): 시계열이 비어 있습니다") }
+}
+
+# Recency is the whole claim of the news cards, and spam is the thing that must never reach
+# the mail - both are cheap to assert and both have been wrong before.
+$allNews = @($materials | ForEach-Object { $_.news } | Where-Object { $_ })
+$staleCut = $nowKst.Date.AddDays(-45)
+foreach ($n in $allNews) {
+    [DateTime]$nd = Get-Date
+    if ([DateTime]::TryParse($n.date, [ref]$nd) -and $nd -lt $staleCut) {
+        $problems.Add("오래된 기사가 남아 있습니다 ($($n.date)): $($n.title)")
+    }
+    if (Test-SpamHeadline -title $n.title -source $n.source) {
+        $problems.Add("차단 대상 기사가 통과했습니다: $($n.title)")
+    }
+}
+if ($allNews.Count -eq 0) { $problems.Add("수급 뉴스가 한 건도 없습니다") }
+
+if ($problems.Count -gt 0) {
+    Write-Host ""
+    Write-Host "생성물 점검 실패 - 배포를 중단합니다:" -ForegroundColor Red
+    foreach ($p in $problems) { Write-Host "  · $p" -ForegroundColor Red }
+    if ($env:CI) { Write-Host "::error::생성물 점검 실패 $($problems.Count)건" }
+    throw "생성물 점검 $($problems.Count)건 실패 - 이전 배포본을 유지합니다."
+}
+Write-Host "생성물 점검 통과 (카드 $($liveCards.Count)개 · 뉴스 $($allNews.Count)건)"
