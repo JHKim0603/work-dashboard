@@ -228,6 +228,12 @@
     display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px;
     border-radius: 4px; margin-right: 4px; vertical-align: 1px;
   }
+  /* Amber, not red: the storm data is fine, it is our confidence in the verdict that is thin. */
+  .typhoon-row .track-warn {
+    display: inline-block; font-size: 10.5px; font-weight: 700; white-space: nowrap;
+    background: var(--warn-wash); color: var(--warn);
+    padding: 1px 5px; border-radius: 4px; margin-left: 3px; cursor: help;
+  }
   .typhoon-row .imp.direct { background: var(--bad-wash); color: var(--bad); }
   .typhoon-row .imp.route { background: var(--warn-wash); color: var(--warn); }
   .past-label {
@@ -817,6 +823,13 @@ if (!TYPHOON) {
     ? t.legs.map(l => esc(l.detail)).filter(Boolean).join(" · ")
     : "";
 
+  // A storm whose track GDACS would not hand over is judged on its last reported point alone -
+  // the method that missed every storm that actually delayed a shipment last August. The verdict
+  // is still shown, because a weak read beats none, but it must not pass as the same thing.
+  const trackNote = t => t.trackOk === false
+    ? ' <span class="track-warn" title="GDACS에서 이 태풍의 전체 경로를 받지 못해 마지막 관측 위치 한 점으로만 판정했습니다. 실제 경로가 더 가까웠을 수 있습니다.">경로 미확인</span>'
+    : "";
+
   // Where this month sits in 47 years of storms. The card already showed what happened
   // recently; this says whether that is normal for the date. Deliberately a base rate and
   // never a forecast - typhoons are seasonal, not periodic, so "다음은 9월 15일쯤" would be
@@ -879,7 +892,7 @@ if (!TYPHOON) {
       past.map(t => `
         <div class="typhoon-row past">
           ${impactTag(t)} <b>${esc(t.name)}</b> <span class="ago">${t.daysAgo}일 전</span><br>
-          ${esc((t.toDate || "").slice(0, 10))} 소멸 · ${whereText(t)}
+          ${esc((t.toDate || "").slice(0, 10))} 소멸 · ${whereText(t)}${trackNote(t)}
           <a href="${esc(t.reportUrl)}" target="_blank" rel="noopener">리포트 →</a>
         </div>`).join("")
     : "";
@@ -889,7 +902,7 @@ if (!TYPHOON) {
     const rows = TYPHOON.active.map(t => `
       <div class="typhoon-row">
         ${impactTag(t)} <b>${esc(t.name)}</b> (${esc(t.alertLevel)})<br>
-        ${whereText(t)} · ${esc(t.severityText)}
+        ${whereText(t)}${trackNote(t)} · ${esc(t.severityText)}
         <a href="${esc(t.reportUrl)}" target="_blank" rel="noopener">GDACS 리포트 →</a>
       </div>`).join("");
     typhoonSection.innerHTML = `

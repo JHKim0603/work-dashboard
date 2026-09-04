@@ -325,24 +325,40 @@ function Get-StormTrackPoints {
     # GDACS's event list carries only the storm's latest position; the per-event geometry
     # endpoint carries the whole track as LineString segments. Returns @() on any failure so
     # a storm without a usable track just falls back to its single reported point.
-    param($eventId, $episodeId)
-    try {
-        $uri = "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=$eventId&episodeid=$episodeId"
-        $geo = Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 45
-        # Collect straight into an array. Accumulating into a List[object] and returning
-        # @($list) throws "Argument types do not match" on Windows PowerShell 5.1, which is
-        # what silently reduced every storm to its single last-known position.
-        $pts = @(foreach ($f in $geo.features) {
-            if ($f.geometry.type -ne "LineString") { continue }
-            foreach ($c in $f.geometry.coordinates) {
-                [PSCustomObject]@{ lat = [double]$c[1]; lon = [double]$c[0] }
+    # Retries, because the fallback is the method this card was rebuilt to stop using. Without a
+    # track a storm is judged on its last reported point alone - the approach that missed
+    # NOUL-26, DOLPHIN-26 and SAUDEL-26, every one of which actually delayed a shipment. A single
+    # 45s attempt was leaving seven storms a run on that footing, silently.
+    param($eventId, $episodeId, $attempts = 3)
+
+    $uri = "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=$eventId&episodeid=$episodeId"
+    for ($try = 1; $try -le $attempts; $try++) {
+        try {
+            # Shorter per-attempt timeout: GDACS either answers in a few seconds or is not going
+            # to, and three 45s waits would push a run past its useful length.
+            $geo = Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 20
+            # Collect straight into an array. Accumulating into a List[object] and returning
+            # @($list) throws "Argument types do not match" on Windows PowerShell 5.1, which is
+            # what silently reduced every storm to its single last-known position.
+            $pts = @(foreach ($f in $geo.features) {
+                if ($f.geometry.type -ne "LineString") { continue }
+                foreach ($c in $f.geometry.coordinates) {
+                    [PSCustomObject]@{ lat = [double]$c[1]; lon = [double]$c[0] }
+                }
+            })
+            if ($pts.Count -gt 0) { return $pts }
+            # An empty answer is a real answer - this episode has no track published yet.
+            return @()
+        } catch {
+            if ($try -lt $attempts) {
+                Start-Sleep -Seconds ($try * 2)
+                continue
             }
-        })
-        return $pts
-    } catch {
-        Write-Warning "  태풍 경로 조회 실패 (event $eventId): $($_.Exception.Message)"
-        return @()
+            Write-Warning "  태풍 경로 조회 실패 ($attempts회 시도, event $eventId): $($_.Exception.Message)"
+            return @()
+        }
     }
+    return @()
 }
 
 function Get-ClosestHub {
@@ -399,7 +415,10 @@ function Get-TyphoonWatch {
         $items = @(foreach ($cand in $candidates) {
             $p = $cand.p
             $track = Get-StormTrackPoints -eventId $p.eventid -episodeId $p.episodeid
-            if ($track.Count -eq 0) { $track = @([PSCustomObject]@{ lat = $cand.lat; lon = $cand.lon }) }
+            # Falling back is not the same as judging on a track, and the page has to say so:
+            # a one-point verdict is the one this card exists to have stopped making.
+            $trackOk = $track.Count -gt 0
+            if (-not $trackOk) { $track = @([PSCustomObject]@{ lat = $cand.lat; lon = $cand.lon }) }
             Start-Sleep -Milliseconds 250
 
             $nearVn = Get-ClosestHub -track $track -hubList $hubs
@@ -463,6 +482,7 @@ function Get-TyphoonWatch {
                 arrivalHub     = if ($nearKr) { $nearKr.hub } else { $null }
                 arrivalKm      = if ($nearKr) { $nearKr.km } else { $null }
                 trackPoints    = $track.Count
+                trackOk        = $trackOk
                 reportUrl      = $p.url.report
             }
         })
@@ -1702,10 +1722,13 @@ if ($typhoon) {
         $headline = if ($anyDirect) { "태풍 직접 영향권 — 베트남 부자재 입고 지연 주의" } else { "항로상 태풍 활동 중 — 베트남 부자재 입고 지연 가능성" }
         $activeRows = foreach ($t in $typhoon.active) {
             $reportLink = if ($t.reportUrl) { " <a href='$($t.reportUrl)' style='color:#2a78d6;text-decoration:none;font-size:11px;'>GDACS 리포트 →</a>" } else { "" }
+            # The mail is where this warning gets acted on, and the page's tooltip cannot be
+            # reached from here - so a verdict built from one point has to say so in the mail too.
+            $trackWarn = if ($t.trackOk -eq $false) { " <span style='font-size:10.5px;font-weight:700;color:#8a5a00;background:#fdf3dd;padding:1px 5px;'>경로 미확인</span>" } else { "" }
             @"
 <div style="margin-top:9px;padding:9px 11px;background:#ffffff;border:1px solid #f3caca;">
       <div>$(Get-TyphoonBadge $t.impact) <b style="font-size:14px;color:#0b0b0b;">$($t.name)</b> <span style="font-size:11px;color:#898781;">경보등급 $($t.alertLevel)</span></div>
-      <div style="font-size:12.5px;color:#0b0b0b;font-weight:600;margin-top:4px;">$(Get-TyphoonWhere $t)</div>
+      <div style="font-size:12.5px;color:#0b0b0b;font-weight:600;margin-top:4px;">$(Get-TyphoonWhere $t)$trackWarn</div>
       <div style="font-size:11.5px;color:#6e6c66;margin-top:2px;">$(Format-TyphoonSeverity $t.severityText)$reportLink</div>
     </div>
 "@
@@ -1787,10 +1810,15 @@ function Get-BarChartHtml {
         $h = if ($range -eq 0) { [int]($height / 2) } else { 3 + [int][math]::Round((($vals[$i] - $min) / $range) * ($height - 3)) }
         $pad = $height - $h
         $fill = if ($i -eq $last) { $accent } else { "#c3d5ea" }
-        $spacer = if ($pad -gt 0) { "<tr><td height='$pad' style='font-size:0;line-height:0;'>&nbsp;</td></tr>" } else { "" }
-        "<td style='padding:0 1px;font-size:0;line-height:0;'><table cellpadding='0' cellspacing='0' border='0' style='border-collapse:collapse;'>$spacer<tr><td height='$h' width='$barW' bgcolor='$fill' style='font-size:0;line-height:0;'>&nbsp;</td></tr></table></td>"
+        # Trimmed, not restructured. Outlook has been confirmed to render this shape, so the
+        # nesting and the spacer row stay exactly as they are; what goes is repetition the
+        # renderer never needed. The outer <td> holds no text node - only the inner table - so
+        # its font-size/line-height reset was guarding nothing, and border-collapse is already
+        # implied by cellspacing='0'. About 90 bytes a bar, and there are ~170 of them.
+        $spacer = if ($pad -gt 0) { "<tr><td height='$pad' style='font-size:0;line-height:0'>&nbsp;</td></tr>" } else { "" }
+        "<td style='padding:0 1px'><table cellpadding='0' cellspacing='0' border='0'>$spacer<tr><td height='$h' width='$barW' bgcolor='$fill' style='font-size:0;line-height:0'>&nbsp;</td></tr></table></td>"
     }
-    "<table cellpadding='0' cellspacing='0' border='0' style='border-collapse:collapse;'><tr>$($cells -join '')</tr></table>"
+    "<table cellpadding='0' cellspacing='0' border='0'><tr>$($cells -join '')</tr></table>"
 }
 
 function Get-PriceChangeHtml {
