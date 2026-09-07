@@ -2,7 +2,8 @@ name: Update Work Dashboard
 
 on:
   schedule:
-    # Cron is UTC and KST is UTC+9, so these land at 08:23 and 11:23 KST the next morning.
+    # Cron is UTC and KST is UTC+9, so each slot below lands 9 hours later in KST, the next
+    # morning for the evening-UTC ones.
     #
     # The day range deliberately differs from stockdashboard's Mon-Fri. That repo skips the
     # weekend because no trading happened, but weather, holidays and typhoons do not stop on
@@ -10,7 +11,7 @@ on:
     # Saturday's page. Every day costs two extra runs a week and keeps the page never more
     # than a morning old.
     #
-    # Four slots, none on the hour or half hour: 08:23, 09:47, 11:23 and 13:41 KST.
+    # Six slots, none on the hour or half hour: 06:18, 07:06, 08:23, 09:47, 11:23 and 13:41 KST.
     #
     # GitHub drops scheduled runs under load and documents those peaks as the thing to avoid.
     # This workflow sat on ':00', then ':30', and fired zero times in three days; every run it
@@ -21,6 +22,15 @@ on:
     # and the first one to get through sends; the rest find the marker already set for today
     # and only refresh the page. Public repos get unlimited Actions minutes, so the extra runs
     # cost nothing, and a page refreshed four times a morning is not a downside.
+    #
+    # The two early slots exist because the queue delay turned out to be not just real but
+    # remarkably steady: across 09-02..09-07 the first run of the day landed at 10:07, 10:13,
+    # 10:04, 10:06, 10:06 and 10:07 KST - the 08:23 slot arriving ~1h43m late, every day. A
+    # digest meant to be read before work was consistently showing up mid-morning. Asking ~2h
+    # early lands it near 08:00 when the queue behaves as observed, and if it ever runs on time
+    # the digest simply arrives at 06:18, which for a morning briefing is early, not wrong.
+    - cron: '18 21 * * *'
+    - cron: '06 22 * * *'
     - cron: '23 23 * * *'
     - cron: '47 0 * * *'
     - cron: '23 2 * * *'
