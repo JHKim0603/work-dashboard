@@ -2087,9 +2087,62 @@ $emailHtml = @"
 </body></html>
 "@
 
+# 제목 특이사항. 본문은 이미 태풍·특보·연휴·가격을 각 블록에서 보여주지만 그건 메일을 열어야
+# 보인다. 매일 같은 제목이 오면 오늘이 열어볼 날인지를 받은편지함에서 구분할 수 없고, 그래서
+# 정작 태풍이 뜬 날의 메일도 여느 날과 똑같이 지나치게 된다.
+#
+# 우선순위는 "얼마나 시급히 일정을 바꿔야 하는가" 순이다. 태풍은 이미 떠 있는 배와 입고일에
+# 걸리니 가장 위, 기상특보는 당일 작업에 걸리니 그 다음, 연휴는 미리 알수록 좋지만 D-7 안쪽이
+# 아니면 매일 띄울 이유가 없고, 가격은 급변했을 때만 올린다.
+$wdHighlights = New-Object System.Collections.ArrayList
+
+if ($typhoon -and $typhoon.active.Count -gt 0) {
+    $anyDirect = @($typhoon.active | Where-Object { $_.impact -eq "direct" }).Count -gt 0
+    $names = (@($typhoon.active | ForEach-Object { $_.name }) -join ", ")
+    $kind = if ($anyDirect) { "직접영향" } else { "항로영향" }
+    [void]$wdHighlights.Add([PSCustomObject]@{ text = "태풍 $names $kind"; priority = 100 })
+}
+
+foreach ($w in $weather) {
+    # 오늘 특보만 제목에 올린다. 예보 특보까지 넣으면 한여름엔 거의 매일 붙어서 신호가 죽는다.
+    foreach ($a in @($w.advisories)) {
+        if (-not $a) { continue }
+        $short = ($a.text -split ' ·')[0]
+        $pri = if ($a.tone -eq "danger") { 95 } else { 90 }
+        [void]$wdHighlights.Add([PSCustomObject]@{ text = "$($w.displayName) $short"; priority = $pri })
+    }
+}
+
+if ($holiday -and $holiday.dDay -le 7) {
+    $names = ($holiday.holidayNames | Select-Object -Unique) -join "/"
+    $dText = if ($holiday.dDay -eq 0) { "오늘부터" } else { "D-$($holiday.dDay)" }
+    [void]$wdHighlights.Add([PSCustomObject]@{ text = "$names 연휴 $dText"; priority = 70 })
+}
+
+# 가격은 주간·월간 시계열이라 주식처럼 흔들리지 않는다. 5%면 이 계열들에서는 충분히 드문 폭이다.
+$WD_PRICE_THRESHOLD_PCT = 5
+foreach ($c in $priceCards) {
+    $pts = @($c.points)
+    if ($pts.Count -lt 2) { continue }
+    $lv = $pts[-1].value; $pv = $pts[-2].value
+    if (-not $pv) { continue }
+    $pctChg = (($lv - $pv) / $pv) * 100
+    if ([math]::Abs($pctChg) -ge $WD_PRICE_THRESHOLD_PCT) {
+        $sign = if ($pctChg -ge 0) { "+" } else { "" }
+        [void]$wdHighlights.Add([PSCustomObject]@{ text = "$($c.displayName) $sign$($pctChg.ToString('N1'))%"; priority = [math]::Abs($pctChg) })
+    }
+}
+if ($scfi -and $scfi.changePct -and [math]::Abs($scfi.changePct) -ge $WD_PRICE_THRESHOLD_PCT) {
+    $sign = if ($scfi.changePct -ge 0) { "+" } else { "" }
+    [void]$wdHighlights.Add([PSCustomObject]@{ text = "SCFI $sign$($scfi.changePct)%"; priority = [math]::Abs($scfi.changePct) })
+}
+
+$wdTop = @($wdHighlights | Sort-Object priority -Descending | Select-Object -First 3 -ExpandProperty text)
+$wdSubjectSuffix = if ($wdTop.Count -gt 0) { " · ⚠ " + ($wdTop -join ", ") } else { "" }
+
 $utf8NoBom = New-Object System.Text.UTF8Encoding $false
 [System.IO.File]::WriteAllText((Join-Path $root "email-summary.html"), $emailHtml, $utf8NoBom)
-[System.IO.File]::WriteAllText((Join-Path $root "email-subject.txt"), "업무 참고자료 Dashboard - $emailDateStr", $utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path $root "email-subject.txt"), "업무 참고자료 Dashboard - $emailDateStr$wdSubjectSuffix", $utf8NoBom)
 Write-Host "Email summary written: email-summary.html"
 
 # --- Output checks -------------------------------------------------------------------------
