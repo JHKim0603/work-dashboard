@@ -1437,6 +1437,17 @@ if ($env:OPINET_API_KEY) {
     $expectedCards["B027"] = "국내 휘발유 (전국평균)"
 }
 
+# 덮어쓰기 전의 라벨을 떠 둔다. 메일 제목의 특이사항이 "이번 실행에 새로 들어온 값"만 고르는 데
+# 쓴다. 라벨을 보지 않고 직전 대비 변화폭만 보면 갱신 주기가 긴 계열이 영구히 눌러앉는다 —
+# 산업용 전기요금은 연간 시계열이라 '직전 대비'가 곧 '작년 대비'이고, 2025년의 +8.2% 가 다음
+# 연간치가 나올 때까지 1년 내내 매일 제목에 붙는다. 그러면 예외를 알리는 표시가 상수가 되고,
+# 세 자리뿐인 제목에서 정작 오늘 새로 생긴 소식을 밀어낸다.
+$prevSeenLabels = @{}
+foreach ($key in @($historyStore.Keys | Where-Object { $_ -like "lastSeen-*" })) {
+    $entry = $historyStore[$key]
+    if ($entry -and $entry.Keys.Count -gt 0) { $prevSeenLabels[$key] = [string]@($entry.Keys)[0] }
+}
+
 # Remember what each card last looked like, so tomorrow's failure can still show a number.
 foreach ($c in $priceCards) {
     $pts = @($c.points)
@@ -1444,6 +1455,11 @@ foreach ($c in $priceCards) {
     $historyStore["lastSeen-$($c.id)"] = @{
         $pts[-1].label = $pts[-1].value
     }
+}
+# SCFI 는 $priceCards 밖에서 따로 조립되므로 같은 기록을 여기서 남긴다 - 주간 지수라 위 문제를
+# 그대로 안고 있다(새 주차가 나오지 않은 날에도 지난주 변동률이 계속 잡힌다).
+if ($scfi -and $scfi.currentDate) {
+    $historyStore["lastSeen-scfi"] = @{ [string]$scfi.currentDate = $scfi.current }
 }
 
 $arrived = @($priceCards | ForEach-Object { [string]$_.id })
@@ -2120,10 +2136,17 @@ if ($holiday -and $holiday.dDay -le 7) {
 }
 
 # 가격은 주간·월간 시계열이라 주식처럼 흔들리지 않는다. 5%면 이 계열들에서는 충분히 드문 폭이다.
+#
+# 다만 폭보다 먼저 따지는 건 "이번에 새로 들어온 값인가"다. 계열마다 갱신 주기가 일간부터
+# 연간까지 제각각이라, 폭만 보면 갱신이 느린 계열이 제 주기 내내 제목을 차지한다. 시점 라벨이
+# 지난 실행과 같다면 값도 그대로이므로 오늘의 소식이 아니다.
 $WD_PRICE_THRESHOLD_PCT = 5
 foreach ($c in $priceCards) {
     $pts = @($c.points)
     if ($pts.Count -lt 2) { continue }
+    $prevLabel = $prevSeenLabels["lastSeen-$($c.id)"]
+    # 기록이 없으면(첫 실행) 새 값인지 알 수 없으므로 올리지 않는다 - 모르는 쪽을 조용히 둔다.
+    if (-not $prevLabel -or $prevLabel -eq [string]$pts[-1].label) { continue }
     $lv = $pts[-1].value; $pv = $pts[-2].value
     if (-not $pv) { continue }
     $pctChg = (($lv - $pv) / $pv) * 100
@@ -2132,7 +2155,9 @@ foreach ($c in $priceCards) {
         [void]$wdHighlights.Add([PSCustomObject]@{ text = "$($c.displayName) $sign$($pctChg.ToString('N1'))%"; priority = [math]::Abs($pctChg) })
     }
 }
-if ($scfi -and $scfi.changePct -and [math]::Abs($scfi.changePct) -ge $WD_PRICE_THRESHOLD_PCT) {
+$scfiPrevLabel = $prevSeenLabels["lastSeen-scfi"]
+if ($scfi -and $scfi.changePct -and $scfiPrevLabel -and $scfiPrevLabel -ne [string]$scfi.currentDate `
+    -and [math]::Abs($scfi.changePct) -ge $WD_PRICE_THRESHOLD_PCT) {
     $sign = if ($scfi.changePct -ge 0) { "+" } else { "" }
     [void]$wdHighlights.Add([PSCustomObject]@{ text = "SCFI $sign$($scfi.changePct)%"; priority = [math]::Abs($scfi.changePct) })
 }
