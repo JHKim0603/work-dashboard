@@ -1399,6 +1399,9 @@ $priceCards = @()
 # unless it is named here too.
 $priceCards += @($yahooSeries | Where-Object { $_.id -eq "usdkrw" })
 $priceCards += @($yahooSeries | Where-Object { $_.id -eq "wti" -or $_.id -eq "brent" })
+# 벌크 운임. SCFI·CCFI 는 전부 컨테이너라, 벌크선으로 들어오는 KCl 의 인바운드 운임은 지금까지
+# 어느 카드에도 없었다. 최종 자리는 cardOrder 가 정하므로 여기서는 그냥 목록에 넣기만 한다.
+$priceCards += @($yahooSeries | Where-Object { $_.id -eq "drybulk" })
 # Resin sits next to crude deliberately: PP/PE are naphtha derivatives, so the oil cards above
 # are the upstream half of the same story the film and strapping prices below tell.
 $priceCards += @($resinSeries)
