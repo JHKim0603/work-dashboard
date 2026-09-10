@@ -1171,8 +1171,30 @@ function Get-NewsHeadlines {
 
     $scoped = if ($withinDays -gt 0) { "$query when:${withinDays}d" } else { $query }
     $uri = "https://news.google.com/rss/search?q=" + [uri]::EscapeDataString($scoped) + "&hl=ko&gl=KR&ceid=KR:ko"
+    # 러너 IP 에서 Google 이 503 을 뿌리는 구간이 있다. 2026-09-10 에만 두 번, 모든 쿼리가 통째로
+    # 503 이었고 그때마다 "수급 뉴스 0건"으로 생성물 점검이 배포와 메일을 막았다. 점검은 제 일을
+    # 한 것이지만, 한 번 튕겼다고 그날 요약을 통째로 포기할 이유는 없다 — 재시도가 없어서 503
+    # 한 번에 그 쿼리가 통째로 사라지고 있었다.
+    #
+    # 번역 엔드포인트의 429 와 같은 계열이다. 러너는 수많은 워크플로가 공유하는 클라우드 IP 를
+    # 쓰고, Google 은 그 IP 를 집 회선보다 훨씬 빡빡하게 조인다.
+    $raw = $null
+    for ($try = 1; $try -le 3; $try++) {
+        try {
+            $raw = Invoke-WebRequest -Uri $uri -Headers $headers -UseBasicParsing -TimeoutSec 25
+            break
+        } catch {
+            $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
+            # 스로틀이 아닌 오류는 다시 물어도 나아지지 않는다.
+            if (($status -ne 503 -and $status -ne 429) -or $try -eq 3) {
+                Write-Warning "News fetch failed for '$query' (HTTP $status): $($_.Exception.Message)"
+                return @()
+            }
+            Start-Sleep -Seconds ($try * 4)
+        }
+    }
+
     try {
-        $raw = Invoke-WebRequest -Uri $uri -Headers $headers -UseBasicParsing
         [xml]$rss = $raw.Content
         $cutoff = (Get-Date).ToUniversalTime().AddDays(-$withinDays)
 
