@@ -1473,6 +1473,28 @@ foreach ($key in @($historyStore.Keys | Where-Object { $_ -like "lastSeen-*" }))
     if ($entry -and $entry.Keys.Count -gt 0) { $prevSeenLabels[$key] = [string]@($entry.Keys)[0] }
 }
 
+# 다만 '새로 들어온 값'의 기준은 직전 실행이 아니라 마지막으로 실제 나간 메일이다. 실행은 하루
+# 여섯 번이고 메일은 그중 한 번뿐이라, 메일이 아닌 실행에 들어온 새 값은 그 실행이 lastSeen 을
+# 덮어써 버려 어떤 메일에도 실리지 못했다 — 월간 KCl 이 11:23 실행에 들어오면 이튿날 아침 메일은
+# 그것을 '이미 본 값'으로 건너뛴다. 워크플로가 발송 성공 직후에 mailed-labels.next.json 을
+# mailed-labels.json 으로 승격한다(.last-digest 와 같은 방식). 파일이 없거나 거기 없는 카드는
+# 예전처럼 직전 실행 기준으로 떨어진다.
+$mailedLabelsPath = Join-Path $root "mailed-labels.json"
+$mailedLabels = @{}
+if (Test-Path $mailedLabelsPath) {
+    try {
+        $rawMailed = Get-Content -Path $mailedLabelsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($p in $rawMailed.PSObject.Properties) { $mailedLabels[$p.Name] = [string]$p.Value }
+    } catch {
+        Write-Warning "mailed-labels.json을 읽지 못해 직전 실행 기준으로 판정합니다: $($_.Exception.Message)"
+    }
+}
+function Get-BaselineLabel {
+    param($id)
+    if ($mailedLabels.ContainsKey([string]$id)) { return $mailedLabels[[string]$id] }
+    $prevSeenLabels["lastSeen-$id"]
+}
+
 # Remember what each card last looked like, so tomorrow's failure can still show a number.
 foreach ($c in $priceCards) {
     $pts = @($c.points)
@@ -2169,7 +2191,7 @@ $WD_PRICE_THRESHOLD_PCT = 5
 foreach ($c in $priceCards) {
     $pts = @($c.points)
     if ($pts.Count -lt 2) { continue }
-    $prevLabel = $prevSeenLabels["lastSeen-$($c.id)"]
+    $prevLabel = Get-BaselineLabel $c.id
     # 기록이 없으면(첫 실행) 새 값인지 알 수 없으므로 올리지 않는다 - 모르는 쪽을 조용히 둔다.
     if (-not $prevLabel -or $prevLabel -eq [string]$pts[-1].label) { continue }
     $lv = $pts[-1].value; $pv = $pts[-2].value
@@ -2180,7 +2202,7 @@ foreach ($c in $priceCards) {
         [void]$wdHighlights.Add([PSCustomObject]@{ text = "$($c.displayName) $sign$($pctChg.ToString('N1'))%"; priority = [math]::Abs($pctChg) })
     }
 }
-$scfiPrevLabel = $prevSeenLabels["lastSeen-scfi"]
+$scfiPrevLabel = Get-BaselineLabel "scfi"
 if ($scfi -and $scfi.changePct -and $scfiPrevLabel -and $scfiPrevLabel -ne [string]$scfi.currentDate `
     -and [math]::Abs($scfi.changePct) -ge $WD_PRICE_THRESHOLD_PCT) {
     $sign = if ($scfi.changePct -ge 0) { "+" } else { "" }
@@ -2194,6 +2216,20 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding $false
 [System.IO.File]::WriteAllText((Join-Path $root "email-summary.html"), $emailHtml, $utf8NoBom)
 [System.IO.File]::WriteAllText((Join-Path $root "email-subject.txt"), "업무 참고자료 Dashboard - $emailDateStr$wdSubjectSuffix", $utf8NoBom)
 Write-Host "Email summary written: email-summary.html"
+
+# 이 메일이 실제로 나가면 워크플로가 이 파일을 mailed-labels.json 으로 승격한다. 오늘 못 가져온
+# 카드는 지난 메일의 라벨을 그대로 물려준다 — 빼 버리면 다음 메일이 그 카드를 직전 실행 기준으로
+# 판정하게 되어, 바로 그 카드에서 위의 누락이 다시 생긴다.
+$nextMailed = @{}
+foreach ($k in $mailedLabels.Keys) { $nextMailed[$k] = $mailedLabels[$k] }
+foreach ($c in $priceCards) {
+    $pts = @($c.points)
+    if ($pts.Count -gt 0) { $nextMailed[[string]$c.id] = [string]$pts[-1].label }
+}
+if ($scfi -and $scfi.currentDate) { $nextMailed["scfi"] = [string]$scfi.currentDate }
+$nextMailedOrdered = [ordered]@{}
+foreach ($k in ($nextMailed.Keys | Sort-Object)) { $nextMailedOrdered[$k] = $nextMailed[$k] }
+[System.IO.File]::WriteAllText((Join-Path $root "mailed-labels.next.json"), (ConvertTo-Json -InputObject $nextMailedOrdered), $utf8NoBom)
 
 # --- Output checks -------------------------------------------------------------------------
 # Everything above was verified by running it and reading the result. That worked while

@@ -122,9 +122,15 @@ jobs:
           from: 업무 참고자료 Dashboard <${{ secrets.GMAIL_USERNAME }}>
           html_body: file://email-summary.html
 
+      # mailed-labels.json is what the next mail's subject judges "new since last time" against.
+      # Promoted here, only after a confirmed send, for the same reason as the marker: the other
+      # runs of the day must not move the baseline, or a value landing on a non-mail run is
+      # never flagged in any mail.
       - name: Mark today as delivered
         if: steps.mail.outcome == 'success'
-        run: echo "${{ steps.mailgate.outputs.today }}" > .last-digest
+        run: |
+          echo "${{ steps.mailgate.outputs.today }}" > .last-digest
+          if [[ -f mailed-labels.next.json ]]; then cp mailed-labels.next.json mailed-labels.json; fi
 
       # Both the accumulated series and the delivery marker go back in one commit, after the
       # mail rather than before it. Opinet serves 7 days and SSE's SCFI history is
@@ -142,10 +148,14 @@ jobs:
       - name: Commit history and delivery marker
         continue-on-error: true
         run: |
-          if [[ -n "$(git status --porcelain data-history.json .last-digest)" ]]; then
+          if [[ -n "$(git status --porcelain data-history.json .last-digest mailed-labels.json)" ]]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add data-history.json .last-digest
+            # mailed-labels.json only exists once a mail has gone out, and git add fails on a
+            # pathspec that matches nothing.
+            for f in data-history.json .last-digest mailed-labels.json; do
+              if [[ -e "$f" ]]; then git add "$f"; fi
+            done
             git commit -m "chore: accumulate price history $(date -u +%Y-%m-%d)"
             git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
             git push

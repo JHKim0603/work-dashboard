@@ -2,6 +2,8 @@
 dashboard.html
 email-summary.html
 email-subject.txt
+# candidate baseline for the next mail; the workflow promotes it to mailed-labels.json on send
+mailed-labels.next.json
 
 # Local API keys, so a run.bat run renders the same cards CI does. Never commit this —
 # the repo is public. Keys belong in GitHub Actions secrets for CI, and here for local only.
