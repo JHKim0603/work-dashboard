@@ -1163,6 +1163,19 @@ function openDetail(id) {
             <span class="lc ${cls}">${chg}</span>
           </div>`;
       }).join("");
+    // Same 3-week floor the SCFI card uses: two points is last week's move, already in the rows.
+    const charted = c.lanes.filter(l => (l.points || []).length >= 3);
+    if (charted.length) {
+      body += `<div class="m-section-title">항로별 추이 (누적 ${charted[0].points.length}주)</div>` +
+        charted.map(l => {
+          const chartId = "modal-lane-" + l.id;
+          CHART_DATA[chartId] = { points: l.points, currency: "", unit: "pt", decimals: 1 };
+          return `<div class="m-sub" style="margin-top:12px;"><b>${esc(l.displayName)}</b></div>
+            <div class="chart-wrap">${priceChartSvg(l.points, chartId)}<div class="ch-tip"></div></div>`;
+        }).join("");
+    } else {
+      body += `<div class="m-note">과거 시계열이 SSE 구독 전용이라 매주 직접 수집 중입니다. 3주부터 항로별 차트가 여기에 표시됩니다.</div>`;
+    }
   }
 
   const news = c.news || [];
@@ -1313,6 +1326,7 @@ if (SSE_LANES && SSE_LANES.length) {
   }).join("");
 
   const anyLane = SSE_LANES[0];
+  const laneWeeks = (anyLane.points || []).length;
   // Registered so the lane card gets a 상세 popup like the priced cards do. It has no series of
   // its own, so the popup is the explanation plus the same rows - which is the part that needed
   // somewhere to live.
@@ -1337,7 +1351,8 @@ if (SSE_LANES && SSE_LANES.length) {
       ${laneRows}
       <div class="chart-note">
         중국발 수출 컨테이너 운임(계약운임 포함) · Shanghai Shipping Exchange<br>
-        SCFI는 무료 공개 범위에서 항로별 값이 비어 있어 항로 비교는 CCFI를 씁니다. 인도 항로는 CCFI에 없습니다.
+        SCFI는 무료 공개 범위에서 항로별 값이 비어 있어 항로 비교는 CCFI를 씁니다. 인도 항로는 CCFI에 없습니다.<br>
+        주간 발표 · 누적 ${laneWeeks}주 수집${!LANE_ABOUT ? "" : laneWeeks >= 3 ? " · 항로별 추이는 상세에서" : " (3주부터 상세에 항로별 차트)"}
       </div>
     </div>`);
 }

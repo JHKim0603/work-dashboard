@@ -1400,6 +1400,17 @@ if ($scfi) {
     $scfiHistory = @(Merge-HistorySeries -store $historyStore -key "scfi" -points $scfiPoints)
     $scfi | Add-Member -NotePropertyName points -NotePropertyValue $scfiHistory -Force
 }
+# The lanes have exactly SCFI's problem - this week and last, nothing older - and they are the
+# numbers this cargo actually pays, where the composite averages Europe and the Americas in.
+# Only SCFI was being kept, so the lane card could never show more than one week's move.
+foreach ($l in $sseLanes) {
+    $lanePoints = @(
+        [PSCustomObject]@{ label = $l.lastDate;    value = $l.previous }
+        [PSCustomObject]@{ label = $l.currentDate; value = $l.current }
+    ) | Where-Object { $_.label }
+    $laneHistory = @(Merge-HistorySeries -store $historyStore -key $l.id -points $lanePoints)
+    $l | Add-Member -NotePropertyName points -NotePropertyValue $laneHistory -Force
+}
 
 Write-HistoryStore -store $historyStore
 
