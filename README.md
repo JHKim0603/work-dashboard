@@ -13,13 +13,23 @@ workflow.
    (요일별 아이콘, 기온 막대, 최고/최저, 강수확률). 체감/최고기온이 기상청 특보 기준(단순화)을
    넘으면 "폭염주의보/경보", 최저기온이 기준 이하면 "한파주의보/경보" 멘트가 자동으로 붙습니다.
 2. **공휴일 · 연휴** — 오늘 이후 가장 빠른 한국 공휴일 연휴 구간(주말과 이어진 실제 연휴 블록), D-day, 이후 공휴일 목록
-3. **베트남 태풍 감시** — 베트남에서 들어오는 부자재 입고 일정이 태풍으로 지연되는 걸 미리 파악하기
-   위한 섹션. 판정은 **태풍의 전체 경로**(GDACS 이벤트별 geometry)를 기준으로 하며, 영향을 두
-   종류로 구분합니다.
+   (요일 포함), 그 아래 **베트남·중국 휴무**(아래 `foreignHolidayCalendars` 참고).
 
-   - **직접** — 베트남이 피해국에 포함되거나 경로가 하노이/호치민 500km 이내
+   > Nager.Date 는 대체공휴일을 **원래 이름으로, 원래 날짜는 빼고** 줍니다('개천절 10/05').
+   > 양력 고정일 공휴일은 날짜가 다르면 `개천절 대체공휴일` 로 고쳐 적습니다. 설날·추석·부처님
+   > 오신 날은 음력이라 이 방식으로 가릴 수 없어 그대로 둡니다.
+3. **베트남 태풍 감시** — 베트남에서 들어오는 부자재 입고 일정이 태풍으로 지연되는 걸 미리 파악하기
+   위한 섹션. 판정은 **태풍의 전체 경로**(GDACS 이벤트별 geometry)를 기준으로 하며, 화물이 지나는
+   구간을 세 가지로 나눠 봅니다.
+
+   - **출발지(직접)** — 베트남이 피해국에 포함되거나 경로가 하노이/호치민 500km 이내
+     (`typhoonWatchHubs`)
    - **항로** — 경로가 남중국해 항로를 통과하거나 환적항(홍콩·선전 / 가오슝 / 상하이·닝보)
-     400km 이내
+     400km 이내 (`typhoonTransshipHubs`)
+   - **도착지** — 경로가 국내 입항 항만(부산 / 울산 / 광양 / 인천) 400km 이내
+     (`typhoonArrivalHubs`). 47년치 경로 통계로 연 4.0건이 이 안에 들어오고, 그중 1.6건은
+     베트남·항로 어디에도 걸리지 않습니다. 이미 바다에 있는 화물은 피해 갈 수 없어서 배지
+     색은 출발지 > 도착지 > 항로 순으로 정합니다.
 
    활성 태풍이 있으면 경고를 띄우고, **활성 여부와 무관하게 최근 발생 이력 6건을 "N일 전"과 함께**
    항상 표시합니다 — 지난 태풍이 언제였는지 알면 다음 시기를 가늠할 수 있기 때문입니다.
@@ -58,6 +68,21 @@ workflow.
    **카드 설명**: 각 카드의 `상세 ↗` 팝업 맨 위에 "이 숫자는 무엇인가"가 붙습니다. 무엇을 재는
    숫자인지, 왜 이 책상에 올라오는지, **하면 안 되는 해석**이 무엇인지 순으로 적혀 있고, 문구는
    `config.json`의 `cardAbout`에서 id별로 관리합니다.
+
+   **비교 기준 표기**: ▲/▼ 옆에 무엇과 비교했는지 적습니다(`7월 대비`, `9/17 대비`, `2024년 대비`).
+   카드마다 직전 점 간격이 하루~1년이라, 적지 않으면 전기요금의 1년치 +8.2% 가 옆 경유의 하루치
+   -0.1% 와 같은 모양으로 보입니다. '전주' 처럼 추정하지 않고 **직전 점의 날짜**로 적습니다 —
+   Yahoo 주간 계열은 진행 중인 봉으로 끝나서 직전 점이 지난주가 아닐 수 있습니다.
+
+   - 숫자는 천 단위 구분 + 끝자리 0 제거로 통일(`1355.28` → `1,355.28`, `18.00` → `18`)
+   - 변동이 0.05% 미만이면 `보합` (메일과 같은 규칙)
+   - 카드 차트는 팝업과 다른 **320 폭 viewBox**를 씁니다. 둘이 560 폭 하나를 공유하던 때는
+     카드(약 300px)에서 축 글씨가 5px 가까이로 줄어 읽을 수 없었습니다
+
+   **CCFI 항로별 추이**: 항로 지수도 SCFI 처럼 이번 주·전주 두 값만 공개되므로 항로마다
+   `data-history.json`에 쌓고, 3주가 모이면 상세 팝업에 항로별 차트를 그립니다(카드에는 누적
+   주수 표시). 합성지수는 유럽·미주 비중이 커서 이 화물이 실제로 타는 동남아 항로가 움직여도
+   드러나지 않기 때문입니다.
 
 5. **수급 뉴스** — 유니드 회사 동향, 화학공장 중대재해·안전 관련 헤드라인.
 
@@ -158,6 +183,20 @@ gh secret set CARD_TARGETS_JSON --repo JHKim0603/work-dashboard --body '{"kcl":{
 - 워크플로의 `Commit accumulated history` 단계가 변경분을 저장소에 되커밋합니다
 - 그래서 **오피넷 1년치 그래프는 지금부터 하루씩 쌓여 만들어집니다** — 과거분을 소급해
   채울 무료 소스는 없습니다
+- CCFI 항로 6개도 같은 파일에 항로 id별로 쌓입니다
+- 카드별 `lastSeen`은 **라벨(시점)이 바뀔 때만** 다시 씁니다. 환율·유가의 마지막 점은 날짜는
+  그대로인데 값이 장중에 계속 바뀌어서, 예전엔 하루 여섯 번 실행이 모두 커밋을 만들었습니다
+
+### 메일 제목의 '새 값' 판정 (`mailed-labels.json`)
+
+메일 제목의 가격 특이사항(급변·기준가 이탈)은 **지난 메일에 실린 시점과 비교해** 새 값인지
+판단합니다. 스크립트는 매 실행 `mailed-labels.next.json`을 쓰고, 워크플로가 **발송이 확인된
+뒤에만** `mailed-labels.json`으로 승격해 커밋합니다(`.last-digest`와 같은 방식).
+
+> 예전에는 직전 실행과 비교했습니다. 실행은 하루 여섯 번이고 메일은 그중 한 번뿐이라, 메일이
+> 아닌 실행에 새 값이 들어오면 그 실행이 기준을 덮어써서 다음 날 메일이 '이미 본 값'으로
+> 건너뛰었습니다. 발표 시각이 정해지지 않은 월간 KCl·ECOS 는 대부분 어떤 메일에도 실리지
+> 못했습니다. 파일이 없거나 거기 없는 카드는 예전처럼 직전 실행 기준으로 떨어집니다.
 
 ### 수동 업데이트 버튼
 
@@ -165,7 +204,7 @@ gh secret set CARD_TARGETS_JSON --repo JHKim0603/work-dashboard --body '{"kcl":{
 버튼만으로는 값을 새로 못 가져오고, 실제로는 **생성 스크립트를 다시 돌려야** 전체 가격이
 그날 기준으로 갱신됩니다. 우측 상단 **"🔄 지금 업데이트"** 버튼은 GitHub Actions의
 workflow_dispatch 화면을 여는 링크이고, 거기서 **Run workflow**를 누르면 약 1분 뒤 모든
-데이터(날씨·태풍·유가·목재·KCl·SCFI·뉴스)가 새로 수집되어 페이지가 다시 배포됩니다.
+데이터(날씨·공휴일·태풍·원자재·운임·뉴스)가 새로 수집되어 페이지가 다시 배포됩니다.
 
 > 버튼이 한 번에 실행되지 않고 GitHub로 보내는 이유: 워크플로를 페이지에서 직접 트리거하려면
 > GitHub 토큰이 필요한데, 이 저장소는 public이라 토큰을 페이지에 넣으면 그대로 노출됩니다.
@@ -277,6 +316,11 @@ $env:OPINET_API_KEY = "발급받은키"
 - `email-summary.html` / `email-subject.txt` — generated daily email body/subject. Written every
   run for local preview; actually *sending* it only happens in the GitHub Actions workflow. Not
   tracked in git.
+- `data-history.json` — accumulated Opinet / SCFI / CCFI-lane series and per-card `lastSeen`,
+  committed back by the workflow (see 시계열 누적).
+- `.last-digest` / `mailed-labels.json` — KST date and card labels of the last mail that
+  actually went out, committed back only after a confirmed send. `mailed-labels.next.json` is
+  the per-run candidate and is git-ignored.
 
 ## Usage
 
@@ -294,10 +338,11 @@ Note that the 7-day strip assumes one wide card per location.
 
 ### Changing the typhoon-watch hubs
 
-Edit `config.json` → `typhoonWatchHubs` (currently 하노이/호치민). A GDACS tropical cyclone is
-shown if it either lists Vietnam among its affected countries, or its current/last position is
-within 800km of any hub — adjust that radius in `Get-TyphoonWatch` in
-`Update-WorkDashboard.ps1` if it's too wide/narrow.
+Edit `config.json` → `typhoonWatchHubs` (출발지: 하노이/호치민), `typhoonTransshipHubs` (항로:
+홍콩·선전/가오슝/상하이·닝보) or `typhoonArrivalHubs` (도착지: 부산/울산/광양/인천). The whole
+GDACS track is checked against them — 500km for 출발지, 400km for 항로·도착지 — plus a
+South China Sea crossing test for 항로. The radii are in `Get-TyphoonWatch` in
+`Update-WorkDashboard.ps1`.
 
 ### Changing material search queries
 
@@ -309,9 +354,9 @@ search terms; results across all queries are de-duplicated and capped at 8 headl
 - Requires only Windows PowerShell 5.1 — no Python/Node/npm.
 - `.ps1` files must stay saved as **UTF-8 with BOM**, or Windows PowerShell 5.1 misreads the
   Korean text and fails to parse the script.
-- PP/PE 가격 및 목재 수급은 실시간 수치 API가 아니라 뉴스 헤드라인 기반입니다 (정부 공식 API는
-  data.go.kr 회원가입+활용신청이 필요해 우선 제외함 — 나중에 키를 발급받으면 실제 가격 수치로
-  교체 가능).
+- JSON injected into the page `<script>` has `</` escaped as `<\/`. pwsh (the runner) doesn't
+  escape `<`, so one headline containing `</script>` could blank the whole page. News titles,
+  sources and links in the email are HTML-encoded for the same reason.
 
 ## Email summary (GitHub Actions only)
 
@@ -334,8 +379,10 @@ the Actions workflow has the secrets.
 
 ### 자동 발송이 하루 한 번만 나가는 방식
 
-**아침에 예약 슬롯 4개**(08:23 / 09:47 / 11:23 / 13:41 KST)가 각각 독립적으로 돕니다.
-슬롯 하나가 통과하면 메일이 나가고, 나머지는 페이지만 갱신하고 조용히 지나갑니다.
+**매일 아침 예약 슬롯 6개**(06:18 / 07:06 / 08:23 / 09:47 / 11:23 / 13:41 KST)가 각각
+독립적으로 돕니다. 슬롯 하나가 통과하면 메일이 나가고, 나머지는 페이지만 갱신하고 조용히
+지나갑니다. 날씨·공휴일·태풍은 주말에도 멈추지 않으므로 stockdashboard 와 달리 요일을 거르지
+않습니다.
 
 왜 4개나 두는가 — GitHub은 부하가 걸리면 예약 실행을 **그냥 버립니다.** 이 워크플로는
 `:00`, `:30`에 걸려 있던 3일 동안 **예약 실행이 한 번도 안 됐고**(전체 실행이 전부 수동),
@@ -351,8 +398,9 @@ stockdashboard는 같은 큐에서 15분 → 5시간 → 7시간까지 밀렸습
 > 잘못 판단해 침묵하고, 일시적인 SMTP 오류가 그날 전체 미발송으로 굳어집니다. 마커는 **발송
 > 성공 직후에만** 기록되므로, 실패하면 마커가 어제 날짜로 남아 다음 슬롯이 재시도합니다.
 
-수동 실행(`workflow_dispatch`)은 마커와 무관하게 항상 발송합니다 — 사람이 직접 요청한
-것이기 때문입니다.
+수동 실행(`workflow_dispatch`)도 마커를 따릅니다. 오늘 이미 보냈더라도 다시 받으려면 실행
+화면에서 **`force_email`**을 켜세요. 예전엔 수동 실행이면 항상 보냈는데, 외부 스케줄러가
+dispatch API 로 실행을 걸면 호출마다 메일이 나가 하루 한 번 보장이 깨지기 때문에 바꿨습니다.
 
 히스토리와 마커 커밋은 **메일 발송 이후**에 일어납니다. 그 push가 실패하더라도 메일 발송
 여부에는 영향을 주지 못하게 하기 위해서입니다.
