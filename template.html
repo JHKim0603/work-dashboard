@@ -462,6 +462,8 @@
   .upcoming-list .up-row:first-child { border-top: none; }
   .upcoming-list .up-row .un { color: var(--ink-primary); }
   .upcoming-list .up-row .ud { color: var(--ink-muted); white-space: nowrap; }
+  .upcoming-list .up-row .uc { font-size: 10.5px; font-weight: 700; color: var(--ink-muted); margin-right: 5px; }
+  .upcoming-list .up-row .ud.soon { color: var(--bad); font-weight: 600; }
 
   .news-item { font-size: 12.5px; padding: 7px 0; border-top: 1px solid var(--gridline); }
   .news-item:first-child { border-top: none; }
@@ -632,6 +634,7 @@
 <script>
 const WEATHER = __WEATHER_JSON__;
 const HOLIDAY = __HOLIDAY_JSON__;
+const FOREIGN_HOLIDAYS = __FOREIGN_HOLIDAYS_JSON__;
 const TYPHOON = __TYPHOON_JSON__;
 const CLIMATOLOGY = __CLIMATOLOGY_JSON__;
 const PRICES = __PRICES_JSON__;
@@ -827,7 +830,8 @@ if (!HOLIDAY) {
   const fmt = d => `${d.slice(5).replace("-", "/")}(${DOW[new Date(d + "T00:00:00Z").getUTCDay()]})`;
   // Sized to fill the card rather than to a round number: the top row stretches all three cards
   // to the tallest, so 8 rows left the bottom third of this one empty.
-  const SHOW = 12;
+  // Nine now that the Vietnam/China list shares the card; the rest are counted below it.
+  const SHOW = 9;
   const shown = grouped.slice(0, SHOW);
   const upcoming = shown.map(g => {
     const range = g.start === g.end ? fmt(g.start) : `${fmt(g.start)}~${fmt(g.end)}`;
@@ -842,6 +846,19 @@ if (!HOLIDAY) {
     ? `<div class="upcoming-more">${lastYear}년까지 ${hiddenCount}건 더 있음</div>`
     : "";
 
+  // Vietnam/China blocks, where 부자재 ships from and freight transships - a week of 뗏 or 국경절
+  // stops loading there while Korea works. Names and dates only; the country tag leads.
+  // Single days beyond a month out are dropped first: taking the next five by date let 문화의 날
+  // and two 신정 push 뗏 and 춘절 - the weeks that actually stop shipments - off the list.
+  const foreign = (FOREIGN_HOLIDAYS || []).filter(f => f.days >= 3 || f.dDay <= 30).slice(0, 5);
+  const foreignHtml = foreign.length ? `
+      <div class="upcoming-label">베트남·중국 휴무 (선적 영향)</div>
+      <div class="upcoming-list">${foreign.map(f => {
+        const range = f.startDate === f.endDate ? fmt(f.startDate) : `${fmt(f.startDate)}~${fmt(f.endDate)}`;
+        const when = f.dDay <= 0 ? "진행 중" : `D-${f.dDay}`;
+        return `<div class="up-row" title="${esc(f.impact || "")} · ${esc(f.nameEn || "")}"><span class="un"><span class="uc">${esc(f.country)}</span>${esc(f.name)}${f.days > 1 ? ` · ${f.days}일` : ""}</span><span class="ud${f.dDay <= 10 ? " soon" : ""}">${esc(range)} · ${when}</span></div>`;
+      }).join("")}</div>` : "";
+
   const rangeText = `${fmt(HOLIDAY.startDate)} ~ ${fmt(HOLIDAY.endDate)}`;
   holidaySection.innerHTML = `
     <div class="holiday-card">
@@ -853,6 +870,7 @@ if (!HOLIDAY) {
       <div class="upcoming-label">다가오는 공휴일</div>
       <div class="upcoming-list">${upcoming}</div>
       ${moreNote}
+      ${foreignHtml}
     </div>`;
 }
 

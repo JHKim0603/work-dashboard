@@ -8,6 +8,18 @@
       "Lon": 129.33
     }
   ],
+  "foreignHolidayCalendars": [
+    {
+      "Label": "베트남",
+      "Calendar": "en.vietnamese#holiday@group.v.calendar.google.com",
+      "Impact": "현지 출하·부자재 입고 지연"
+    },
+    {
+      "Label": "중국",
+      "Calendar": "en.china#holiday@group.v.calendar.google.com",
+      "Impact": "환적·운임지수 발표 휴무"
+    }
+  ],
   "typhoonWatchHubs": [
     {
       "Id": "hanoi",

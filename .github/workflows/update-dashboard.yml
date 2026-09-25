@@ -66,6 +66,9 @@ jobs:
           OPINET_API_KEY: ${{ secrets.OPINET_API_KEY }}
           # Also optional: unset simply skips whatever 관세청 수입단가 cards customsSeries lists.
           DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+          # Optional contract/budget reference prices, mail only - see $cardTargets in the script.
+          # A secret because this repo and its page are public.
+          CARD_TARGETS_JSON: ${{ secrets.CARD_TARGETS_JSON }}
         run: ./Update-WorkDashboard.ps1
 
       - name: Read email subject

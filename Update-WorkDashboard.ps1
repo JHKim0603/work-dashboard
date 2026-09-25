@@ -28,8 +28,10 @@ $secretsPath = Join-Path $root "secrets.local.json"
 if (Test-Path $secretsPath) {
     try {
         $localSecrets = Get-Content -Path $secretsPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        foreach ($name in @("OPINET_API_KEY", "DATA_GO_KR_KEY")) {
+        foreach ($name in @("OPINET_API_KEY", "DATA_GO_KR_KEY", "CARD_TARGETS_JSON")) {
             $val = $localSecrets.$name
+            # CARD_TARGETS_JSON may be written in the local file as an object rather than a string.
+            if ($val -and $val -isnot [string]) { $val = ConvertTo-Json -InputObject $val -Depth 4 -Compress }
             if ($val -and -not (Get-Item "env:$name" -ErrorAction SilentlyContinue)) {
                 Set-Item "env:$name" $val
                 Write-Host "  secrets.local.json에서 $name 로드"
@@ -38,6 +40,32 @@ if (Test-Path $secretsPath) {
     } catch {
         Write-Warning "secrets.local.json을 읽지 못했습니다 (JSON 형식 확인): $($_.Exception.Message)"
     }
+}
+
+# Contract / budget reference prices per card, e.g. {"kcl": {"ref": 380, "label": "계약가", "alertPct": 3}}.
+# They come from the CARD_TARGETS_JSON secret (or secrets.local.json) and are used in the mail
+# only, never written into the page: this repo and its Pages site are public, and a contract
+# price is exactly what must not be. config.json holds nothing here for the same reason.
+$cardTargets = @{}
+if ($env:CARD_TARGETS_JSON) {
+    try {
+        $rawTargets = $env:CARD_TARGETS_JSON | ConvertFrom-Json
+        foreach ($p in $rawTargets.PSObject.Properties) {
+            if ($null -ne $p.Value.ref -and [double]$p.Value.ref -gt 0) { $cardTargets[$p.Name] = $p.Value }
+        }
+        Write-Host "  기준가 설정 $($cardTargets.Count)개 (메일 전용)"
+    } catch {
+        Write-Warning "CARD_TARGETS_JSON 형식 오류 - 기준가 없이 진행합니다: $($_.Exception.Message)"
+    }
+}
+
+# Per-card threshold for the subject's price-move flag; cards not listed keep the default.
+# Public config, since a threshold says nothing about what is paid.
+function Get-ChangeAlertPct {
+    param($id)
+    $v = $config.cardAlertPct.$id
+    if ($null -ne $v -and [double]$v -gt 0) { return [double]$v }
+    5
 }
 
 # ConvertFrom-Json on pwsh 7 (the Linux Actions runner) turns a full ISO timestamp like
@@ -312,6 +340,82 @@ function Get-HolidayBlock {
         Write-Warning "Holiday fetch failed: $($_.Exception.Message)"
         $null
     }
+}
+
+# --- Vietnam / China holidays --------------------------------------------------------------
+# 부자재 comes out of Vietnam and much of the freight runs through China, and both countries stop
+# for a week at a time - 뗏, 국경절, 춘절 - which delays loading and pauses the SSE freight
+# indices. The Korean card could not show any of that.
+#
+# Nager.Date, which the Korean card uses, is not good enough here: checked 2026-09, its Vietnam
+# list has no 뗏 at all for 2027 and China's 국경절 is a single day instead of 10/1~10/7. Google's
+# public holiday calendars carry the real blocks and mark each day "Public holiday" or
+# "Observance", so only the former are kept. Keyless ICS, fetched once per run.
+$foreignHolidayKo = [ordered]@{
+    "Tet|Vietnamese New Year|Lunar New Year" = "뗏(음력 설)"
+    "Spring Festival|Chinese New Year"       = "춘절"
+    "Golden Week|National Day"               = "국경절"
+    "Mid-Autumn"                             = "중추절"
+    "Independence Day"                       = "독립기념일"
+    "Reunification|Liberation Day"           = "통일기념일"
+    "Hung Kings"                             = "훙왕 기념일"
+    "Labou?r Day"                            = "노동절"
+    "Qingming|Tomb[- ]Sweeping"              = "청명절"
+    "Dragon Boat"                            = "단오절"
+    "New Year"                               = "신정"
+    "Culture Day"                            = "문화의 날"
+}
+
+function Get-ForeignHolidays {
+    param($calendars, $todayKst, $horizonDays = 200)
+    $out = @()
+    foreach ($cal in @($calendars)) {
+        try {
+            $url = "https://calendar.google.com/calendar/ical/$([uri]::EscapeDataString($cal.Calendar))/public/basic.ics"
+            $ics = (Invoke-WebRequest -Uri $url -Headers $headers -UseBasicParsing -TimeoutSec 30).Content
+            $today = $todayKst.Date
+            $horizon = $today.AddDays($horizonDays)
+            $days = @{}
+            foreach ($m in [regex]::Matches($ics, '(?s)BEGIN:VEVENT.*?END:VEVENT')) {
+                $e = $m.Value
+                if ($e -notmatch 'DESCRIPTION:Public holiday') { continue }
+                $ds = [regex]::Match($e, 'DTSTART;VALUE=DATE:(\d{8})').Groups[1].Value
+                if (-not $ds) { continue }
+                $d = [datetime]::ParseExact($ds, "yyyyMMdd", [Globalization.CultureInfo]::InvariantCulture)
+                if ($d -lt $today.AddDays(-10) -or $d -gt $horizon) { continue }
+                $days[$d] = [regex]::Match($e, 'SUMMARY:([^\r\n]+)').Groups[1].Value.Trim()
+            }
+
+            # Consecutive days become one block. The block is named after its main day - the entry
+            # without "Holiday"/"Eve" in it (Google lists 10/2~10/7 as "National Day Holiday").
+            $blocks = @()
+            foreach ($d in ($days.Keys | Sort-Object)) {
+                $last = if ($blocks.Count) { $blocks[-1] } else { $null }
+                if ($last -and ($d - $last.End).Days -eq 1) { $last.End = $d; $last.Names += $days[$d] }
+                else { $blocks += [PSCustomObject]@{ Start = $d; End = $d; Names = @($days[$d]) } }
+            }
+            foreach ($b in $blocks) {
+                if ($b.End -lt $today) { continue }
+                $main = @($b.Names | Where-Object { $_ -notmatch 'Holiday|Eve' } | Select-Object -First 1)
+                $en = if ($main.Count) { $main[0] } else { $b.Names[0] }
+                $ko = $en
+                foreach ($pat in $foreignHolidayKo.Keys) { if ($en -match $pat) { $ko = $foreignHolidayKo[$pat]; break } }
+                $out += [PSCustomObject]@{
+                    country   = $cal.Label
+                    impact    = $cal.Impact
+                    name      = $ko
+                    nameEn    = $en
+                    startDate = $b.Start.ToString("yyyy-MM-dd")
+                    endDate   = $b.End.ToString("yyyy-MM-dd")
+                    days      = ($b.End - $b.Start).Days + 1
+                    dDay      = ($b.Start - $today).Days
+                }
+            }
+        } catch {
+            Write-Warning "해외 공휴일 조회 실패 ($($cal.Label)): $($_.Exception.Message)"
+        }
+    }
+    @($out | Sort-Object startDate)
 }
 
 # --- Vietnam typhoon watch ---------------------------------------------------------------
@@ -1313,6 +1417,10 @@ $weather = @($weather | Where-Object { $_ })
 Write-Host "Fetching holiday info..."
 $holiday = Get-HolidayBlock -todayKst $nowKst
 
+Write-Host "Fetching Vietnam/China holidays..."
+$foreignHolidays = @(Get-ForeignHolidays -calendars $config.foreignHolidayCalendars -todayKst $nowKst)
+Write-Host "  $($foreignHolidays.Count)건"
+
 Write-Host "Fetching Vietnam typhoon watch..."
 $typhoon = Get-TyphoonWatch -hubs $config.typhoonWatchHubs -transshipHubs $config.typhoonTransshipHubs -arrivalHubs $config.typhoonArrivalHubs
 
@@ -1651,6 +1759,7 @@ function ConvertTo-JsonOrNull {
 
 $weatherJson = ConvertTo-JsonOrNull -InputObject @($weather) -Depth 6
 $holidayJson = ConvertTo-JsonOrNull -InputObject $holiday -Depth 4
+$foreignHolidaysJson = ConvertTo-JsonOrNull -InputObject @($foreignHolidays) -Depth 3
 $typhoonJson = ConvertTo-JsonOrNull -InputObject $typhoon -Depth 4
 
 # Seasonality is a 47-year statistic, not a daily reading, so it ships as a file rather than
@@ -1677,7 +1786,7 @@ $materialsJson = ConvertTo-JsonOrNull -InputObject @($materials) -Depth 6
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
-$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
+$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8
@@ -1753,14 +1862,30 @@ $weatherRowsHtml = foreach ($w in $weather) {
 "@
 }
 
+# Vietnam/China blocks starting within 30 days (or under way). Further out they are planning
+# material, which the page lists; the mail is for what touches this month's shipments.
+$foreignSoon = @($foreignHolidays | Where-Object { $_.dDay -le 30 })
+
 $holidayHtml = ""
-if ($holiday) {
-    $names = ($holiday.holidayNames | Select-Object -Unique) -join ", "
-    $dDayText = if ($holiday.dDay -eq 0) { "오늘부터" } else { "D-$($holiday.dDay)" }
-    $holidayHtml = @"
-<div style="margin:16px 0;padding:12px 14px;background:#eef4fc;border:1px solid #cfe0f5;border-radius:8px;">
+if ($holiday -or $foreignSoon.Count -gt 0) {
+    $krHtml = ""
+    if ($holiday) {
+        $names = ($holiday.holidayNames | Select-Object -Unique) -join ", "
+        $dDayText = if ($holiday.dDay -eq 0) { "오늘부터" } else { "D-$($holiday.dDay)" }
+        $krHtml = @"
   <div style="font-weight:650;font-size:13px;color:#0b0b0b;">가장 빠른 연휴: $($holiday.startDate) ~ $($holiday.endDate) ($($holiday.days)일, $dDayText)</div>
   <div style="font-size:12px;color:#52514e;margin-top:4px;">$names</div>
+"@
+    }
+    $fRows = foreach ($f in $foreignSoon) {
+        $dText = if ($f.dDay -le 0) { "진행 중" } else { "D-$($f.dDay)" }
+        "<div style='font-size:12px;color:#3d3b37;margin-top:4px;'><b>$($f.country) $($f.name)</b> $($f.startDate.Substring(5)) ~ $($f.endDate.Substring(5)) ($($f.days)일, $dText) <span style='color:#898781;'>· $($f.impact)</span></div>"
+    }
+    $fHtml = if ($fRows) { "<div style='margin-top:9px;padding-top:8px;border-top:1px solid #cfe0f5;font-size:11px;font-weight:700;color:#6e6c66;'>베트남·중국 휴무 (30일 이내)</div>$($fRows -join '')" } else { "" }
+    $holidayHtml = @"
+<div style="margin:16px 0;padding:12px 14px;background:#eef4fc;border:1px solid #cfe0f5;border-radius:8px;">
+$krHtml
+  $fHtml
 </div>
 "@
 }
@@ -1985,6 +2110,18 @@ $priceRowsHtml = foreach ($c in $priceCards) {
     $prior = if ($pts.Count -gt 1) { $pts[-2] } else { $null }
     $change = Get-PriceChangeHtml -latestValue $latest.value -priorValue $(if ($prior) { $prior.value } else { $null })
     $chartHtml = Get-PriceChartHtml -points $pts -accent $change.accent -currency $c.currency
+    # Reference price line (mail only - see $cardTargets). Above the reference is the costly side,
+    # so it takes the same red the up-is-bad badges use.
+    $targetHtml = ""
+    $tg = $cardTargets[[string]$c.id]
+    if ($tg) {
+        $ref = [double]$tg.ref
+        $dev = (([double]$latest.value - $ref) / $ref) * 100
+        $tLabel = if ($tg.label) { Get-HtmlText $tg.label } else { "기준가" }
+        $tColor = if ($dev -ge 0) { "#b3221f" } else { "#0a6b0a" }
+        $tSign = if ($dev -ge 0) { "+" } else { "" }
+        $targetHtml = "<div style='font-size:12px;margin-top:4px;color:#52514e;'>$tLabel $($c.currency)$(Format-PriceValue $ref) 대비 <b style='color:$tColor;'>$tSign$($dev.ToString('N1'))%</b></div>"
+    }
     [PSCustomObject]@{ sort = $c.sort; html = @"
 <tr>
   <td style="padding:14px 16px;border-bottom:1px solid #e1e0d9;">
@@ -1995,6 +2132,7 @@ $priceRowsHtml = foreach ($c in $priceCards) {
       <span style="font-size:13px;margin-left:5px;">$($change.html)</span>
       <span style="font-size:11px;color:#898781;">· $($latest.label) 기준</span>
     </div>
+    $targetHtml
     $chartHtml
     <div style="font-size:11px;color:#898781;margin-top:7px;">$($c.note) · $($c.source)</div>
   </td>
@@ -2194,7 +2332,7 @@ $emailHtml = @"
   $(Get-EmailSection "원자재 · 물류 가격" $priceSectionHtml)
   $(Get-EmailSection "수급 뉴스" ($materialsHtml -join "`n"))
   <div style="margin-top:16px;font-size:11px;color:#898781;line-height:1.6;">
-    날씨: Open-Meteo · 공휴일: Nager.Date · 태풍: GDACS · 유가/목재: Yahoo Finance · KCl: World Bank · 운임지수: Shanghai Shipping Exchange · 뉴스: Google 뉴스. 업무 참고용 요약입니다.<br>
+    날씨: Open-Meteo · 공휴일: Nager.Date · 베트남·중국 휴무: Google 캘린더 · 태풍: GDACS · 유가/목재: Yahoo Finance · KCl: World Bank · 운임지수: Shanghai Shipping Exchange · 뉴스: Google 뉴스. 업무 참고용 요약입니다.<br>
     자세한 내용은 <a href="$dashboardUrl" style="color:#2a78d6;">대시보드</a>에서 확인하세요.
   </div>
 </div>
@@ -2233,12 +2371,20 @@ if ($holiday -and $holiday.dDay -le 7) {
     [void]$wdHighlights.Add([PSCustomObject]@{ text = "$names 연휴 $dText"; priority = 70 })
 }
 
+# A Vietnam/China block of three days or more, from ten days out. Shorter ones (a single 문화의 날)
+# rarely move a shipment; a week-long 국경절 or 뗏 does, and ten days is when it can still be
+# worked around.
+foreach ($f in @($foreignHolidays | Where-Object { $_.days -ge 3 -and $_.dDay -le 10 })) {
+    $dText = if ($f.dDay -le 0) { "진행 중" } else { "D-$($f.dDay)" }
+    [void]$wdHighlights.Add([PSCustomObject]@{ text = "$($f.country) $($f.name) $dText"; priority = 68 })
+}
+
 # 가격은 주간·월간 시계열이라 주식처럼 흔들리지 않는다. 5%면 이 계열들에서는 충분히 드문 폭이다.
 #
 # 다만 폭보다 먼저 따지는 건 "이번에 새로 들어온 값인가"다. 계열마다 갱신 주기가 일간부터
 # 연간까지 제각각이라, 폭만 보면 갱신이 느린 계열이 제 주기 내내 제목을 차지한다. 시점 라벨이
 # 지난 실행과 같다면 값도 그대로이므로 오늘의 소식이 아니다.
-$WD_PRICE_THRESHOLD_PCT = 5
+# 기준은 카드마다 config.cardAlertPct 로 바꿀 수 있고, 없으면 5% 다.
 foreach ($c in $priceCards) {
     $pts = @($c.points)
     if ($pts.Count -lt 2) { continue }
@@ -2248,14 +2394,26 @@ foreach ($c in $priceCards) {
     $lv = $pts[-1].value; $pv = $pts[-2].value
     if (-not $pv) { continue }
     $pctChg = (($lv - $pv) / $pv) * 100
-    if ([math]::Abs($pctChg) -ge $WD_PRICE_THRESHOLD_PCT) {
+    if ([math]::Abs($pctChg) -ge (Get-ChangeAlertPct $c.id)) {
         $sign = if ($pctChg -ge 0) { "+" } else { "" }
         [void]$wdHighlights.Add([PSCustomObject]@{ text = "$($c.displayName) $sign$($pctChg.ToString('N1'))%"; priority = [math]::Abs($pctChg) })
+    }
+    # 기준가(계약·예산 단가)에서 alertPct 이상 벗어난 새 값. 같은 '새 값' 게이트를 거치므로
+    # 기준을 넘은 채 머무는 동안 매일 제목을 차지하지는 않는다 - 새 시점이 들어올 때마다 한 번.
+    $tg = $cardTargets[[string]$c.id]
+    if ($tg) {
+        $dev = (([double]$lv - [double]$tg.ref) / [double]$tg.ref) * 100
+        $limit = if ($null -ne $tg.alertPct) { [double]$tg.alertPct } else { 5 }
+        if ([math]::Abs($dev) -ge $limit) {
+            $tLabel = if ($tg.label) { $tg.label } else { "기준가" }
+            $sign = if ($dev -ge 0) { "+" } else { "" }
+            [void]$wdHighlights.Add([PSCustomObject]@{ text = "$($c.displayName) $tLabel 대비 $sign$($dev.ToString('N1'))%"; priority = 85 })
+        }
     }
 }
 $scfiPrevLabel = Get-BaselineLabel "scfi"
 if ($scfi -and $scfi.changePct -and $scfiPrevLabel -and $scfiPrevLabel -ne [string]$scfi.currentDate `
-    -and [math]::Abs($scfi.changePct) -ge $WD_PRICE_THRESHOLD_PCT) {
+    -and [math]::Abs($scfi.changePct) -ge (Get-ChangeAlertPct "scfi")) {
     $sign = if ($scfi.changePct -ge 0) { "+" } else { "" }
     [void]$wdHighlights.Add([PSCustomObject]@{ text = "SCFI $sign$($scfi.changePct)%"; priority = [math]::Abs($scfi.changePct) })
 }
