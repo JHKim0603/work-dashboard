@@ -292,6 +292,8 @@
   .price-now .chg { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .price-now .chg.up { color: var(--bad); }
   .price-now .chg.down { color: var(--good); }
+  .price-now .chg.flat { color: var(--ink-muted); }
+  .price-now .chg-basis { font-size: 11px; color: var(--ink-muted); margin-left: -4px; }
   /* Marks a lag inherent to the source, not a fetch that failed - amber rather than red, and
      worded as when it was published so it does not read as an error. */
   .price-now .stale {
@@ -308,6 +310,8 @@
   .ch-dot { fill: var(--accent); }
   .ch-ylabel { font-size: 9.5px; fill: var(--ink-muted); text-anchor: end; font-variant-numeric: tabular-nums; }
   .ch-xlabel { font-size: 9.5px; fill: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  /* viewBox units: the card geometry renders at roughly 0.9x, so this lands near 10px. */
+  .price-chart.compact .ch-ylabel, .price-chart.compact .ch-xlabel { font-size: 11px; }
   /* hover readout: a vertical rule + marker that follow the nearest data point */
   .ch-hitbox { fill: transparent; cursor: crosshair; }
   .ch-cursor { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; pointer-events: none; }
@@ -394,6 +398,7 @@
   .stat-tile .sc { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .stat-tile .sc.up { color: var(--bad); }
   .stat-tile .sc.down { color: var(--good); }
+  .stat-tile .sc.flat { color: var(--ink-muted); }
   .stat-tile .prev-row {
     font-size: 12px; color: var(--ink-secondary); display: flex; justify-content: space-between;
     padding: 5px 0; border-top: 1px solid var(--gridline);
@@ -644,6 +649,41 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 
+// One number format for the page. The price cards printed raw values (1355.28, ¥8631) beside
+// freight cards using toLocaleString (3,686.6), and fixed two decimals turned a 18-yuan move
+// into "18.00". Separators always, trailing zeros never.
+function fmtNum(v, maxDecimals = 2) {
+  if (v === null || v === undefined || isNaN(v)) return "";
+  return Number(v).toLocaleString("en-US", { maximumFractionDigits: maxDecimals });
+}
+
+// What a card's ▲/▼ is measured against. Every card compares its last two points, but those sit
+// a day apart on pump prices, a month on KCl and a year on the power tariff, and the badges looked
+// identical - a year's +8.2% read like the day's -0.1% beside it. Named by the earlier point's own
+// date rather than guessed as 전주/전월: Yahoo's weekly series ends on an in-progress bar, so
+// "the previous point" is not always last week.
+function changeBasis(prevLabel) {
+  const s = String(prevLabel);
+  let m;
+  if ((m = s.match(/^(\d{4})$/))) return `${m[1]}년 대비`;
+  if ((m = s.match(/^\d{4}-(\d{2})$/))) return `${+m[1]}월 대비`;
+  if ((m = s.match(/^\d{4}-(\d{2})-(\d{2})$/))) return `${+m[1]}/${+m[2]} 대비`;
+  return "";
+}
+
+// Shared by every priced card and the email's rule: under 0.05% is 보합, not "▲ 0.00 (0.0%)",
+// which reads as a broken template.
+function changeBadgeHtml(prior, latest) {
+  const diff = latest.value - prior.value;
+  const pct = prior.value ? (diff / prior.value) * 100 : null;
+  const basis = changeBasis(prior.label);
+  const basisHtml = basis ? `<span class="chg-basis">${esc(basis)}</span>` : "";
+  if (pct !== null && Math.abs(pct) < 0.05) return `<span class="chg flat">보합</span>${basisHtml}`;
+  const up = diff >= 0;
+  const pctText = pct === null ? "" : ` (${up ? "+" : ""}${pct.toFixed(1)}%)`;
+  return `<span class="chg ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${fmtNum(Math.abs(diff))}${pctText}</span>${basisHtml}`;
+}
+
 // Every number on this page is baked in at build time, so how old the build is *is* how old
 // the data is - surfaced as a relative age, turning red past a day so a stale page can't be
 // mistaken for a live one.
@@ -781,7 +821,10 @@ if (!HOLIDAY) {
     grouped.push({ name: h.name, start: h.date, end: h.date });
   });
 
-  const fmt = d => d.slice(5).replace("-", "/");
+  // With the weekday: whether a date is a Monday or already a Saturday is most of what a holiday
+  // date means for a shipping plan, and the list gave only numbers.
+  const DOW = "일월화수목금토";
+  const fmt = d => `${d.slice(5).replace("-", "/")}(${DOW[new Date(d + "T00:00:00Z").getUTCDay()]})`;
   // Sized to fill the card rather than to a round number: the top row stretches all three cards
   // to the tallest, so 8 rows left the bottom third of this one empty.
   const SHOW = 12;
@@ -929,48 +972,61 @@ if (!TYPHOON) {
   }
 }
 
+// The chart scales to its container, so text sized in viewBox units shrinks with it. One 560-wide
+// geometry served both the ~300px grid cards and the ~700px popup, which left the card axes at
+// about 5px on screen - unreadable. Each surface now gets a viewBox close to its real width, so
+// the same label size lands near 10-12px in both.
 const CH = { W: 560, H: 150, PAD_L: 46, PAD_R: 12, PAD_T: 12, PAD_B: 24 };
+const CH_CARD = { W: 320, H: 100, PAD_L: 42, PAD_R: 8, PAD_T: 8, PAD_B: 20, compact: true };
 
-function chartGeometry(points) {
+function chartGeometry(points, d = CH) {
   const vals = points.map(p => p.value);
   const lo = Math.min(...vals), hi = Math.max(...vals);
   const span = (hi - lo) || 1;
   return {
     lo, hi, span,
-    x: i => CH.PAD_L + (i / Math.max(points.length - 1, 1)) * (CH.W - CH.PAD_L - CH.PAD_R),
-    y: v => CH.PAD_T + (1 - (v - lo) / span) * (CH.H - CH.PAD_T - CH.PAD_B),
+    x: i => d.PAD_L + (i / Math.max(points.length - 1, 1)) * (d.W - d.PAD_L - d.PAD_R),
+    y: v => d.PAD_T + (1 - (v - lo) / span) * (d.H - d.PAD_T - d.PAD_B),
   };
 }
 
-function priceChartSvg(points, chartId) {
-  const g = chartGeometry(points);
-  const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${g.x(i).toFixed(1)},${g.y(p.value).toFixed(1)}`).join(" ");
-  const area = `${line} L${g.x(points.length - 1).toFixed(1)},${(CH.H - CH.PAD_B).toFixed(1)} L${g.x(0).toFixed(1)},${(CH.H - CH.PAD_B).toFixed(1)} Z`;
+// Axis numbers go through the same formatter as the headline figures, so a card reading 1,355.28
+// does not have 1355 on its axis.
+function axisNum(v, span) {
+  return fmtNum(v, span < 10 ? 1 : 0);
+}
 
-  const grid = [0, 0.33, 0.66, 1].map(f => {
+function priceChartSvg(points, chartId, d = CH) {
+  if (CHART_DATA[chartId]) CHART_DATA[chartId].dims = d;
+  const g = chartGeometry(points, d);
+  const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${g.x(i).toFixed(1)},${g.y(p.value).toFixed(1)}`).join(" ");
+  const area = `${line} L${g.x(points.length - 1).toFixed(1)},${(d.H - d.PAD_B).toFixed(1)} L${g.x(0).toFixed(1)},${(d.H - d.PAD_B).toFixed(1)} Z`;
+
+  // Three gridlines on a card - four labels stacked in 60px of plot collide at a readable size.
+  const fracs = d.compact ? [0, 0.5, 1] : [0, 0.33, 0.66, 1];
+  const grid = fracs.map(f => {
     const v = g.lo + f * g.span;
     const yy = g.y(v);
-    const lbl = g.span < 10 ? v.toFixed(1) : Math.round(v);
-    return `<line x1="${CH.PAD_L}" y1="${yy.toFixed(1)}" x2="${CH.W - CH.PAD_R}" y2="${yy.toFixed(1)}" class="ch-grid"/>
-            <text x="${CH.PAD_L - 6}" y="${(yy + 3.5).toFixed(1)}" class="ch-ylabel">${lbl}</text>`;
+    return `<line x1="${d.PAD_L}" y1="${yy.toFixed(1)}" x2="${d.W - d.PAD_R}" y2="${yy.toFixed(1)}" class="ch-grid"/>
+            <text x="${d.PAD_L - 5}" y="${(yy + 3.5).toFixed(1)}" class="ch-ylabel">${axisNum(v, g.span)}</text>`;
   }).join("");
 
   const tickIdx = [0, Math.floor((points.length - 1) / 2), points.length - 1];
   const xlabels = tickIdx.map(i =>
-    `<text x="${g.x(i).toFixed(1)}" y="${CH.H - 6}" class="ch-xlabel" text-anchor="${i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${esc(points[i].label)}</text>`
+    `<text x="${g.x(i).toFixed(1)}" y="${d.H - 5}" class="ch-xlabel" text-anchor="${i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${esc(points[i].label)}</text>`
   ).join("");
 
   const lastX = g.x(points.length - 1), lastY = g.y(points[points.length - 1].value);
 
-  return `<svg viewBox="0 0 ${CH.W} ${CH.H}" class="price-chart" data-chart="${chartId}" role="img" aria-label="가격 추이 차트">
+  return `<svg viewBox="0 0 ${d.W} ${d.H}" class="price-chart${d.compact ? " compact" : ""}" data-chart="${chartId}" role="img" aria-label="가격 추이 차트">
     ${grid}
     <path d="${area}" class="ch-area"/>
     <path d="${line}" class="ch-line"/>
     <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3.5" class="ch-dot"/>
     ${xlabels}
-    <line class="ch-cursor" y1="${CH.PAD_T}" y2="${CH.H - CH.PAD_B}" x1="0" x2="0"/>
+    <line class="ch-cursor" y1="${d.PAD_T}" y2="${d.H - d.PAD_B}" x1="0" x2="0"/>
     <circle class="ch-marker" r="4.5" cx="0" cy="0"/>
-    <rect class="ch-hitbox" x="0" y="0" width="${CH.W}" height="${CH.H}"/>
+    <rect class="ch-hitbox" x="0" y="0" width="${d.W}" height="${d.H}"/>
   </svg>`;
 }
 
@@ -985,7 +1041,8 @@ function attachChartHover(wrap) {
   if (!pts || !pts.points.length) return;
 
   const { points, currency, unit, decimals } = pts;
-  const g = chartGeometry(points);
+  const dims = pts.dims || CH;
+  const g = chartGeometry(points, dims);
   const cursor = svg.querySelector(".ch-cursor");
   const marker = svg.querySelector(".ch-marker");
   const tip = wrap.querySelector(".ch-tip");
@@ -993,7 +1050,7 @@ function attachChartHover(wrap) {
   function show(ev) {
     const rect = svg.getBoundingClientRect();
     if (!rect.width) return;
-    const scale = CH.W / rect.width;
+    const scale = dims.W / rect.width;
     const vbX = (ev.clientX - rect.left) * scale;
 
     let best = 0, bestDist = Infinity;
@@ -1007,7 +1064,7 @@ function attachChartHover(wrap) {
     cursor.setAttribute("x1", px); cursor.setAttribute("x2", px);
     marker.setAttribute("cx", px); marker.setAttribute("cy", py);
 
-    tip.innerHTML = `<span class="tv">${currency}${p.value.toFixed(decimals)}</span> <span style="opacity:.7">${esc(unit)}</span><br><span class="td">${esc(p.label)}</span>`;
+    tip.innerHTML = `<span class="tv">${esc(currency)}${fmtNum(p.value, decimals)}</span> <span style="opacity:.7">${esc(unit)}</span><br><span class="td">${esc(p.label)}</span>`;
     // clamp so the tooltip never runs off either edge of the card
     const leftPx = Math.min(Math.max(px / scale, 42), rect.width - 42);
     tip.style.left = leftPx + "px";
@@ -1101,7 +1158,7 @@ function trendSentence(c) {
              : posPct >= 45 ? "구간 <b>중간</b>" : posPct >= 20 ? "구간 중하단" : "관측 구간 <b>하단</b>";
 
   // currency-prefixed series ($82.85) vs unit-suffixed ones (1,845 원/L)
-  const money = v => c.currency ? `${c.currency}${v}` : `${v}${c.unit ? " " + c.unit : ""}`;
+  const money = v => c.currency ? `${c.currency}${fmtNum(v)}` : `${fmtNum(v)}${c.unit ? " " + c.unit : ""}`;
   return `${dir} 현재가는 이 기간 최저 ${money(lo)} · 최고 ${money(hi)} 중 ${band}에 있습니다.`;
 }
 
@@ -1128,7 +1185,7 @@ function openDetail(id) {
     const last = pts[pts.length - 1];
     body += `<div class="m-sub">${esc(c.note || "")} · 출처 ${esc(c.source || "")}</div>
       <div class="price-now">
-        <span class="pv">${esc(c.currency || "")}${last.value}</span>
+        <span class="pv">${esc(c.currency || "")}${fmtNum(last.value)}</span>
         <span class="pu">${esc(c.unit || "")}</span>
         <span class="pd">${esc(last.label)} 기준 · ${pts.length}개 시점</span>
       </div>
@@ -1243,13 +1300,7 @@ function priceCardHtml(c, idx) {
   CHART_DATA[chartId] = { points: pts, currency: c.currency || "", unit: c.unit || "", decimals: Math.min(decimals, 2) };
   CARD_BY_ID[c.id] = c;
 
-  let changeHtml = "";
-  if (prior) {
-    const diff = latest.value - prior.value;
-    const up = diff >= 0;
-    const pct = prior.value ? ((diff / prior.value) * 100).toFixed(1) : null;
-    changeHtml = `<span class="chg ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(diff).toFixed(2)}${pct ? ` (${pct}%)` : ""}</span>`;
-  }
+  const changeHtml = prior ? changeBadgeHtml(prior, latest) : "";
 
   return `
     <div class="card">
@@ -1258,13 +1309,13 @@ function priceCardHtml(c, idx) {
         <button class="detail-btn" data-detail="${esc(c.id)}">상세 ↗</button>
       </div>
       <div class="price-now">
-        <span class="pv">${esc(c.currency || "")}${latest.value}</span>
+        <span class="pv">${esc(c.currency || "")}${fmtNum(latest.value)}</span>
         <span class="pu">${esc(c.unit || "")}</span>
         ${changeHtml}
         <span class="pd">${esc(latest.label)}${staleTag(latest.label)}</span>
       </div>
       <div class="chart-wrap">
-        ${priceChartSvg(pts, chartId)}
+        ${priceChartSvg(pts, chartId, CH_CARD)}
         <div class="ch-tip"></div>
       </div>
       <div class="chart-note">${esc(c.note || "")} · ${esc(c.source || "")}</div>
@@ -1296,11 +1347,13 @@ if (SCFI) {
       </div>
       <div class="stat-row">
         <span class="sv">${SCFI.current.toLocaleString()}</span>
-        <span class="sc ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(SCFI.change)} (${SCFI.changePct}%)</span>
-        <span class="pd">${esc(SCFI.currentDate)}</span>
+        ${Math.abs(SCFI.changePct) < 0.05
+          ? `<span class="sc flat">보합</span>`
+          : `<span class="sc ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${fmtNum(Math.abs(SCFI.change))} (${up ? "+" : ""}${SCFI.changePct}%)</span>`}
+        <span class="pd">${esc(SCFI.currentDate)} · 전주 대비</span>
       </div>
       ${hasChart
-        ? `<div class="chart-wrap">${priceChartSvg(pts, chartId)}<div class="ch-tip"></div></div>`
+        ? `<div class="chart-wrap">${priceChartSvg(pts, chartId, CH_CARD)}<div class="ch-tip"></div></div>`
         : `<div class="prev-row"><span>전주 (${esc(SCFI.lastDate)})</span><span>${SCFI.previous.toLocaleString()}</span></div>`}
       <div class="chart-note">${esc(SCFI.note || "")} · ${esc(SCFI.source || "")}<br>${
         hasChart

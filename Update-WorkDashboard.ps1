@@ -233,10 +233,26 @@ function Get-HolidayBlock {
         # August it stopped at 크리스마스 and showed nothing for the year after, which is exactly
         # when next year's 설날/추석 start mattering for shipping plans.
         $horizon = $today.AddDays(730)
+        # Nager.Date reports a substituted holiday on its substitute date under the original name
+        # and drops the real date: 개천절 2026 comes back as 10-05 (a Monday) because 10-03 is a
+        # Saturday. The block arithmetic is unaffected - the real date is a weekend anyway - but
+        # the list read "개천절 10/05". Solar-calendar holidays have a fixed date to compare
+        # against, so those are labelled; 설날·추석·부처님 오신 날 move with the lunar calendar
+        # and cannot be told apart this way, so they keep Nager's name.
+        $fixedDates = @{
+            "새해" = "01-01"; "3·1절" = "03-01"; "노동절" = "05-01"; "어린이날" = "05-05"
+            "현충일" = "06-06"; "제헌절" = "07-17"; "광복절" = "08-15"; "개천절" = "10-03"
+            "한글날" = "10-09"; "크리스마스" = "12-25"
+        }
         $holidayByDate = @{}
         foreach ($h in $holidays) {
             $d = [DateTime]::Parse($h.date)
-            if ($d -ge $today -and $d -le $horizon) { $holidayByDate[$d.ToString("yyyy-MM-dd")] = $h.localName }
+            if ($d -lt $today -or $d -gt $horizon) { continue }
+            $name = $h.localName
+            if ($fixedDates.ContainsKey($name) -and $d.ToString("MM-dd") -ne $fixedDates[$name]) {
+                $name = "$name 대체공휴일"
+            }
+            $holidayByDate[$d.ToString("yyyy-MM-dd")] = $name
         }
 
         $offDates = New-Object System.Collections.Generic.List[DateTime]
