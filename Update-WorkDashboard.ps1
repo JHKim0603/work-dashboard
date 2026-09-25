@@ -1507,17 +1507,28 @@ function Get-BaselineLabel {
 }
 
 # Remember what each card last looked like, so tomorrow's failure can still show a number.
+#
+# Rewritten only when the label moves. The FX and oil cards end on an intraday point whose value
+# shifts every run while its date stays put, so rewriting unconditionally changed this file on
+# all six runs a day and each one became a commit - a history of 'accumulate price history'
+# with the actual work buried in it. The fallback shows the first reading of that date instead
+# of the last, a few tenths of a percent apart, beside a label saying which date it is.
+function Set-LastSeen {
+    param($id, $label, $value)
+    $key = "lastSeen-$id"
+    $prev = $historyStore[$key]
+    if ($prev -and $prev.ContainsKey([string]$label)) { return }
+    $historyStore[$key] = @{ [string]$label = $value }
+}
 foreach ($c in $priceCards) {
     $pts = @($c.points)
     if ($pts.Count -eq 0) { continue }
-    $historyStore["lastSeen-$($c.id)"] = @{
-        $pts[-1].label = $pts[-1].value
-    }
+    Set-LastSeen $c.id $pts[-1].label $pts[-1].value
 }
 # SCFI 는 $priceCards 밖에서 따로 조립되므로 같은 기록을 여기서 남긴다 - 주간 지수라 위 문제를
 # 그대로 안고 있다(새 주차가 나오지 않은 날에도 지난주 변동률이 계속 잡힌다).
 if ($scfi -and $scfi.currentDate) {
-    $historyStore["lastSeen-scfi"] = @{ [string]$scfi.currentDate = $scfi.current }
+    Set-LastSeen "scfi" $scfi.currentDate $scfi.current
 }
 
 $arrived = @($priceCards | ForEach-Object { [string]$_.id })
@@ -1610,15 +1621,19 @@ if ($weather.Count -eq 0 -and -not $holiday -and -not $typhoon -and $materials.C
     throw "모든 데이터 소스 fetch가 실패했습니다 - 이전 대시보드를 유지하기 위해 중단합니다."
 }
 
+# Every JSON below lands inside a <script> block, where the HTML parser ends the block at the
+# first "</script>" even inside a JS string. Windows PowerShell escapes < on its own; pwsh on the
+# runner does not, so a headline carrying that text would blank the whole page. "<\/" is the same
+# string to JSON and never closes a tag.
 function ConvertTo-JsonOrNull {
     param($InputObject, $Depth = 6)
     if ($null -eq $InputObject) { return "null" }
     $json = ConvertTo-Json -InputObject $InputObject -Depth $Depth
     if ($null -eq $json -or $json -eq "") { return "null" }
-    return $json
+    return $json.Replace("</", "<\/")
 }
 
-$weatherJson = ConvertTo-Json -InputObject @($weather) -Depth 6
+$weatherJson = ConvertTo-JsonOrNull -InputObject @($weather) -Depth 6
 $holidayJson = ConvertTo-JsonOrNull -InputObject $holiday -Depth 4
 $typhoonJson = ConvertTo-JsonOrNull -InputObject $typhoon -Depth 4
 
@@ -1633,16 +1648,16 @@ if (Test-Path $climPath) {
 } else {
     Write-Warning "typhoon-climatology.json 없음 - 계절성 표시를 건너뜁니다."
 }
-$pricesJson = ConvertTo-Json -InputObject @($priceCards) -Depth 6
+$pricesJson = ConvertTo-JsonOrNull -InputObject @($priceCards) -Depth 6
 $scfiJson = ConvertTo-JsonOrNull -InputObject $scfi -Depth 4
-$sseLanesJson = ConvertTo-Json -InputObject @($sseLanes) -Depth 4
+$sseLanesJson = ConvertTo-JsonOrNull -InputObject @($sseLanes) -Depth 4
 $laneAboutJson = ConvertTo-JsonOrNull -InputObject $laneAbout -Depth 2
 $sortsJson = ConvertTo-Json -InputObject ([PSCustomObject]@{ scfi = $scfiSort; lanes = $laneSort }) -Depth 2 -Compress
 $hasFuelKey = if ($env:OPINET_API_KEY) { "true" } else { "false" }
 # A failed KCl fetch used to just not append a card, so the page came back one card shorter
 # with nothing saying so - indistinguishable from "we never tracked potash". Say it instead.
 $hasKcl = if ($kcl) { "true" } else { "false" }
-$materialsJson = ConvertTo-Json -InputObject @($materials) -Depth 6
+$materialsJson = ConvertTo-JsonOrNull -InputObject @($materials) -Depth 6
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
@@ -1665,6 +1680,13 @@ Write-Host "Building email summary..."
 
 $dayNames = @("일", "월", "화", "수", "목", "금", "토")
 $emailDateStr = "{0}년 {1}월 {2}일 ({3})" -f $nowKst.Year, $nowKst.Month, $nowKst.Day, $dayNames[[int]$nowKst.DayOfWeek]
+
+# Headlines, outlets and links come from whoever Google News indexed: an & or < in one is markup
+# once it is pasted into the mail, and a quote in a link ends the href early.
+function Get-HtmlText {
+    param($text)
+    [System.Net.WebUtility]::HtmlEncode([string]$text)
+}
 
 function Get-AdvisoryHtml {
     param($advisories)
@@ -2059,8 +2081,8 @@ if ($highlights.Count -gt 0) {
         $chip = if ($h.reason) {
             "<span style='display:inline-block;font-size:10px;font-weight:700;background:#b3221f;color:#ffffff;padding:1px 7px;border-radius:4px;margin-right:6px;'>$($h.reason)</span>"
         } else { "" }
-        $meta = (@($h.source, $h.date) | Where-Object { $_ }) -join " · "
-        "<div style='margin-top:8px;'>$chip<a href='$($h.link)' style='font-size:13px;font-weight:700;color:#0b0b0b;text-decoration:none;'>$($h.title)</a><div style='font-size:11px;color:#898781;margin-top:2px;'>$meta</div></div>"
+        $meta = Get-HtmlText ((@($h.source, $h.date) | Where-Object { $_ }) -join " · ")
+        "<div style='margin-top:8px;'>$chip<a href='$(Get-HtmlText $h.link)' style='font-size:13px;font-weight:700;color:#0b0b0b;text-decoration:none;'>$(Get-HtmlText $h.title)</a><div style='font-size:11px;color:#898781;margin-top:2px;'>$meta</div></div>"
     }
     $highlightHtml = @"
 <div style="margin:16px 0;padding:13px 15px;background:#fdeeee;border:1px solid #f3caca;border-radius:8px;">
@@ -2075,7 +2097,9 @@ $materialsHtml = foreach ($m in $materials) {
     $newsLines = foreach ($n in ($m.news | Select-Object -First 3)) {
         # Outlet and date were already fetched but thrown away here, leaving three unattributed
         # blue lines - knowing who ran it and when is most of what makes a headline worth trusting.
-        $meta = (@($n.source, $n.date) | Where-Object { $_ }) -join " · "
+        $meta = Get-HtmlText ((@($n.source, $n.date) | Where-Object { $_ }) -join " · ")
+        $nTitle = Get-HtmlText $n.title
+        $nLink = Get-HtmlText $n.link
         $metaHtml = if ($meta) { "<div style='font-size:11px;color:#898781;margin-top:1px;'>$meta</div>" } else { "" }
         # Same left rule and reason chip the page uses, so a headline flagged there is
         # recognisable here. Inline styles only - mail clients drop stylesheets.
@@ -2085,14 +2109,14 @@ $materialsHtml = foreach ($m in $materials) {
             } else { "" }
             @"
 <div style="margin-top:9px;border-left:3px solid #b3221f;padding-left:9px;">
-      $chip<a href="$($n.link)" style="font-size:12.5px;color:#0b0b0b;font-weight:700;text-decoration:none;line-height:1.45;">$($n.title)</a>
+      $chip<a href="$nLink" style="font-size:12.5px;color:#0b0b0b;font-weight:700;text-decoration:none;line-height:1.45;">$nTitle</a>
       $metaHtml
     </div>
 "@
         } else {
             @"
 <div style="margin-top:7px;">
-      <a href="$($n.link)" style="font-size:12.5px;color:#2a78d6;text-decoration:none;line-height:1.45;">$($n.title)</a>
+      <a href="$nLink" style="font-size:12.5px;color:#2a78d6;text-decoration:none;line-height:1.45;">$nTitle</a>
       $metaHtml
     </div>
 "@
