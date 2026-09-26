@@ -12,6 +12,11 @@
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 $headers = @{ "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+# 제한 시간을 따로 적지 않은 요청의 기본값. 없으면 무기한이라, 2026-09-26 CI 에서 SSE 운임 한 건이
+# 응답 없이 296초를 붙잡았다(실행 344초 중). 568초까지 걸린 실행들도 같은 모양이다. -TimeoutSec 을
+# 직접 적은 호출(GDACS 45초, Pink Sheet 60초 등)은 그 값이 우선한다.
+$PSDefaultParameterValues['Invoke-RestMethod:TimeoutSec'] = 30
+$PSDefaultParameterValues['Invoke-WebRequest:TimeoutSec'] = 30
 
 $config = Get-Content -Path (Join-Path $root "config.json") -Raw -Encoding UTF8 | ConvertFrom-Json
 
@@ -657,7 +662,8 @@ function Get-TyphoonWatch {
             }
         })
 
-        Write-Host "  태풍 경로: 후보 $($candidates.Count)건 중 캐시 $cacheHits건, 조회 $($candidates.Count - $cacheHits)건"
+        # $(...) 로 감싼다 - 그냥 $cacheHits건 이라고 쓰면 PowerShell 이 '건'까지 변수 이름으로 읽는다.
+        Write-Host "  태풍 경로: 후보 $($candidates.Count)건 중 캐시 $($cacheHits)건, 조회 $($candidates.Count - $cacheHits)건"
         Write-TrackCache -cache $trackCache -usedKeys $usedKeys
 
         $active = @($items | Where-Object { $_.isCurrent } | Sort-Object distanceKm)
