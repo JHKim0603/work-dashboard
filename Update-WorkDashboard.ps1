@@ -481,6 +481,44 @@ function Get-StormTrackPoints {
     return @()
 }
 
+# 끝난 태풍의 경로 캐시. 경로 조회 한 건이 2.5~7.7초라, 최근 이력 10건을 매번 다시 받느라
+# 실행 시간의 절반이 여기서 나갔다. 끝난 태풍의 마지막 에피소드는 다시 바뀌지 않으므로 한 번
+# 받은 것을 typhoon-tracks.json 에 두고(워크플로가 커밋) 다음부터는 네트워크를 타지 않는다.
+# 진행 중인 태풍은 에피소드마다 경로와 예보가 바뀌므로 캐시하지 않고 매번 받는다. 부수 효과로
+# GDACS 가 느리거나 죽은 날에도 지난 태풍 이력은 경로 기준 판정을 유지한다.
+$trackCachePath = Join-Path $root "typhoon-tracks.json"
+
+function Read-TrackCache {
+    $cache = @{}
+    if (-not (Test-Path $trackCachePath)) { return $cache }
+    try {
+        $raw = Get-Content -Path $trackCachePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($p in $raw.PSObject.Properties) {
+            $cache[$p.Name] = @(foreach ($pt in $p.Value) { [PSCustomObject]@{ lat = [double]$pt[0]; lon = [double]$pt[1] } })
+        }
+    } catch {
+        Write-Warning "typhoon-tracks.json 을 읽지 못해 경로를 새로 받습니다: $($_.Exception.Message)"
+    }
+    $cache
+}
+
+function Write-TrackCache {
+    # 이번 실행에서 쓴 태풍만 남긴다. 목록은 최신순 상위 N건이라 한 번 밀려난 태풍은 돌아오지
+    # 않고, 그래서 파일이 자라지 않는다. 내용이 같으면 쓰지 않아야 매 실행이 커밋을 만들지 않는다.
+    param($cache, $usedKeys)
+    $ordered = [ordered]@{}
+    foreach ($k in ($usedKeys | Where-Object { $cache.ContainsKey($_) } | Sort-Object -Unique)) {
+        # 소수 셋째 자리(약 100m)면 400~500km 판정에 충분하고 파일이 작아진다.
+        $ordered[$k] = @(foreach ($pt in $cache[$k]) { , @([math]::Round($pt.lat, 3), [math]::Round($pt.lon, 3)) })
+    }
+    $json = ConvertTo-Json -InputObject $ordered -Depth 4 -Compress
+    $old = if (Test-Path $trackCachePath) { [System.IO.File]::ReadAllText($trackCachePath) } else { "" }
+    if ($json -ne $old) {
+        [System.IO.File]::WriteAllText($trackCachePath, $json, (New-Object System.Text.UTF8Encoding $false))
+        Write-Host "  태풍 경로 캐시 갱신: $($ordered.Count)건"
+    }
+}
+
 function Get-ClosestHub {
     # Nearest approach of the whole track to any hub in the list.
     param($track, $hubList)
@@ -532,14 +570,26 @@ function Get-TyphoonWatch {
             Sort-Object { if ($_.p.todate) { [DateTime]$_.p.todate } else { [DateTime]::MinValue } } -Descending |
             Select-Object -First $maxTracks)
 
+        $trackCache = Read-TrackCache
+        $usedKeys = @()
+        $cacheHits = 0
         $items = @(foreach ($cand in $candidates) {
             $p = $cand.p
-            $track = Get-StormTrackPoints -eventId $p.eventid -episodeId $p.episodeid
+            $cacheKey = "$($p.eventid):$($p.episodeid)"
+            $ended = ($p.iscurrent -ne "true")
+            if ($ended -and $trackCache.ContainsKey($cacheKey)) {
+                $track = $trackCache[$cacheKey]
+                $cacheHits++
+            } else {
+                $track = Get-StormTrackPoints -eventId $p.eventid -episodeId $p.episodeid
+                if ($ended -and $track.Count -gt 0) { $trackCache[$cacheKey] = $track }
+                Start-Sleep -Milliseconds 250
+            }
+            if ($ended) { $usedKeys += $cacheKey }
             # Falling back is not the same as judging on a track, and the page has to say so:
             # a one-point verdict is the one this card exists to have stopped making.
             $trackOk = $track.Count -gt 0
             if (-not $trackOk) { $track = @([PSCustomObject]@{ lat = $cand.lat; lon = $cand.lon }) }
-            Start-Sleep -Milliseconds 250
 
             $nearVn = Get-ClosestHub -track $track -hubList $hubs
             $nearPort = if ($transshipHubs) { Get-ClosestHub -track $track -hubList $transshipHubs } else { $null }
@@ -606,6 +656,9 @@ function Get-TyphoonWatch {
                 reportUrl      = $p.url.report
             }
         })
+
+        Write-Host "  태풍 경로: 후보 $($candidates.Count)건 중 캐시 $cacheHits건, 조회 $($candidates.Count - $cacheHits)건"
+        Write-TrackCache -cache $trackCache -usedKeys $usedKeys
 
         $active = @($items | Where-Object { $_.isCurrent } | Sort-Object distanceKm)
 
@@ -1281,6 +1334,61 @@ function Get-NewsImportance {
     }
 }
 
+# --- 동시 선조회 ------------------------------------------------------------------------
+# 뉴스 23건을 하나씩 받고 사이마다 쉬던 것이 실행 시간의 4분의 1 이었다. 주소는 설정에서 미리
+# 다 알 수 있으므로 몇 건씩 동시에 받아 두고, 아래 함수들은 받아 둔 것이 있으면 그것을 쓴다.
+# 동시 조회에서 실패한 주소(429/503 포함)는 받아 두지 않으므로 원래의 순차 경로가 재시도와
+# 함께 그대로 처리한다 - 이 층이 망가져도 느려질 뿐 결과가 비지는 않는다.
+# 동시 3건으로 묶는 이유: 러너 IP 는 Google 이 집 회선보다 빡빡하게 조이고, 한꺼번에 다 보내면
+# 오늘 아낀 시간을 503 재시도로 도로 잃는다.
+Add-Type -AssemblyName System.Net.Http
+$script:prefetched = @{}
+
+function Invoke-Prefetch {
+    param([string[]]$urls, [int]$concurrency = 3, [int]$timeoutSec = 25, [int]$pauseMs = 300)
+    $urls = @($urls | Where-Object { $_ } | Select-Object -Unique)
+    if ($urls.Count -eq 0) { return }
+    $handler = New-Object System.Net.Http.HttpClientHandler
+    $handler.AutomaticDecompression = [System.Net.DecompressionMethods]::GZip -bor [System.Net.DecompressionMethods]::Deflate
+    $client = New-Object System.Net.Http.HttpClient($handler)
+    $client.Timeout = [TimeSpan]::FromSeconds($timeoutSec)
+    [void]$client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", $headers["User-Agent"])
+    $got = 0
+    try {
+        for ($i = 0; $i -lt $urls.Count; $i += $concurrency) {
+            $batch = @($urls[$i..([Math]::Min($i + $concurrency, $urls.Count) - 1)])
+            $tasks = @(foreach ($u in $batch) { $client.GetAsync($u) })
+            # 하나라도 실패하면 WaitAll 이 던진다. 개별 상태를 아래에서 보므로 여기서는 삼킨다.
+            try { [System.Threading.Tasks.Task]::WaitAll([System.Threading.Tasks.Task[]]$tasks) } catch { }
+            for ($j = 0; $j -lt $batch.Count; $j++) {
+                $t = $tasks[$j]
+                if ($t.Status -ne [System.Threading.Tasks.TaskStatus]::RanToCompletion) { continue }
+                if (-not $t.Result.IsSuccessStatusCode) { continue }
+                $script:prefetched[$batch[$j]] = $t.Result.Content.ReadAsStringAsync().Result
+                $got++
+            }
+            if ($i + $concurrency -lt $urls.Count) { Start-Sleep -Milliseconds $pauseMs }
+        }
+    } finally {
+        $client.Dispose()
+    }
+    Write-Host "  동시 조회 $got/$($urls.Count)건 (나머지는 순차 조회로 재시도)"
+}
+
+function Get-Prefetched {
+    param([string]$url)
+    if (-not $script:prefetched.ContainsKey($url)) { return $null }
+    $content = $script:prefetched[$url]
+    $script:prefetched.Remove($url)
+    $content
+}
+
+function Get-NewsUri {
+    param($query, $withinDays = 21)
+    $scoped = if ($withinDays -gt 0) { "$query when:${withinDays}d" } else { $query }
+    "https://news.google.com/rss/search?q=" + [uri]::EscapeDataString($scoped) + "&hl=ko&gl=KR&ceid=KR:ko"
+}
+
 function Get-NewsHeadlines {
     # Google News RSS ranks by relevance, not date, and honours no recency unless the query
     # says so. Taking the first N items therefore returned whatever matched best across all
@@ -1289,8 +1397,10 @@ function Get-NewsHeadlines {
     # filtering by date is what makes "오늘의 뉴스" actually mean today's.
     param($query, $max = 4, $withinDays = 21)
 
-    $scoped = if ($withinDays -gt 0) { "$query when:${withinDays}d" } else { $query }
-    $uri = "https://news.google.com/rss/search?q=" + [uri]::EscapeDataString($scoped) + "&hl=ko&gl=KR&ceid=KR:ko"
+    $uri = Get-NewsUri -query $query -withinDays $withinDays
+    # 호출한 쪽이 요청 사이 쉬는 시간을 건너뛸 수 있게, 네트워크를 탔는지 남겨 둔다.
+    $content = Get-Prefetched $uri
+    $script:newsFromPrefetch = [bool]$content
     # 러너 IP 에서 Google 이 503 을 뿌리는 구간이 있다. 2026-09-10 에만 두 번, 모든 쿼리가 통째로
     # 503 이었고 그때마다 "수급 뉴스 0건"으로 생성물 점검이 배포와 메일을 막았다. 점검은 제 일을
     # 한 것이지만, 한 번 튕겼다고 그날 요약을 통째로 포기할 이유는 없다 — 재시도가 없어서 503
@@ -1298,11 +1408,9 @@ function Get-NewsHeadlines {
     #
     # 번역 엔드포인트의 429 와 같은 계열이다. 러너는 수많은 워크플로가 공유하는 클라우드 IP 를
     # 쓰고, Google 은 그 IP 를 집 회선보다 훨씬 빡빡하게 조인다.
-    $raw = $null
-    for ($try = 1; $try -le 3; $try++) {
+    for ($try = 1; $try -le 3 -and -not $content; $try++) {
         try {
-            $raw = Invoke-WebRequest -Uri $uri -Headers $headers -UseBasicParsing -TimeoutSec 25
-            break
+            $content = (Invoke-WebRequest -Uri $uri -Headers $headers -UseBasicParsing -TimeoutSec 25).Content
         } catch {
             $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
             # 스로틀이 아닌 오류는 다시 물어도 나아지지 않는다.
@@ -1315,7 +1423,7 @@ function Get-NewsHeadlines {
     }
 
     try {
-        [xml]$rss = $raw.Content
+        [xml]$rss = $content
         $cutoff = (Get-Date).ToUniversalTime().AddDays(-$withinDays)
 
         $parsed = @(foreach ($it in $rss.rss.channel.item) {
@@ -1380,7 +1488,7 @@ function Get-MaterialSnapshot {
     $news = @()
     foreach ($q in $mat.NewsQueries) {
         $news += Get-NewsHeadlines -query $q -max 3
-        Start-Sleep -Milliseconds 300
+        if (-not $script:newsFromPrefetch) { Start-Sleep -Milliseconds 300 }
     }
     # de-dup by link
     $seen = New-Object System.Collections.Generic.HashSet[string]
@@ -1718,6 +1826,14 @@ $laneAbout = $config.cardAbout.'ccfi-lanes'
 # Attach "왜 움직였나" headlines to each price card - shown in the detail popup, so a move on
 # the chart can be read against what was reported around it rather than left unexplained.
 Write-Host "Fetching price driver news..."
+# 이 아래에서 부를 뉴스 검색 전부 - 가격 카드, SCFI, 수급 뉴스 - 를 먼저 동시에 받아 둔다.
+$newsQueries = @(
+    foreach ($c in $priceCards) { if ($c.newsQuery) { $c.newsQuery } else { $config.priceNewsQueries.($c.id) } }
+    if ($scfi) { $config.priceNewsQueries.scfi }
+    foreach ($mat in $config.materials) { $mat.NewsQueries }
+)
+Invoke-Prefetch -urls @($newsQueries | Where-Object { $_ } | ForEach-Object { Get-NewsUri -query $_ })
+
 foreach ($c in $priceCards) {
     $q = $c.newsQuery
     if (-not $q) { $q = $config.priceNewsQueries.($c.id) }
@@ -1725,7 +1841,7 @@ foreach ($c in $priceCards) {
     Write-Host "  - $($c.displayName)"
     $driverNews = @(Get-NewsHeadlines -query $q -max 5)
     $c | Add-Member -NotePropertyName news -NotePropertyValue $driverNews -Force
-    Start-Sleep -Milliseconds 300
+    if (-not $script:newsFromPrefetch) { Start-Sleep -Milliseconds 300 }
 }
 if ($scfi) {
     $q = $config.priceNewsQueries.scfi
@@ -2052,10 +2168,13 @@ function Get-BarChartHtml {
         # renderer never needed. The outer <td> holds no text node - only the inner table - so
         # its font-size/line-height reset was guarding nothing, and border-collapse is already
         # implied by cellspacing='0'. About 90 bytes a bar, and there are ~170 of them.
-        $spacer = if ($pad -gt 0) { "<tr><td height='$pad' style='font-size:0;line-height:0'>&nbsp;</td></tr>" } else { "" }
-        "<td style='padding:0 1px'><table cellpadding='0' cellspacing='0' border='0'>$spacer<tr><td height='$h' width='$barW' bgcolor='$fill' style='font-size:0;line-height:0'>&nbsp;</td></tr></table></td>"
+        # 두 번째 정리(2026-09): 막대 사이 간격을 막대마다의 padding:0 1px 대신 바깥 표의
+        # cellspacing 으로 한 번만 적고, 숫자·색 속성의 따옴표를 뺐다(HTML 에서 공백 없는 값은
+        # 따옴표가 필요 없다). 막대당 36바이트, 메일 전체로 약 6KB. style 값은 ; 가 있어 그대로 둔다.
+        $spacer = if ($pad -gt 0) { "<tr><td height=$pad style='font-size:0;line-height:0'>&nbsp;</td></tr>" } else { "" }
+        "<td><table cellpadding=0 cellspacing=0 border=0>$spacer<tr><td height=$h width=$barW bgcolor=$fill style='font-size:0;line-height:0'>&nbsp;</td></tr></table></td>"
     }
-    "<table cellpadding='0' cellspacing='0' border='0'><tr>$($cells -join '')</tr></table>"
+    "<table cellpadding=0 cellspacing=2 border=0><tr>$($cells -join '')</tr></table>"
 }
 
 function Get-PriceChangeHtml {
@@ -2421,10 +2540,22 @@ if ($scfi -and $scfi.changePct -and $scfiPrevLabel -and $scfiPrevLabel -ne [stri
 $wdTop = @($wdHighlights | Sort-Object priority -Descending | Select-Object -First 3 -ExpandProperty text)
 $wdSubjectSuffix = if ($wdTop.Count -gt 0) { " · ⚠ " + ($wdTop -join ", ") } else { "" }
 
+# 태그 사이 줄바꿈+들여쓰기는 공백 한 칸과 같게 렌더링되므로 한 칸으로 줄인다. 없애지는 않는다 -
+# <span>$386.9</span> <span>/mt</span> 처럼 인라인 요소 사이의 줄바꿈은 눈에 보이는 띄어쓰기다.
+$emailHtml = [regex]::Replace($emailHtml, '>[ \t]*\r?\n\s*<', '> <')
+
 $utf8NoBom = New-Object System.Text.UTF8Encoding $false
 [System.IO.File]::WriteAllText((Join-Path $root "email-summary.html"), $emailHtml, $utf8NoBom)
 [System.IO.File]::WriteAllText((Join-Path $root "email-subject.txt"), "업무 참고자료 Dashboard - $emailDateStr$wdSubjectSuffix", $utf8NoBom)
-Write-Host "Email summary written: email-summary.html"
+$emailKb = [math]::Round($utf8NoBom.GetByteCount($emailHtml) / 1KB, 1)
+Write-Host "Email summary written: email-summary.html ($emailKb KB)"
+# Gmail 은 본문이 102KB 를 넘으면 뒷부분을 '[메시지 잘림]'으로 접는다 - 이 메일에서는 맨 아래 수급
+# 뉴스가 사라진다. 카드나 섹션이 늘 때마다 조금씩 차오르므로, 넘기 전에 실행 화면에 드러나게 한다.
+# 배포는 막지 않는다: 잘릴 위험이 있다는 것이지 틀린 페이지가 아니다.
+if ($emailKb -gt 90) {
+    Write-Warning "메일 본문 $emailKb KB - Gmail 잘림 기준(102KB)에 가깝습니다. 차트 막대 수나 섹션을 줄이세요."
+    if ($env:CI) { Write-Host "::warning::메일 본문 $emailKb KB - Gmail 잘림 기준 102KB 의 $([math]::Round($emailKb / 102 * 100))%" }
+}
 
 # 이 메일이 실제로 나가면 워크플로가 이 파일을 mailed-labels.json 으로 승격한다. 오늘 못 가져온
 # 카드는 지난 메일의 라벨을 그대로 물려준다 — 빼 버리면 다음 메일이 그 카드를 직전 실행 기준으로

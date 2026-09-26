@@ -148,15 +148,19 @@ jobs:
       # If the marker's push is the part that loses the race, the day's mail has already gone
       # out and a later slot will send a second copy. One duplicate beats a silent miss, which
       # is the failure this whole ladder exists to prevent.
+      #
+      # typhoon-tracks.json caches the tracks of storms that have ended, so the next run does not
+      # spend half its time re-downloading them from GDACS. The script only rewrites it when a new
+      # storm enters the list, so it adds a commit rarely.
       - name: Commit history and delivery marker
         continue-on-error: true
         run: |
-          if [[ -n "$(git status --porcelain data-history.json .last-digest mailed-labels.json)" ]]; then
+          if [[ -n "$(git status --porcelain data-history.json .last-digest mailed-labels.json typhoon-tracks.json)" ]]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             # mailed-labels.json only exists once a mail has gone out, and git add fails on a
             # pathspec that matches nothing.
-            for f in data-history.json .last-digest mailed-labels.json; do
+            for f in data-history.json .last-digest mailed-labels.json typhoon-tracks.json; do
               if [[ -e "$f" ]]; then git add "$f"; fi
             done
             git commit -m "chore: accumulate price history $(date -u +%Y-%m-%d)"
