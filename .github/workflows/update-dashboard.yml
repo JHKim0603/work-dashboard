@@ -11,7 +11,7 @@ on:
     # Saturday's page. Every day costs two extra runs a week and keeps the page never more
     # than a morning old.
     #
-    # Six slots, none on the hour or half hour: 06:18, 07:06, 08:23, 09:47, 11:23 and 13:41 KST.
+    # Seven slots, none on the hour or half hour: 05:12, 06:18, 07:06, 08:23, 09:47, 11:23 and 13:41 KST.
     #
     # GitHub drops scheduled runs under load and documents those peaks as the thing to avoid.
     # This workflow sat on ':00', then ':30', and fired zero times in three days; every run it
@@ -29,6 +29,14 @@ on:
     # digest meant to be read before work was consistently showing up mid-morning. Asking ~2h
     # early lands it near 08:00 when the queue behaves as observed, and if it ever runs on time
     # the digest simply arrives at 06:18, which for a morning briefing is early, not wrong.
+    #
+    # The delay did not stay put. Across 09-24..09-29 the first run landed at 09:24, 08:52,
+    # 08:56, 08:36, 08:47 and 09:58 KST - the 06:18 slot now running 2h20m-3h40m late, up from
+    # 1h43m. 05:12 is one more rung below it. Nothing here waits on a market close, so an
+    # on-time run at 05:12 costs nothing but an early mail. If the drift keeps growing, moving
+    # slots earlier is chasing it; the real fix is an outside scheduler calling workflow_dispatch
+    # at a fixed time, which needs a GitHub token kept somewhere outside this repo.
+    - cron: '12 20 * * *'
     - cron: '18 21 * * *'
     - cron: '06 22 * * *'
     - cron: '23 23 * * *'

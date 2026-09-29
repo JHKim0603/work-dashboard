@@ -2115,6 +2115,17 @@ if ($typhoon) {
 </div>
 "@
     }
+} else {
+    # GDACS 가 끝내 응답하지 않은 날. 전에는 $typhoonHtml 이 빈 채로 남아 메일에서 이 블록이
+    # 통째로 사라졌다 - 페이지는 "가져오지 못했습니다"라고 말하는데 메일은 침묵했고, 태풍이
+    # 없는 날의 메일과 구분되지 않았다. 이 섹션이 있는 이유가 입고 지연을 미리 잡는 것이니
+    # "확인 못 함"은 "없음"과 반드시 달라 보여야 한다.
+    $typhoonHtml = @"
+<div style="margin:16px 0;padding:13px 15px;background:#fdf6e7;border:1px solid #f0dcb4;border-left:4px solid #a15c00;">
+  <div style="font-weight:700;font-size:14px;color:#a15c00;">⚠ 오늘 태풍 정보를 가져오지 못했습니다 — 태풍이 없다는 뜻이 아닙니다</div>
+  <div style="font-size:12px;color:#52514e;margin-top:5px;">GDACS 가 응답하지 않았습니다. 다음 실행에서 자동 재시도합니다. 급하면 <a href="https://www.gdacs.org/" style="color:#2a78d6;">GDACS</a> 에서 직접 확인하세요.</div>
+</div>
+"@
 }
 
 function Format-PriceValue {

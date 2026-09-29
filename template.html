@@ -1281,12 +1281,18 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") closeDetail(
 // gave a July number the same apparent currency as today's.
 function staleTag(label) {
   if (!label) return "";
-  const m = String(label).match(/^(\d{4})-(\d{2})(?:-(\d{2}))?$/);
+  // Year-only labels (산업용 전기요금 is an annual series, labelled "2025") used to fall through
+  // this match and never get a tag - so the oldest figure on the page was the one card that
+  // looked current. A year means the whole year, so it is measured from 31 Dec, the same way a
+  // month-only label is measured from the month's last day.
+  const m = String(label).match(/^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/);
   if (!m) return "";
-  // Month-only labels mean the whole month, so measure from its end rather than its first day.
-  const d = m[3]
-    ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]))
-    : new Date(Date.UTC(+m[1], +m[2], 0));
+  const d = !m[2]
+    ? new Date(Date.UTC(+m[1], 11, 31))
+    : m[3]
+      ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]))
+      // Month-only labels mean the whole month, so measure from its end rather than its first day.
+      : new Date(Date.UTC(+m[1], +m[2], 0));
   const days = Math.floor((Date.now() - d.getTime()) / 86400000);
   if (days < 45) return "";
   const months = Math.floor(days / 30);
