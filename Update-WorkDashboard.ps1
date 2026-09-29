@@ -1685,6 +1685,13 @@ if ($power) { $priceCards += $power }
 $priceCards += @($ecosSeries)
 $priceCards += @($customsSeries)
 if ($kcl) { $priceCards += $kcl }
+# Any Yahoo series in config.json that the explicit picks above do not name. Those picks exist to
+# place a card, not to decide whether it exists - but that is what they did: a series added only
+# to config was fetched, then dropped here, then reported as "수집 실패" by the missing-card pass
+# below although its data had arrived fine (drybulk, 2026-09). Final order comes from cardOrder,
+# so appending is enough.
+$placedIds = @($priceCards | ForEach-Object { [string]$_.id })
+$priceCards += @($yahooSeries | Where-Object { $placedIds -notcontains [string]$_.id })
 $priceCards = @($priceCards)
 
 # --- Cards that were expected but did not arrive ------------------------------------------

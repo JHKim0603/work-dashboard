@@ -178,13 +178,19 @@ jobs:
             echo "nothing to commit"
           fi
 
+      # Publish only the page, not the repo root. Uploading '.' also served email-summary.html,
+      # email-subject.txt and the delivery bookkeeping files at public URLs - and the mail is
+      # where values kept out of this public repo on purpose (secrets rendered only into the
+      # mail) end up. Everything the page needs is inline or loaded from a CDN.
       - name: Prepare Pages content
-        run: cp dashboard.html index.html
+        run: |
+          mkdir -p _site
+          cp dashboard.html _site/index.html
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: '.'
+          path: '_site'
 
   deploy:
     needs: update
