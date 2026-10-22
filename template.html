@@ -1245,28 +1245,34 @@ function openDetail(id) {
       <div class="m-note">과거 시계열은 SSE 구독 계정 전용이라 주간 값과 전주 대비 변화만 제공됩니다.</div>`;
   } else if (c.isSafeFreight) {
     const s = c.scenario;
+    const notes = (c.history || []).filter(r => r.note).map(r => `${esc(r.window)}: ${esc(r.note)}`);
     body += `<div class="m-sub">${esc(c.notice || "")} · 출처 ${esc(c.source || "")}</div>
+      <div class="m-section-title">유가 산정 이력</div>
+      ${sfHistoryTable(c.history || [], { window: c.window.label, avg: c.base.avg, applyLabel: c.window.applyLabel, verdict: c.base.verdict })}
+      ${notes.length ? `<div class="m-note" style="margin-top:6px;">* ${notes.join("<br>* ")}</div>` : ""}
       <div class="m-section-title">기준 유가</div>
-      <div class="m-read">지금 운임표에 반영된 유가는 <b>${sfWon(c.applied.fuel)}원/L</b>입니다
-        (${esc(c.applied.since)} 시행분${c.applied.estimated ? ", 추정" : ""}).<br>${esc(c.applied.note || "")}
-        ${c.pending ? `<br>확정 대기: ${esc(c.pending.window)} 평균 <b>${sfWon(c.pending.fuel)}원</b>으로
-          ${esc(c.pending.effective)}부터 ${esc(c.pending.verdict)}. 다음 판정은 이 값과 비교합니다.` : ""}</div>
-      <div class="m-section-title">${esc(c.window.label)} 월평균 경유가 (오피넷 전국평균)</div>
+      <div class="m-read">다음 판정은 <b>${esc(c.baseWindow)} 평균 ${sfWon(c.baseFuel)}원</b>${c.baseProvisional ? "(잠정)" : ""}과 비교합니다.
+        지금 운임에 반영된 산정 기간의 유가가 기준이라, 동결된 분기는 기준을 바꾸지 않습니다.
+        ${c.pending && c.applied ? `<br>현재 시행 중인 운임은 ${esc(c.applied.window)} 평균 ${sfWon(c.applied.fuel)}원 기준이고,
+          ${esc(c.pending.effective)}부터 ${esc(c.pending.window)} 평균 기준으로 ${esc(c.pending.verdict)} 적용 예정입니다.` : ""}</div>
+      <div class="m-section-title">산정 기간 ${esc(c.window.label)} 월평균 경유가 (오피넷 전국평균)</div>
       ${sfMonthTable(c.window.months, s ? s.current.months : null)}
       <div class="m-section-title">판정</div>
-      <div class="m-read">기본 가정(${esc(c.base.assumption)})이면 분기 평균 <b>${sfWon(c.base.avg)}원</b>,
+      <div class="m-read">기본 가정(${esc(c.base.assumption)})이면 산정 기간 평균 <b>${sfWon(c.base.avg)}원</b>,
         기준 대비 <b>${sfSigned(c.base.diff)}원</b>이라 <b>${esc(c.base.verdict)}</b> 예상입니다
-        (${esc(c.window.effective)} 시행분).
+        (적용 기간 ${esc(c.window.applyLabel)}).
         ${s ? `<br>${esc(s.label)}: 다음 날부터 경유가 ${sfWon(s.won)}원 오른다고 보면
-          ${esc(s.current.window)} <b>${sfWon(s.current.avg)}원</b>(${sfSigned(s.current.diff)}원, ${esc(s.current.verdict)}),
-          ${esc(s.next.window)} <b>${sfWon(s.next.avg)}원</b>(기준 ${sfWon(s.next.base)}원 대비 ${sfSigned(s.next.diff)}원, ${esc(s.next.verdict)}).` : ""}</div>
-      ${c.base.verdict !== "동결" ? sfImpactTable(c.base.impact, `${c.window.effective} 시행 예상 운임 (기본 가정, 20FT, 원)`) : ""}
-      ${s && s.trigger ? sfImpactTable(s.trigger.impact, `${s.trigger.effective} 시행 예상 운임 (시나리오, 20FT, 원)`) : ""}
-      <div class="m-note">판정 규칙: 분기(3개월) 경유 평균이 기준 유가보다 ${c.threshold}원 이상 오르거나 내리면
-        그 평균으로 운임을 다시 고시하고, 분기가 끝난 뒤 둘째 달 1일부터 반영합니다.
-        분기 평균은 월평균 3개의 단순평균이고, 월평균은 대시보드가 매일 쌓은 오피넷 전국평균의 평균이라
-        오피넷 공식 월평균과 몇 원 차이가 날 수 있습니다. 운임 변동액은 왕복거리 ÷ 연비 ${sfWon(c.kmPerLiter)}km/L × 유가 변동으로
-        계산한 근사치입니다. 연간 운임 재산정(인건비·물가 반영)은 들어 있지 않습니다.</div>`;
+          산정 ${esc(s.current.window)} <b>${sfWon(s.current.avg)}원</b>(${sfSigned(s.current.diff)}원, ${esc(s.current.verdict)}),
+          산정 ${esc(s.next.window)} <b>${sfWon(s.next.avg)}원</b>(기준 ${sfWon(s.next.base)}원 대비 ${sfSigned(s.next.diff)}원, ${esc(s.next.verdict)}).` : ""}</div>
+      ${c.base.verdict !== "동결" ? sfImpactTable(c.base.impact, `적용 기간 ${c.window.applyLabel} 예상 운임 (기본 가정, 20FT, 원)`, c.rateFrom) : ""}
+      ${s && s.trigger ? sfImpactTable(s.trigger.impact, `적용 기간 ${s.trigger.applyLabel} 예상 운임 (시나리오, 20FT, 원)`, c.rateFrom) : ""}
+      <div class="m-note">판정 규칙: 평균유가 산정 기간(3개월) 경유 평균이 지금 운임에 반영된 산정 기간의 유가보다 ${c.threshold}원 이상
+        오르거나 내리면 운임을 다시 고시하고, 산정 기간이 끝난 뒤 두 달째부터 3개월간 적용합니다.
+        산정 기간 평균은 월평균 3개의 단순평균이고, 월평균은 대시보드가 매일 쌓은 오피넷 전국평균의 평균이라
+        오피넷 월간 평균과 1원 안팎 차이가 날 수 있습니다(26년 9월: 대시보드 1,843.6원, 오피넷 1,844원).
+        최종 평균유가는 안전운임위원회가 부가가치세를 뺀 판매가와 유가보조금을 고려해 정합니다.
+        운임 변동액은 왕복거리 ÷ 연비 ${sfWon(c.kmPerLiter)}km/L × 유가 변동으로 계산한 근사치이고,
+        연간 운임 재산정(인건비·물가 반영)은 들어 있지 않습니다.</div>`;
   } else if (c.lanes && c.lanes.length) {
     body += `<div class="m-sub">${esc(c.note || "")} · 출처 ${esc(c.source || "")}</div>
       <div class="m-section-title">항로별 현황 (${esc(c.lanes[0].currentDate)} 기준)</div>` +
@@ -1479,17 +1485,19 @@ if (SSE_LANES && SSE_LANES.length) {
 // 안전운임 유가연동 전망. 시계열 카드가 아니라 판정 카드라 따로 조립한다: 다음 고시에서 운임이
 // 동결·인상·인하 중 어느 쪽인지, 유류세 인하가 끝나면 어떻게 되는지, 노선별로 몇 원인지.
 function sfWon(v) {
-  return (v === null || v === undefined) ? "-" : Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 1 });
+  return (v === null || v === undefined) ? "-" : Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 2 });
 }
 function sfSigned(v) {
   const n = Number(v);
   return (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(n).toLocaleString("ko-KR", { maximumFractionDigits: 1 });
 }
 function sfCls(v) { return v === "인상" ? "up" : v === "인하" ? "down" : "flat"; }
-function sfImpactTable(rows, title) {
+function sfMd(d) { return d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : ""; }
+function sfFrom(d) { return d ? `${sfMd(d)}~` : "현재"; }
+function sfImpactTable(rows, title, rateFrom) {
   return `<div class="sf-sub">${esc(title)}</div>
     <table class="sf-table">
-      <tr><th>노선 (왕복)</th><th>현재</th><th>예상</th><th>변동</th></tr>
+      <tr><th>노선 (왕복)</th><th>${sfFrom(rateFrom)}</th><th>예상</th><th>변동</th></tr>
       ${rows.map(r => {
         const cls = r.change > 0 ? "up" : r.change < 0 ? "down" : "";
         return `<tr><td>${esc(r.name)} ${sfWon(r.km)}km</td><td>${sfWon(r.rate)}</td><td>${sfWon(r.newRate)}</td>
@@ -1497,11 +1505,22 @@ function sfImpactTable(rows, title) {
       }).join("")}
     </table>`;
 }
-function sfRateTable(routes) {
-  return `<div class="sf-sub">현재 운임 (조정 없음 예상)</div>
+function sfRateTable(routes, rateFrom) {
+  return `<div class="sf-sub">운임 (조정 없음 예상)</div>
     <table class="sf-table">
-      <tr><th>노선 (왕복)</th><th>20FT 안전운송운임</th></tr>
+      <tr><th>노선 (왕복)</th><th>${sfFrom(rateFrom)} 20FT 안전운송운임</th></tr>
       ${routes.map(r => `<tr><td>${esc(r.name)} ${sfWon(r.km)}km</td><td>${sfWon(r.rate)}원</td></tr>`).join("")}
+    </table>`;
+}
+function sfHistoryTable(rows, current) {
+  const cur = current ? `<tr><td>${esc(current.window)}</td><td>${sfWon(current.avg)}원</td><td>${esc(current.applyLabel)}</td>
+      <td class="${sfCls(current.verdict)}">${esc(current.verdict)} 예상</td></tr>` : "";
+  return `<table class="sf-table">
+      <tr><th>평균유가 산정 기간</th><th>평균 경유가</th><th>안전운임 적용 기간</th><th>판정</th></tr>
+      ${rows.map(r => `<tr><td>${esc(r.window)}</td><td>${r.provisional ? "약 " : ""}${sfWon(r.avg)}원</td>
+        <td>${esc(r.applyLabel)}</td>
+        <td class="${sfCls(r.verdict)}" title="${esc(r.note || "")}">${esc(r.verdict)}${r.note ? " *" : ""}</td></tr>`).join("")}
+      ${cur}
     </table>`;
 }
 function sfMonthTable(months, scenMonths) {
@@ -1516,32 +1535,36 @@ function sfMonthTable(months, scenMonths) {
 if (SAFE_FREIGHT) {
   const sf = SAFE_FREIGHT;
   CARD_BY_ID["safe-freight"] = Object.assign({}, sf, { isSafeFreight: true, points: [] });
-  const est = sf.applied.estimated
-    ? `<span class="sf-est" title="${esc(sf.applied.note || "")}">추정</span>` : "";
-  const assume = sf.window.projectedDays
-    ? ` + 남은 ${sf.window.projectedDays}일은 현재가 유지 가정` : "";
-  const baseLine = `${esc(sf.window.label)} 평균 <b>${sfWon(sf.base.avg)}원</b>
+  const prov = sf.baseProvisional ? `<span class="sf-est" title="오피넷 월간 평균으로 낸 잠정치입니다">잠정</span>` : "";
+  const assume = sf.window.projectedDays ? ` + 남은 ${sf.window.projectedDays}일은 현재가 유지 가정` : "";
+  // 적용 예정인 조정이 있으면(10/22 현재 7~9월 인하분이 11/1 적용 예정) 지금 시행 중인 값과 함께 먼저 보여 준다.
+  const pendingLine = (sf.pending && sf.applied)
+    ? `<div class="sf-line" style="margin-top:4px;">현재 적용 <b>${sfWon(sf.applied.fuel)}원</b>
+        <span style="color:var(--ink-muted);">(${esc(sf.applied.window)} 산정)</span> →
+        ${esc(sfMd(sf.pending.effective))}부터 <b>${sfWon(sf.pending.fuel)}원</b>
+        <b class="${sfCls(sf.pending.verdict)}">${esc(sf.pending.verdict)}</b> 적용 예정</div>` : "";
+  const baseLine = `산정 기간 ${esc(sf.window.label)} 평균 <b>${sfWon(sf.base.avg)}원</b>
     <span style="color:var(--ink-muted);">(실측 ${sf.window.actualDays}일${assume})</span><br>
-    기준 유가 <b>${sfWon(sf.baseFuel)}원</b>${est} 대비
+    기준 ${esc(sf.baseWindow)} <b>${sfWon(sf.baseFuel)}원</b>${prov} 대비
     <b class="${sfCls(sf.base.verdict)}">${sfSigned(sf.base.diff)}원</b>
     (±${sf.threshold}원 ${sf.base.verdict === "동결" ? "미만" : "이상"})`;
 
   let scenario = "";
   let impact = sf.base.verdict !== "동결"
-    ? { rows: sf.base.impact, title: `${sf.window.effective} 시행 예상 운임 (20FT, 원)` } : null;
+    ? { rows: sf.base.impact, title: `적용 기간 ${sf.window.applyLabel} 예상 운임 (20FT, 원)` } : null;
   if (sf.scenario) {
     const s = sf.scenario;
-    let path = `${esc(s.current.window)} <b>${sfSigned(s.current.diff)}원</b> ${s.current.verdict}`;
+    let path = `산정 ${esc(s.current.window)} <b>${sfSigned(s.current.diff)}원</b> ${s.current.verdict}`;
     if (s.current.verdict === "동결") {
-      path += ` → ${esc(s.next.window)} <b>${sfSigned(s.next.diff)}원</b> ${s.next.verdict}`;
+      path += ` → 산정 ${esc(s.next.window)} <b>${sfSigned(s.next.diff)}원</b> ${s.next.verdict}`;
     }
     if (s.trigger) {
-      path += ` → <b class="${sfCls(s.trigger.verdict)}">${esc(s.trigger.effective)} 시행분 ${s.trigger.verdict} 예상</b>`;
+      path += ` → <b class="${sfCls(s.trigger.verdict)}">${esc(s.trigger.applyLabel)} 적용분 ${s.trigger.verdict} 예상</b>`;
     }
     scenario = `<div class="sf-sub">시나리오: ${esc(s.label)} (D-${s.dDay}, 경유 +${sfWon(s.won)}원)</div>
       <div class="sf-line" style="margin-top:2px;">${path}</div>`;
     if (!impact && s.trigger) {
-      impact = { rows: s.trigger.impact, title: `시나리오대로면 ${s.trigger.effective} 시행 운임 (20FT, 원)` };
+      impact = { rows: s.trigger.impact, title: `시나리오대로면 적용 기간 ${s.trigger.applyLabel} 운임 (20FT, 원)` };
     }
   }
 
@@ -1551,11 +1574,12 @@ if (SAFE_FREIGHT) {
         <h3>${esc(sf.displayName)}</h3>
         <button class="detail-btn" data-detail="safe-freight">상세 ↗</button>
       </div>
-      <div class="flag">다음 유가 조정 전망 · ${esc(sf.window.effective)} 시행분</div>
+      <div class="flag">다음 유가 조정 전망 · 적용 기간 ${esc(sf.window.applyLabel)}</div>
       <span class="sf-verdict ${sfCls(sf.base.verdict)}">${esc(sf.base.verdict)} 예상</span>
+      ${pendingLine}
       <div class="sf-line">${baseLine}</div>
       ${scenario}
-      ${impact ? sfImpactTable(impact.rows, impact.title) : sfRateTable(sf.routes || [])}
+      ${impact ? sfImpactTable(impact.rows, impact.title, sf.rateFrom) : sfRateTable(sf.routes || [], sf.rateFrom)}
       <div class="chart-note">${esc(sf.rateBasis || "")}<br>
         운임 변동은 왕복거리 ÷ 연비 ${sfWon(sf.kmPerLiter)}km/L × 유가 변동으로 계산한 근사치 · 경유 ${esc(sf.latest.label)} 기준</div>
     </div>`);
