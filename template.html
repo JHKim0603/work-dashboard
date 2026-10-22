@@ -417,6 +417,23 @@
   .lane-row .lc.up { color: var(--bad); }
   .lane-row .lc.down { color: var(--good); }
   .lane-row .lc.flat { color: var(--ink-muted); }
+  /* 안전운임 유가연동 전망 카드. 판정 배지는 비용 방향 색을 따른다: 인상 = 빨강, 인하 = 초록. */
+  .sf-verdict { display: inline-block; font-size: 13px; font-weight: 700; padding: 2px 9px; border-radius: 6px;
+    border: 1px solid var(--border); color: var(--ink-secondary); }
+  .sf-verdict.up { color: var(--bad); border-color: currentColor; }
+  .sf-verdict.down { color: var(--good); border-color: currentColor; }
+  .sf-line { font-size: 12.5px; color: var(--ink-secondary); line-height: 1.55; margin-top: 6px; }
+  .sf-line b { color: var(--ink-primary); font-variant-numeric: tabular-nums; }
+  .sf-line .up { color: var(--bad); }
+  .sf-line .down { color: var(--good); }
+  .sf-sub { font-size: 11px; color: var(--ink-muted); margin: 10px 0 2px; }
+  .sf-est { font-size: 10.5px; color: var(--ink-muted); border: 1px dashed var(--border); border-radius: 4px; padding: 0 4px; margin-left: 3px; }
+  .sf-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 12.5px; margin-top: 6px; }
+  .sf-table th { font-size: 11px; color: var(--ink-muted); font-weight: 600; text-align: right; padding: 4px 0 4px 8px; }
+  .sf-table th:first-child, .sf-table td:first-child { text-align: left; padding-left: 0; }
+  .sf-table td { padding: 5px 0 5px 8px; border-top: 1px solid var(--gridline); text-align: right; }
+  .sf-table td.up { color: var(--bad); font-weight: 700; }
+  .sf-table td.down { color: var(--good); font-weight: 700; }
   .locked-note {
     font-size: 12px; color: var(--ink-secondary); line-height: 1.6;
     background: var(--accent-wash); border: 1px dashed var(--border);
@@ -642,6 +659,7 @@ const SCFI = __SCFI_JSON__;
 const SSE_LANES = __SSE_LANES_JSON__;
 const LANE_ABOUT = __LANE_ABOUT_JSON__;
 const CARD_SORTS = __CARD_SORTS_JSON__;
+const SAFE_FREIGHT = __SAFE_FREIGHT_JSON__;
 const HAS_FUEL_KEY = __HAS_FUEL_KEY__;
 const HAS_KCL = __HAS_KCL__;
 const MATERIALS = __MATERIALS_JSON__;
@@ -1225,6 +1243,30 @@ function openDetail(id) {
         (${up ? "+" : ""}${c.changePct}%). 운임지수가 오르면 수입 부자재의 물류비 부담이 커지고,
         통상 선복 부족·항만 적체·성수기 수요와 함께 움직입니다.</div>
       <div class="m-note">과거 시계열은 SSE 구독 계정 전용이라 주간 값과 전주 대비 변화만 제공됩니다.</div>`;
+  } else if (c.isSafeFreight) {
+    const s = c.scenario;
+    body += `<div class="m-sub">${esc(c.notice || "")} · 출처 ${esc(c.source || "")}</div>
+      <div class="m-section-title">기준 유가</div>
+      <div class="m-read">지금 운임표에 반영된 유가는 <b>${sfWon(c.applied.fuel)}원/L</b>입니다
+        (${esc(c.applied.since)} 시행분${c.applied.estimated ? ", 추정" : ""}).<br>${esc(c.applied.note || "")}
+        ${c.pending ? `<br>확정 대기: ${esc(c.pending.window)} 평균 <b>${sfWon(c.pending.fuel)}원</b>으로
+          ${esc(c.pending.effective)}부터 ${esc(c.pending.verdict)}. 다음 판정은 이 값과 비교합니다.` : ""}</div>
+      <div class="m-section-title">${esc(c.window.label)} 월평균 경유가 (오피넷 전국평균)</div>
+      ${sfMonthTable(c.window.months, s ? s.current.months : null)}
+      <div class="m-section-title">판정</div>
+      <div class="m-read">기본 가정(${esc(c.base.assumption)})이면 분기 평균 <b>${sfWon(c.base.avg)}원</b>,
+        기준 대비 <b>${sfSigned(c.base.diff)}원</b>이라 <b>${esc(c.base.verdict)}</b> 예상입니다
+        (${esc(c.window.effective)} 시행분).
+        ${s ? `<br>${esc(s.label)}: 다음 날부터 경유가 ${sfWon(s.won)}원 오른다고 보면
+          ${esc(s.current.window)} <b>${sfWon(s.current.avg)}원</b>(${sfSigned(s.current.diff)}원, ${esc(s.current.verdict)}),
+          ${esc(s.next.window)} <b>${sfWon(s.next.avg)}원</b>(기준 ${sfWon(s.next.base)}원 대비 ${sfSigned(s.next.diff)}원, ${esc(s.next.verdict)}).` : ""}</div>
+      ${c.base.verdict !== "동결" ? sfImpactTable(c.base.impact, `${c.window.effective} 시행 예상 운임 (기본 가정, 20FT, 원)`) : ""}
+      ${s && s.trigger ? sfImpactTable(s.trigger.impact, `${s.trigger.effective} 시행 예상 운임 (시나리오, 20FT, 원)`) : ""}
+      <div class="m-note">판정 규칙: 분기(3개월) 경유 평균이 기준 유가보다 ${c.threshold}원 이상 오르거나 내리면
+        그 평균으로 운임을 다시 고시하고, 분기가 끝난 뒤 둘째 달 1일부터 반영합니다.
+        분기 평균은 월평균 3개의 단순평균이고, 월평균은 대시보드가 매일 쌓은 오피넷 전국평균의 평균이라
+        오피넷 공식 월평균과 몇 원 차이가 날 수 있습니다. 운임 변동액은 왕복거리 ÷ 연비 ${sfWon(c.kmPerLiter)}km/L × 유가 변동으로
+        계산한 근사치입니다. 연간 운임 재산정(인건비·물가 반영)은 들어 있지 않습니다.</div>`;
   } else if (c.lanes && c.lanes.length) {
     body += `<div class="m-sub">${esc(c.note || "")} · 출처 ${esc(c.source || "")}</div>
       <div class="m-section-title">항로별 현황 (${esc(c.lanes[0].currentDate)} 기준)</div>` +
@@ -1431,6 +1473,91 @@ if (SSE_LANES && SSE_LANES.length) {
         SCFI는 무료 공개 범위에서 항로별 값이 비어 있어 항로 비교는 CCFI를 씁니다. 인도 항로는 CCFI에 없습니다.<br>
         주간 발표 · 누적 ${laneWeeks}주 수집${!LANE_ABOUT ? "" : laneWeeks >= 3 ? " · 항로별 추이는 상세에서" : " (3주부터 상세에 항로별 차트)"}
       </div>
+    </div>`);
+}
+
+// 안전운임 유가연동 전망. 시계열 카드가 아니라 판정 카드라 따로 조립한다: 다음 고시에서 운임이
+// 동결·인상·인하 중 어느 쪽인지, 유류세 인하가 끝나면 어떻게 되는지, 노선별로 몇 원인지.
+function sfWon(v) {
+  return (v === null || v === undefined) ? "-" : Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 1 });
+}
+function sfSigned(v) {
+  const n = Number(v);
+  return (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(n).toLocaleString("ko-KR", { maximumFractionDigits: 1 });
+}
+function sfCls(v) { return v === "인상" ? "up" : v === "인하" ? "down" : "flat"; }
+function sfImpactTable(rows, title) {
+  return `<div class="sf-sub">${esc(title)}</div>
+    <table class="sf-table">
+      <tr><th>노선 (왕복)</th><th>현재</th><th>예상</th><th>변동</th></tr>
+      ${rows.map(r => {
+        const cls = r.change > 0 ? "up" : r.change < 0 ? "down" : "";
+        return `<tr><td>${esc(r.name)} ${sfWon(r.km)}km</td><td>${sfWon(r.rate)}</td><td>${sfWon(r.newRate)}</td>
+          <td class="${cls}">${sfSigned(r.change)} (${sfSigned(r.changePct)}%)</td></tr>`;
+      }).join("")}
+    </table>`;
+}
+function sfRateTable(routes) {
+  return `<div class="sf-sub">현재 운임 (조정 없음 예상)</div>
+    <table class="sf-table">
+      <tr><th>노선 (왕복)</th><th>20FT 안전운송운임</th></tr>
+      ${routes.map(r => `<tr><td>${esc(r.name)} ${sfWon(r.km)}km</td><td>${sfWon(r.rate)}원</td></tr>`).join("")}
+    </table>`;
+}
+function sfMonthTable(months, scenMonths) {
+  return `<table class="sf-table">
+      <tr><th>월</th><th>평균 (기본 가정)</th><th>실측 / 가정</th>${scenMonths ? "<th>시나리오</th>" : ""}</tr>
+      ${months.map((m, i) => `<tr><td>${esc(m.label)}</td><td>${sfWon(m.avg)}원</td>
+        <td>${m.actualDays}일${m.projectedDays ? ` / ${m.projectedDays}일` : ""}</td>
+        ${scenMonths ? `<td>${sfWon(scenMonths[i].avg)}원</td>` : ""}</tr>`).join("")}
+    </table>`;
+}
+
+if (SAFE_FREIGHT) {
+  const sf = SAFE_FREIGHT;
+  CARD_BY_ID["safe-freight"] = Object.assign({}, sf, { isSafeFreight: true, points: [] });
+  const est = sf.applied.estimated
+    ? `<span class="sf-est" title="${esc(sf.applied.note || "")}">추정</span>` : "";
+  const assume = sf.window.projectedDays
+    ? ` + 남은 ${sf.window.projectedDays}일은 현재가 유지 가정` : "";
+  const baseLine = `${esc(sf.window.label)} 평균 <b>${sfWon(sf.base.avg)}원</b>
+    <span style="color:var(--ink-muted);">(실측 ${sf.window.actualDays}일${assume})</span><br>
+    기준 유가 <b>${sfWon(sf.baseFuel)}원</b>${est} 대비
+    <b class="${sfCls(sf.base.verdict)}">${sfSigned(sf.base.diff)}원</b>
+    (±${sf.threshold}원 ${sf.base.verdict === "동결" ? "미만" : "이상"})`;
+
+  let scenario = "";
+  let impact = sf.base.verdict !== "동결"
+    ? { rows: sf.base.impact, title: `${sf.window.effective} 시행 예상 운임 (20FT, 원)` } : null;
+  if (sf.scenario) {
+    const s = sf.scenario;
+    let path = `${esc(s.current.window)} <b>${sfSigned(s.current.diff)}원</b> ${s.current.verdict}`;
+    if (s.current.verdict === "동결") {
+      path += ` → ${esc(s.next.window)} <b>${sfSigned(s.next.diff)}원</b> ${s.next.verdict}`;
+    }
+    if (s.trigger) {
+      path += ` → <b class="${sfCls(s.trigger.verdict)}">${esc(s.trigger.effective)} 시행분 ${s.trigger.verdict} 예상</b>`;
+    }
+    scenario = `<div class="sf-sub">시나리오: ${esc(s.label)} (D-${s.dDay}, 경유 +${sfWon(s.won)}원)</div>
+      <div class="sf-line" style="margin-top:2px;">${path}</div>`;
+    if (!impact && s.trigger) {
+      impact = { rows: s.trigger.impact, title: `시나리오대로면 ${s.trigger.effective} 시행 운임 (20FT, 원)` };
+    }
+  }
+
+  pushCard(typeof CARD_SORTS.safeFreight === "number" ? CARD_SORTS.safeFreight : 900, `
+    <div class="card">
+      <div class="card-head">
+        <h3>${esc(sf.displayName)}</h3>
+        <button class="detail-btn" data-detail="safe-freight">상세 ↗</button>
+      </div>
+      <div class="flag">다음 유가 조정 전망 · ${esc(sf.window.effective)} 시행분</div>
+      <span class="sf-verdict ${sfCls(sf.base.verdict)}">${esc(sf.base.verdict)} 예상</span>
+      <div class="sf-line">${baseLine}</div>
+      ${scenario}
+      ${impact ? sfImpactTable(impact.rows, impact.title) : sfRateTable(sf.routes || [])}
+      <div class="chart-note">${esc(sf.rateBasis || "")}<br>
+        운임 변동은 왕복거리 ÷ 연비 ${sfWon(sf.kmPerLiter)}km/L × 유가 변동으로 계산한 근사치 · 경유 ${esc(sf.latest.label)} 기준</div>
     </div>`);
 }
 

@@ -1256,6 +1256,222 @@ function Get-DomesticFuelPrices {
     }
 }
 
+# --- 컨테이너 내륙운송료 (화물자동차 안전운임 유가연동) 전망 --------------------------------
+# 수출입 컨테이너의 내륙운송은 2026~2028년 다시 시행된 안전운임제 대상이라, 화주가 내는 최저
+# 운임(안전운송운임)이 고시로 정해진다. 고시는 유가에 연동된다: 분기(3개월) 경유 평균이 현재
+# 운임표에 반영된 유가보다 50원 이상 오르거나 내리면 그 평균으로 운임을 다시 고시하고, 분기가
+# 끝난 뒤 둘째 달 1일부터 반영한다(7~9월 → 11/1, 2026-578호 행정예고가 이 모양이다).
+#
+# 규칙이 정해져 있고 재료가 이미 여기 쌓이고 있으므로(오피넷 일별 경유가) 행정예고가 나오기 전에
+# 판정을 미리 계산할 수 있다. 이 블록이 그 계산이다. 실제 고시와 어긋날 수 있는 지점은 카드에
+# 그대로 적는다 - 기준 유가가 추정이면 '추정', 남은 날짜를 채운 가정이 무엇인지까지.
+#
+# 운임 변동액은 연료 몫만 움직인다고 보고 왕복거리 ÷ 연비 × 유가 변동으로 근사한다. 고시 운임의
+# 다른 원가(인건비·감가상각 등)는 유가 고시에서 바뀌지 않기 때문이다. 연비(kmPerLiter)는 11월
+# 개정의 실제 변동폭으로 맞춘 추정치라 config 에 두었다.
+function Get-QuarterInfo {
+    param([DateTime]$date)
+    $q = [int][math]::Floor(($date.Month - 1) / 3)
+    $start = New-Object DateTime $date.Year, ($q * 3 + 1), 1
+    [PSCustomObject]@{
+        key       = "$($date.Year)-Q$($q + 1)"
+        label     = "$($date.Year)년 $($q + 1)분기($($q * 3 + 1)~$($q * 3 + 3)월)"
+        start     = $start
+        end       = $start.AddMonths(3).AddDays(-1)
+        # 분기가 끝난 뒤 둘째 달 1일: 1~3월 → 5/1, 4~6월 → 8/1, 7~9월 → 11/1, 10~12월 → 2/1
+        effective = $start.AddMonths(4)
+    }
+}
+
+function Get-FuelWindowAverage {
+    # 분기 평균 = 월평균 3개의 단순평균(행정예고와 엑셀 Tool 이 쓰는 방식). 월평균은 그달에 쌓인
+    # 일별 전국 평균의 평균이다. 아직 오지 않은 날은 가정값으로 채운다: 기본은 마지막 값 유지,
+    # $stepAfter 다음 날부터는 $stepWon 만큼 더한 값(유류세 인하 종료 같은 계단).
+    # 지나간 날인데 값이 없으면(수집 공백) 그날은 평균에서 뺀다.
+    param($daily, $quarter, [DateTime]$today, [double]$projBase, $stepAfter = $null, [double]$stepWon = 0)
+    $months = @()
+    $actualDays = 0; $projDays = 0; $pastDays = 0
+    for ($i = 0; $i -lt 3; $i++) {
+        $mStart = $quarter.start.AddMonths($i)
+        $mEnd = $mStart.AddMonths(1).AddDays(-1)
+        $sum = 0.0; $n = 0; $act = 0; $proj = 0
+        for ($d = $mStart; $d -le $mEnd; $d = $d.AddDays(1)) {
+            $k = $d.ToString("yyyy-MM-dd")
+            if ($d -le $today) { $pastDays++ }
+            if ($daily.ContainsKey($k)) {
+                $sum += [double]$daily[$k]; $n++; $act++
+            } elseif ($d -gt $today) {
+                $v = $projBase
+                if ($null -ne $stepAfter -and $d -gt $stepAfter) { $v += $stepWon }
+                $sum += $v; $n++; $proj++
+            }
+        }
+        $actualDays += $act; $projDays += $proj
+        $months += [PSCustomObject]@{
+            label         = "$($mStart.Month)월"
+            avg           = if ($n -gt 0) { [math]::Round($sum / $n, 1) } else { $null }
+            actualDays    = $act
+            projectedDays = $proj
+            days          = ($mEnd - $mStart).Days + 1
+        }
+    }
+    $valid = @($months | Where-Object { $null -ne $_.avg })
+    [PSCustomObject]@{
+        months        = $months
+        avg           = if ($valid.Count -eq 3) { [math]::Round((($valid | Measure-Object -Property avg -Sum).Sum) / 3, 1) } else { $null }
+        actualDays    = $actualDays
+        projectedDays = $projDays
+        pastDays      = $pastDays
+    }
+}
+
+function Get-FuelVerdict {
+    param($avg, [double]$baseFuel, [double]$threshold)
+    $diff = [math]::Round([double]$avg - $baseFuel, 1)
+    $verdict = if ($diff -ge $threshold) { "인상" } elseif ($diff -le -$threshold) { "인하" } else { "동결" }
+    [PSCustomObject]@{ avg = [double]$avg; base = $baseFuel; diff = $diff; verdict = $verdict }
+}
+
+function Get-RouteImpacts {
+    # 고시 운임은 100원 단위라 같은 단위로 맞춘다.
+    param($routes, [double]$fuelDelta, [double]$kmPerLiter)
+    @(foreach ($r in @($routes)) {
+        $rate = [double]$r.rate
+        $raw = $rate + ([double]$r.km / $kmPerLiter) * $fuelDelta
+        $newRate = [math]::Round($raw / 100, [MidpointRounding]::AwayFromZero) * 100
+        $chg = $newRate - $rate
+        [PSCustomObject]@{
+            name      = $r.name
+            km        = [double]$r.km
+            rate      = $rate
+            newRate   = $newRate
+            change    = $chg
+            changePct = if ($rate -gt 0) { [math]::Round($chg / $rate * 100, 2) } else { 0 }
+        }
+    })
+}
+
+function Get-SafeFreightOutlook {
+    param($cfg, $daily, [DateTime]$today)
+
+    if (-not $cfg -or -not $cfg.appliedFuel -or -not $daily -or $daily.Count -eq 0) { return $null }
+    try {
+        $threshold = if ($cfg.threshold) { [double]$cfg.threshold } else { 50 }
+        $kmPerLiter = if ($cfg.kmPerLiter) { [double]$cfg.kmPerLiter } else { 3.2 }
+
+        $keys = @($daily.Keys | Sort-Object)
+        $latestLabel = $keys[-1]
+        $latest = [double]$daily[$latestLabel]
+
+        # 현재 적용유가: config 값에서 출발해, 그 뒤로 끝난 분기를 쌓인 값으로 이어 계산한다.
+        # 시행일이 아직 오지 않은 조정은 '확정 대기'로 따로 보여 주되, 다음 판정의 기준은 그 값이다
+        # (부대조항이 비교하는 것은 직전 산정 기준이지 지금 시행 중인 표가 아니다).
+        if ($cfg.appliedWindow -notmatch '^(\d{4})-Q([1-4])$') { throw "appliedWindow 형식 오류: $($cfg.appliedWindow)" }
+        $wq = Get-QuarterInfo (New-Object DateTime ([int]$matches[1]), (([int]$matches[2] - 1) * 3 + 1), 1)
+        $effFuel = [double]$cfg.appliedFuel
+        $effSince = [string]$cfg.appliedSince
+        $effEstimated = [bool]$cfg.appliedFuelEstimated
+        $effNote = [string]$cfg.appliedFuelNote
+        $baseFuel = $effFuel
+        $pending = $null
+        $q = Get-QuarterInfo $wq.start.AddMonths(3)
+        while ($q.end -lt $today) {
+            $w = Get-FuelWindowAverage -daily $daily -quarter $q -today $today -projBase $latest
+            # 하루라도 크게 비면 평균이 틀어지므로, 80% 이상 모인 분기만 이어 계산한다.
+            if ($null -eq $w.avg -or $w.actualDays -lt [math]::Ceiling($w.pastDays * 0.8)) { break }
+            $vd = Get-FuelVerdict $w.avg $baseFuel $threshold
+            if ($vd.verdict -ne "동결") {
+                $baseFuel = $w.avg
+                if ($q.effective -le $today) {
+                    $effFuel = $w.avg; $effSince = $q.effective.ToString("yyyy-MM-dd")
+                    $effEstimated = $false
+                    $effNote = "$($q.label) 평균을 대시보드가 오피넷 누적값으로 계산한 값입니다."
+                    $pending = $null
+                } else {
+                    $pending = [PSCustomObject]@{ fuel = $w.avg; verdict = $vd.verdict; diff = $vd.diff
+                        effective = $q.effective.ToString("yyyy-MM-dd"); window = $q.label }
+                }
+            }
+            $q = Get-QuarterInfo $q.start.AddMonths(3)
+        }
+
+        # 진행 중인 분기 (기본 가정: 남은 날은 마지막 값 유지)
+        $cur = Get-QuarterInfo $today
+        $wBase = Get-FuelWindowAverage -daily $daily -quarter $cur -today $today -projBase $latest
+        $base = Get-FuelVerdict $wBase.avg $baseFuel $threshold
+        $baseImpact = if ($base.verdict -ne "동결") { Get-RouteImpacts $cfg.routes $base.diff $kmPerLiter } else { @() }
+
+        # 시나리오: 유류세 인하가 예정일에 끝나면 다음 날부터 경유가 그만큼 오른다고 본다.
+        # 이번 분기에 다 반영되지 않으면(12월 한 달만 오르는 식) 다음 분기 판정까지 이어 본다.
+        $scenario = $null
+        $tc = $cfg.fuelTaxCut
+        if ($tc -and $tc.until -and $tc.dieselWon) {
+            $until = [DateTime]::ParseExact([string]$tc.until, "yyyy-MM-dd", [Globalization.CultureInfo]::InvariantCulture)
+            if ($until -ge $today) {
+                $won = [double]$tc.dieselWon
+                $sCur = Get-FuelWindowAverage -daily $daily -quarter $cur -today $today -projBase $latest -stepAfter $until -stepWon $won
+                $sv = Get-FuelVerdict $sCur.avg $baseFuel $threshold
+                $nxt = Get-QuarterInfo $cur.start.AddMonths(3)
+                $sNext = Get-FuelWindowAverage -daily $daily -quarter $nxt -today $today -projBase $latest -stepAfter $until -stepWon $won
+                $nextBase = if ($sv.verdict -ne "동결") { $sCur.avg } else { $baseFuel }
+                $svNext = Get-FuelVerdict $sNext.avg $nextBase $threshold
+                # 처음 걸리는 조정의 운임 영향을 보여 준다.
+                $trigger = $null
+                if ($sv.verdict -ne "동결") {
+                    $trigger = [PSCustomObject]@{ window = $cur.label; effective = $cur.effective.ToString("yyyy-MM-dd")
+                        verdict = $sv.verdict; diff = $sv.diff; impact = (Get-RouteImpacts $cfg.routes $sv.diff $kmPerLiter) }
+                } elseif ($svNext.verdict -ne "동결") {
+                    $trigger = [PSCustomObject]@{ window = $nxt.label; effective = $nxt.effective.ToString("yyyy-MM-dd")
+                        verdict = $svNext.verdict; diff = $svNext.diff; impact = (Get-RouteImpacts $cfg.routes $svNext.diff $kmPerLiter) }
+                }
+                $scenario = [PSCustomObject]@{
+                    label     = "$($tc.label) $($until.ToString('M/d', [Globalization.CultureInfo]::InvariantCulture)) 종료 시"
+                    until     = $until.ToString("yyyy-MM-dd")
+                    dDay      = ($until - $today).Days
+                    won       = $won
+                    current   = [PSCustomObject]@{ window = $cur.label; avg = $sv.avg; diff = $sv.diff; verdict = $sv.verdict
+                        effective = $cur.effective.ToString("yyyy-MM-dd"); months = $sCur.months }
+                    next      = [PSCustomObject]@{ window = $nxt.label; avg = $svNext.avg; diff = $svNext.diff; verdict = $svNext.verdict
+                        effective = $nxt.effective.ToString("yyyy-MM-dd"); base = $nextBase }
+                    trigger   = $trigger
+                }
+            }
+        }
+
+        [PSCustomObject]@{
+            id          = "safe-freight"
+            displayName = "컨테이너 내륙운송료 (안전운임 유가연동)"
+            threshold   = $threshold
+            kmPerLiter  = $kmPerLiter
+            rateBasis   = $cfg.rateBasis
+            notice      = $cfg.notice
+            applied     = [PSCustomObject]@{ fuel = $effFuel; since = $effSince; estimated = $effEstimated; note = $effNote }
+            baseFuel    = $baseFuel
+            pending     = $pending
+            latest      = [PSCustomObject]@{ label = $latestLabel; value = $latest }
+            window      = [PSCustomObject]@{ key = $cur.key; label = $cur.label; months = $wBase.months
+                actualDays = $wBase.actualDays; projectedDays = $wBase.projectedDays
+                effective = $cur.effective.ToString("yyyy-MM-dd") }
+            base        = [PSCustomObject]@{ avg = $base.avg; diff = $base.diff; verdict = $base.verdict
+                assumption = "남은 기간은 마지막 값($(Format-Won $latest)원/L) 유지 가정"; impact = $baseImpact }
+            scenario    = $scenario
+            routes      = @($cfg.routes | ForEach-Object { [PSCustomObject]@{ name = $_.name; km = [double]$_.km; rate = [double]$_.rate } })
+            source      = "한국석유공사 오피넷(경유 전국평균) · 국토교통부 안전운임 고시"
+        }
+    } catch {
+        Write-Warning "안전운임 전망 계산 실패: $($_.Exception.Message)"
+        $null
+    }
+}
+
+function Format-Won {
+    param($v)
+    if ($null -eq $v) { return "" }
+    $d = [double]$v
+    if ($d -eq [math]::Round($d)) { return $d.ToString("N0") }
+    $d.ToString("N1")
+}
+
 # --- News (materials) -------------------------------------------------------------------
 # Google News indexes SEO spam farms that publish Korean gambling copy on foreign domains, and
 # they match on almost any query - "엠카지노 도메인에 대한 궁금증을 해소하는 완벽한 가이드" from
@@ -1652,6 +1868,17 @@ foreach ($l in $sseLanes) {
 
 Write-HistoryStore -store $historyStore
 
+# 안전운임 유가연동 전망. 오피넷 키가 없는 로컬 실행에서도 저장소에 쌓인 경유 기록으로 계산된다.
+$safeFreight = $null
+if ($config.safeFreight) {
+    Write-Host "Computing 안전운임 유가연동 전망..."
+    $safeFreight = Get-SafeFreightOutlook -cfg $config.safeFreight -daily $historyStore["fuel-D047"] -today $nowKst.Date
+    if ($safeFreight) {
+        $sc = if ($safeFreight.scenario -and $safeFreight.scenario.trigger) { " / 시나리오: $($safeFreight.scenario.trigger.window) $($safeFreight.scenario.trigger.verdict)" } else { "" }
+        Write-Host "  $($safeFreight.window.label) 평균 $($safeFreight.base.avg)원, 기준 $($safeFreight.baseFuel)원 대비 $($safeFreight.base.diff)원 → $($safeFreight.base.verdict)$sc"
+    }
+}
+
 # Published annually and already carrying its own decades of history, so unlike pump prices or
 # SCFI this one needs no accumulation - it comes back whole on every fetch.
 Write-Host "Fetching 산업용 전기요금..."
@@ -1829,6 +2056,10 @@ foreach ($c in $priceCards) {
 $priceCards = @($priceCards | Sort-Object sort)
 $scfiSort = Get-CardSort "scfi"
 $laneSort = Get-CardSort "ccfi-lanes"
+$sfSort = Get-CardSort "safe-freight"
+if ($safeFreight -and $config.cardAbout.'safe-freight') {
+    $safeFreight | Add-Member -NotePropertyName about -NotePropertyValue $config.cardAbout.'safe-freight' -Force
+}
 if ($scfi -and $config.cardAbout.scfi) {
     $scfi | Add-Member -NotePropertyName about -NotePropertyValue $config.cardAbout.scfi -Force
 }
@@ -1843,6 +2074,7 @@ Write-Host "Fetching price driver news..."
 $newsQueries = @(
     foreach ($c in $priceCards) { if ($c.newsQuery) { $c.newsQuery } else { $config.priceNewsQueries.($c.id) } }
     if ($scfi) { $config.priceNewsQueries.scfi }
+    if ($safeFreight) { $config.priceNewsQueries.'safe-freight' }
     foreach ($mat in $config.materials) { $mat.NewsQueries }
 )
 Invoke-Prefetch -urls @($newsQueries | Where-Object { $_ } | ForEach-Object { Get-NewsUri -query $_ })
@@ -1861,6 +2093,13 @@ if ($scfi) {
     if ($q) {
         Write-Host "  - $($scfi.displayName)"
         $scfi | Add-Member -NotePropertyName news -NotePropertyValue @(Get-NewsHeadlines -query $q -max 5) -Force
+    }
+}
+if ($safeFreight) {
+    $q = $config.priceNewsQueries.'safe-freight'
+    if ($q) {
+        Write-Host "  - $($safeFreight.displayName)"
+        $safeFreight | Add-Member -NotePropertyName news -NotePropertyValue @(Get-NewsHeadlines -query $q -max 5) -Force
     }
 }
 
@@ -1906,7 +2145,8 @@ $pricesJson = ConvertTo-JsonOrNull -InputObject @($priceCards) -Depth 6
 $scfiJson = ConvertTo-JsonOrNull -InputObject $scfi -Depth 4
 $sseLanesJson = ConvertTo-JsonOrNull -InputObject @($sseLanes) -Depth 4
 $laneAboutJson = ConvertTo-JsonOrNull -InputObject $laneAbout -Depth 2
-$sortsJson = ConvertTo-Json -InputObject ([PSCustomObject]@{ scfi = $scfiSort; lanes = $laneSort }) -Depth 2 -Compress
+$sortsJson = ConvertTo-Json -InputObject ([PSCustomObject]@{ scfi = $scfiSort; lanes = $laneSort; safeFreight = $sfSort }) -Depth 2 -Compress
+$safeFreightJson = ConvertTo-JsonOrNull -InputObject $safeFreight -Depth 8
 $hasFuelKey = if ($env:OPINET_API_KEY) { "true" } else { "false" }
 # A failed KCl fetch used to just not append a card, so the page came back one card shorter
 # with nothing saying so - indistinguishable from "we never tracked potash". Say it instead.
@@ -1915,7 +2155,7 @@ $materialsJson = ConvertTo-JsonOrNull -InputObject @($materials) -Depth 6
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
-$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
+$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__SAFE_FREIGHT_JSON__", $safeFreightJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8
@@ -2337,12 +2577,65 @@ if ($sseLanes.Count -gt 0) {
 "@
 }
 
+# 안전운임 유가연동 전망. 페이지 카드와 같은 내용을 메일 표 한 칸에 줄여 담는다.
+$sfHtml = ""
+if ($safeFreight) {
+    $sf = $safeFreight
+    $vColor = @{ "인상" = "#b3221f"; "인하" = "#0a6b0a"; "동결" = "#6e6c66" }
+    function Get-SignedWon { param($v) $d = [double]$v; $s = if ($d -gt 0) { "+" } elseif ($d -lt 0) { "-" } else { "" }; "$s$(Format-Won ([math]::Abs($d)))" }
+    $estTag = if ($sf.applied.estimated) { "(추정)" } else { "" }
+    $effShort = ([DateTime]$sf.window.effective).ToString("yyyy-MM-dd")
+    $baseLine = "<b style='color:$($vColor[$sf.base.verdict]);'>$($sf.base.verdict) 예상</b> · $($sf.window.label) 평균 $(Format-Won $sf.base.avg)원, 기준 $(Format-Won $sf.baseFuel)원$estTag 대비 $(Get-SignedWon $sf.base.diff)원 (±$(Format-Won $sf.threshold)원 기준, $effShort 시행분)"
+    $scLine = ""
+    $impactRows = @()
+    $impactTitle = ""
+    if ($sf.base.verdict -ne "동결") {
+        $impactRows = @($sf.base.impact)
+        $impactTitle = "$effShort 시행 예상 운임"
+    }
+    if ($sf.scenario) {
+        $s = $sf.scenario
+        $scLine = "$($s.label)(D-$($s.dDay)): $($s.current.window) $(Format-Won $s.current.avg)원($(Get-SignedWon $s.current.diff)원, $($s.current.verdict))"
+        if ($s.current.verdict -eq "동결") {
+            $scLine += " → $($s.next.window) $(Format-Won $s.next.avg)원($(Get-SignedWon $s.next.diff)원, $($s.next.verdict))"
+        }
+        if ($s.trigger) {
+            $scLine += " → <b style='color:$($vColor[$s.trigger.verdict]);'>$($s.trigger.effective) $($s.trigger.verdict) 예상</b>"
+            if ($impactRows.Count -eq 0) {
+                $impactRows = @($s.trigger.impact)
+                $impactTitle = "시나리오: $($s.trigger.effective) 시행 예상 운임"
+            }
+        }
+    }
+    $impactHtml = ""
+    if ($impactRows.Count -gt 0) {
+        $rows = foreach ($r in $impactRows) {
+            $c = if ($r.change -gt 0) { "#b3221f" } elseif ($r.change -lt 0) { "#0a6b0a" } else { "#6e6c66" }
+            "<tr><td style='padding:3px 8px 3px 0;font-size:12.5px;font-weight:600;color:#0b0b0b;'>$($r.name) $(Format-Won $r.km)km</td><td style='padding:3px 8px 3px 0;font-size:12.5px;text-align:right;white-space:nowrap;color:#52514e;'>$(Format-Won $r.rate) → $(Format-Won $r.newRate)원</td><td style='padding:3px 0;font-size:12px;font-weight:700;text-align:right;white-space:nowrap;color:$c;'>$(Get-SignedWon $r.change)원 ($(Get-SignedWon $r.changePct)%)</td></tr>"
+        }
+        $impactHtml = "<div style='font-size:11px;color:#898781;margin-top:8px;'>$impactTitle</div><table style='width:100%;border-collapse:collapse;margin-top:3px;'>$($rows -join '')</table>"
+    }
+    $scHtml = if ($scLine) { "<div style='font-size:12px;color:#52514e;margin-top:5px;'>$scLine</div>" } else { "" }
+    $sfHtml = @"
+<tr>
+  <td style="padding:14px 16px;border-bottom:1px solid #e1e0d9;">
+    <div style="font-weight:700;font-size:13.5px;color:#0b0b0b;">$($sf.displayName)</div>
+    <div style="font-size:12.5px;color:#0b0b0b;margin-top:5px;">$baseLine</div>
+    $scHtml
+    $impactHtml
+    <div style="font-size:11px;color:#898781;margin-top:7px;">$($sf.rateBasis). 운임 변동은 왕복거리 ÷ 연비 $($sf.kmPerLiter)km/L × 유가 변동으로 계산한 근사치입니다.</div>
+  </td>
+</tr>
+"@
+}
+
 # One ordered list, same keys the page sorts by, so the mail and the dashboard cannot disagree
 # about what comes first.
 $priceSectionRows = @()
 $priceSectionRows += @($priceRowsHtml)
 if ($scfiHtml) { $priceSectionRows += [PSCustomObject]@{ sort = $scfiSort; html = $scfiHtml } }
 if ($laneHtml) { $priceSectionRows += [PSCustomObject]@{ sort = $laneSort; html = $laneHtml } }
+if ($sfHtml) { $priceSectionRows += [PSCustomObject]@{ sort = $sfSort; html = $sfHtml } }
 $priceSectionHtml = (@($priceSectionRows | Sort-Object sort | ForEach-Object { $_.html }) -join "`n")
 
 # Collection failures go near the top of the mail, above the news. Someone maintaining this
@@ -2554,6 +2847,22 @@ foreach ($c in $priceCards) {
         }
     }
 }
+# 안전운임: 다음 조정 판정이 지난 메일과 달라진 날(동결 → 인상 등)에만 제목에 올린다. 판정은
+# 분기 내내 같은 값이라 '새 값' 게이트 없이 올리면 석 달 동안 매일 제목을 차지한다. 기록이 없는
+# 첫 메일은 다른 카드처럼 올리지 않는다. 유류세 인하 종료는 연휴처럼 D-7 안쪽에서만 올린다.
+$sfState = $null
+if ($safeFreight) {
+    $sfState = "$($safeFreight.window.key):$($safeFreight.base.verdict)"
+    if ($mailedLabels.ContainsKey("safe-freight") -and $mailedLabels["safe-freight"] -ne $sfState -and $safeFreight.base.verdict -ne "동결") {
+        $effMd = ([DateTime]$safeFreight.window.effective).ToString("M/d", [Globalization.CultureInfo]::InvariantCulture)
+        [void]$wdHighlights.Add([PSCustomObject]@{ text = "안전운임 $($safeFreight.base.verdict) 예상($effMd 시행분)"; priority = 80 })
+    }
+    $s = $safeFreight.scenario
+    if ($s -and $s.dDay -ge 0 -and $s.dDay -le 7) {
+        [void]$wdHighlights.Add([PSCustomObject]@{ text = "유류세 인하 종료 D-$($s.dDay)(안전운임 영향)"; priority = 66 })
+    }
+}
+
 $scfiPrevLabel = Get-BaselineLabel "scfi"
 if ($scfi -and $scfi.changePct -and $scfiPrevLabel -and $scfiPrevLabel -ne [string]$scfi.currentDate `
     -and [math]::Abs($scfi.changePct) -ge (Get-ChangeAlertPct "scfi")) {
@@ -2591,6 +2900,7 @@ foreach ($c in $priceCards) {
     if ($pts.Count -gt 0) { $nextMailed[[string]$c.id] = [string]$pts[-1].label }
 }
 if ($scfi -and $scfi.currentDate) { $nextMailed["scfi"] = [string]$scfi.currentDate }
+if ($sfState) { $nextMailed["safe-freight"] = $sfState }
 $nextMailedOrdered = [ordered]@{}
 foreach ($k in ($nextMailed.Keys | Sort-Object)) { $nextMailedOrdered[$k] = $nextMailed[$k] }
 [System.IO.File]::WriteAllText((Join-Path $root "mailed-labels.next.json"), (ConvertTo-Json -InputObject $nextMailedOrdered), $utf8NoBom)
