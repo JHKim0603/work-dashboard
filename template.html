@@ -115,7 +115,7 @@
   .update-btn:focus-visible { outline: 2px solid var(--ink-primary); outline-offset: 2px; }
   .update-btn .ico { font-size: 14px; line-height: 1; }
   .update-hint {
-    font-size: 11px; color: var(--ink-muted); margin-top: 6px; text-align: right; line-height: 1.5;
+    font-size: 12px; color: var(--ink-muted); margin-top: 6px; text-align: right; line-height: 1.5;
   }
   .topbar .actions { display: flex; flex-direction: column; align-items: flex-end; }
 
@@ -129,10 +129,8 @@
   .top-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
   .top-row > * { display: flex; flex-direction: column; min-width: 0; }
   .top-row .section-title { flex: none; }
-  .top-row > * > #weatherGrid,
   .top-row > * > #holidaySection,
   .top-row > * > #typhoonSection { flex: 1; display: flex; flex-direction: column; }
-  .top-row .card,
   .top-row .holiday-card,
   .top-row .typhoon-card { flex: 1; display: flex; flex-direction: column; }
   @media (max-width: 1080px) {
@@ -154,12 +152,12 @@
     padding: 16px 18px;
   }
   .card h3 { margin: 0 0 6px; font-size: 15px; font-weight: 650; }
-  .card .flag { font-size: 11px; color: var(--ink-muted); margin-bottom: 8px; }
+  .card .flag { font-size: 12px; color: var(--ink-muted); margin-bottom: 8px; }
 
   .weather-now { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
   .weather-now .temp { font-size: 30px; font-weight: 700; line-height: 1; }
   .weather-now .desc { font-size: 13px; color: var(--ink-secondary); }
-  .weather-meta { font-size: 12px; color: var(--ink-muted); margin-bottom: 12px; }
+  .weather-meta { font-size: 12.5px; color: var(--ink-muted); margin-bottom: 12px; }
 
   .week-strip {
     display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px;
@@ -169,7 +167,7 @@
     display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center;
     cursor: default;
   }
-  .week-day .wd-label { font-size: 10.5px; color: var(--ink-muted); font-weight: 600; white-space: nowrap; }
+  .week-day .wd-label { font-size: 11.5px; color: var(--ink-muted); font-weight: 600; white-space: nowrap; }
   .week-day .wd-label.today { color: var(--accent); }
   .week-day .wd-icon { font-size: 15px; line-height: 1; }
   .wd-bar-track {
@@ -179,18 +177,18 @@
     position: absolute; left: 0; right: 0; border-radius: 4px;
     background: linear-gradient(180deg, var(--bad) 0%, var(--accent) 55%, #4a90d9 100%);
   }
-  .week-day .wd-max { font-size: 11.5px; font-weight: 700; color: var(--ink-primary); }
-  .week-day .wd-min { font-size: 10.5px; color: var(--ink-muted); }
+  .week-day .wd-max { font-size: 12.5px; font-weight: 700; color: var(--ink-primary); }
+  .week-day .wd-min { font-size: 12px; color: var(--ink-muted); }
   /* Colouring every day accent-blue meant a 3% chance looked exactly as urgent as 96%, so the
      strip read as "rain all week" at a glance. Only a plannable chance gets the accent. */
-  .week-day .wd-rain { font-size: 10px; color: var(--ink-muted); white-space: nowrap; }
+  .week-day .wd-rain { font-size: 11.5px; color: var(--ink-muted); white-space: nowrap; }
   .week-day .wd-rain.likely { color: var(--accent); font-weight: 700; }
-  .week-day .wd-adv { width: 13px; height: 13px; border-radius: 50%; font-size: 8.5px; line-height: 13px; }
+  .week-day .wd-adv { width: 13px; height: 13px; border-radius: 50%; font-size: 10px; line-height: 13px; }
   .week-day .wd-adv.warn { background: var(--warn-wash); color: var(--warn); }
   .week-day .wd-adv.danger { background: var(--bad-wash); color: var(--bad); }
 
   .advisory-badge {
-    display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 5px;
+    display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 5px;
     margin-top: 6px; margin-right: 4px;
   }
   .advisory-badge.warn { background: var(--warn-wash); color: var(--warn); }
@@ -201,12 +199,12 @@
      has the full card width and, unlike the dot's title attribute, it survives on touch. */
   .week-adv { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gridline); }
   .wa-label {
-    font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
     color: var(--ink-muted); margin-bottom: 5px;
   }
   .wa-row { display: flex; align-items: baseline; gap: 8px; padding: 2px 0; flex-wrap: wrap; }
   .wa-date {
-    font-size: 11.5px; font-weight: 700; color: var(--ink-secondary);
+    font-size: 12.5px; font-weight: 700; color: var(--ink-secondary);
     font-variant-numeric: tabular-nums; white-space: nowrap;
   }
   .wa-tags { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -222,29 +220,33 @@
   .typhoon-card.calm { background: var(--surface-raised); }
   .typhoon-card .headline { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
   .typhoon-card.alert .headline { color: var(--bad); }
-  .typhoon-row { font-size: 12.5px; color: var(--ink-secondary); padding: 6px 0; border-top: 1px solid var(--gridline); line-height: 1.5; }
+  .typhoon-card .headline-sub { font-size: 13px; color: var(--ink-secondary); margin: -4px 0 8px; }
+  .clim details { margin-top: 8px; }
+  .clim summary { cursor: pointer; font-size: 12px; color: var(--ink-muted); }
+  .clim summary:hover { color: var(--accent); }
+  .typhoon-row { font-size: 13px; color: var(--ink-secondary); padding: 6px 0; border-top: 1px solid var(--gridline); line-height: 1.5; }
   .typhoon-row:first-of-type { border-top: none; }
   .typhoon-row b { color: var(--ink-primary); }
-  .typhoon-row a { color: var(--accent); text-decoration: none; font-size: 11.5px; margin-left: 6px; }
-  .typhoon-row.past { font-size: 12px; }
+  .typhoon-row a { color: var(--accent); text-decoration: none; font-size: 12.5px; margin-left: 6px; }
+  .typhoon-row.past { font-size: 12.5px; }
   .typhoon-row .ago {
-    font-size: 10.5px; font-weight: 700; color: var(--ink-muted);
+    font-size: 12px; font-weight: 700; color: var(--ink-muted);
     background: var(--gridline); padding: 1px 6px; border-radius: 999px;
   }
   .typhoon-row .imp {
-    display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px;
+    display: inline-block; font-size: 11.5px; font-weight: 700; padding: 1px 6px;
     border-radius: 4px; margin-right: 4px; vertical-align: 1px;
   }
   /* Amber, not red: the storm data is fine, it is our confidence in the verdict that is thin. */
   .typhoon-row .track-warn {
-    display: inline-block; font-size: 10.5px; font-weight: 700; white-space: nowrap;
+    display: inline-block; font-size: 12px; font-weight: 700; white-space: nowrap;
     background: var(--warn-wash); color: var(--warn);
     padding: 1px 5px; border-radius: 4px; margin-left: 3px; cursor: help;
   }
   .typhoon-row .imp.direct { background: var(--bad-wash); color: var(--bad); }
   .typhoon-row .imp.route { background: var(--warn-wash); color: var(--warn); }
   .past-label {
-    font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink-muted);
+    font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink-muted);
     text-transform: uppercase; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--gridline);
   }
   .past-label + .typhoon-row { border-top: none; }
@@ -253,12 +255,12 @@
      compete with an active storm sitting directly above it. */
   .clim { margin-top: 14px; padding-top: 11px; border-top: 1px solid var(--gridline); }
   .clim-head {
-    font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
     color: var(--ink-muted); margin-bottom: 6px;
   }
-  .clim-lead { font-size: 12.5px; color: var(--ink-secondary); line-height: 1.5; }
+  .clim-lead { font-size: 13px; color: var(--ink-secondary); line-height: 1.5; }
   .clim-lead b { color: var(--ink-primary); }
-  .clim-dim { color: var(--ink-muted); font-size: 11px; }
+  .clim-dim { color: var(--ink-muted); font-size: 12px; }
   .clim-chart {
     display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px;
     align-items: end; margin: 9px 0 7px; height: 40px;
@@ -271,33 +273,40 @@
   .clim-seg.route   { background: var(--warn); }
   .clim-seg.arrival { background: var(--accent); }
   .clim-col.now .clim-stack { outline: 1px solid var(--ink-muted); outline-offset: 1px; }
-  .clim-m { font-size: 8.5px; color: var(--ink-muted); margin-top: 3px; }
+  .clim-m { font-size: 10px; color: var(--ink-muted); margin-top: 3px; }
   .clim-col.now .clim-m { color: var(--ink-primary); font-weight: 700; }
   .clim-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 7px; }
-  .clim-key { font-size: 10.5px; color: var(--ink-secondary); display: inline-flex; align-items: center; gap: 4px; }
+  .clim-key { font-size: 12px; color: var(--ink-secondary); display: inline-flex; align-items: center; gap: 4px; }
   .clim-key i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
   .clim-key i.origin  { background: var(--bad); }
   .clim-key i.route   { background: var(--warn); }
   .clim-key i.arrival { background: var(--accent); }
   .typhoon-row .imp.arrival { background: var(--accent-wash); color: var(--accent); }
-  .clim-gap { font-size: 12.5px; color: var(--ink-secondary); }
+  .clim-gap { font-size: 13px; color: var(--ink-secondary); }
   .clim-gap b { color: var(--ink-primary); }
-  .clim-note { font-size: 10.5px; color: var(--ink-muted); line-height: 1.55; margin-top: 7px; }
+  .clim-note { font-size: 12px; color: var(--ink-muted); line-height: 1.55; margin-top: 7px; }
 
   .card.wide { grid-column: 1 / -1; }
-  .price-now { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 2px 0 10px; }
+  /* 내륙운송료처럼 표가 들어가는 카드는 넓은 화면에서 두 칸을 쓴다(한 칸이면 표가 줄바꿈으로 무너진다). */
+  @media (min-width: 600px) { .card.span2 { grid-column: span 2; } }
+  /* 가격 카드 구역: 운임·물류비 / 환율·국제유가 / 원재료·전력 */
+  .price-groups { display: flex; flex-direction: column; gap: 28px; }
+  .group-count { font-weight: 500; color: var(--ink-muted); margin-left: 6px; text-transform: none; letter-spacing: 0; }
+  .price-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--ink-muted); margin: -6px 0 8px; }
+  .card-src { font-size: 12px; color: var(--ink-muted); margin-top: 6px; line-height: 1.5; }
+  .price-now { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 2px 0 8px; }
   .price-now .pv { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .price-now .pu { font-size: 12px; color: var(--ink-muted); margin-left: -4px; }
-  .price-now .pd { font-size: 11.5px; color: var(--ink-muted); }
-  .price-now .chg { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .price-now .pu { font-size: 12.5px; color: var(--ink-muted); margin-left: -4px; }
+  .price-now .pd { font-size: 12.5px; color: var(--ink-muted); }
+  .price-now .chg { font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .price-now .chg.up { color: var(--bad); }
   .price-now .chg.down { color: var(--good); }
   .price-now .chg.flat { color: var(--ink-muted); }
-  .price-now .chg-basis { font-size: 11px; color: var(--ink-muted); margin-left: -4px; }
+  .price-now .chg-basis { font-size: 12px; color: var(--ink-muted); margin-left: -4px; }
   /* Marks a lag inherent to the source, not a fetch that failed - amber rather than red, and
      worded as when it was published so it does not read as an error. */
   .price-now .stale {
-    font-size: 10.5px; font-weight: 700; white-space: nowrap;
+    font-size: 12px; font-weight: 700; white-space: nowrap;
     background: var(--warn-wash); color: var(--warn);
     padding: 1px 6px; border-radius: 4px; margin-left: 2px;
   }
@@ -308,10 +317,10 @@
   .ch-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .ch-area { fill: var(--accent-wash); stroke: none; }
   .ch-dot { fill: var(--accent); }
-  .ch-ylabel { font-size: 9.5px; fill: var(--ink-muted); text-anchor: end; font-variant-numeric: tabular-nums; }
-  .ch-xlabel { font-size: 9.5px; fill: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .ch-ylabel { font-size: 10.5px; fill: var(--ink-muted); text-anchor: end; font-variant-numeric: tabular-nums; }
+  .ch-xlabel { font-size: 10.5px; fill: var(--ink-muted); font-variant-numeric: tabular-nums; }
   /* viewBox units: the card geometry renders at roughly 0.9x, so this lands near 10px. */
-  .price-chart.compact .ch-ylabel, .price-chart.compact .ch-xlabel { font-size: 11px; }
+  .price-chart.compact .ch-ylabel, .price-chart.compact .ch-xlabel { font-size: 12.5px; }
   /* hover readout: a vertical rule + marker that follow the nearest data point */
   .ch-hitbox { fill: transparent; cursor: crosshair; }
   .ch-cursor { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; pointer-events: none; }
@@ -320,21 +329,21 @@
   .ch-tip {
     position: absolute; pointer-events: none; opacity: 0; transform: translate(-50%, -100%);
     background: var(--ink-primary); color: var(--page); border-radius: 6px;
-    padding: 5px 9px; font-size: 11.5px; line-height: 1.45; white-space: nowrap;
+    padding: 5px 9px; font-size: 12.5px; line-height: 1.45; white-space: nowrap;
     font-variant-numeric: tabular-nums; box-shadow: 0 3px 10px rgba(0,0,0,0.22);
     transition: opacity .12s ease; z-index: 5;
   }
   .chart-wrap.active .ch-tip { opacity: 1; }
   .ch-tip .tv { font-weight: 700; }
-  .ch-tip .td { opacity: 0.72; font-size: 10.5px; }
+  .ch-tip .td { opacity: 0.72; font-size: 12px; }
 
-  .chart-note { font-size: 11px; color: var(--ink-muted); margin-top: 6px; }
+  .chart-note { font-size: 12px; color: var(--ink-muted); margin-top: 6px; }
 
   .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
   .detail-btn {
     flex: none; background: transparent; color: var(--accent); cursor: pointer;
     border: 1px solid var(--border); border-radius: 6px; font-family: inherit;
-    font-size: 11px; font-weight: 650; padding: 4px 9px; transition: background .15s ease;
+    font-size: 12px; font-weight: 650; padding: 4px 9px; transition: background .15s ease;
   }
   .detail-btn:hover { background: var(--accent-wash); }
   .detail-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -362,20 +371,20 @@
   }
   .modal-close:hover { background: var(--gridline); color: var(--ink-primary); }
   .modal-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .modal .m-sub { font-size: 12px; color: var(--ink-muted); margin-bottom: 14px; }
+  .modal .m-sub { font-size: 12.5px; color: var(--ink-muted); margin-bottom: 14px; }
 
   .m-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; margin: 16px 0 6px; }
   .m-stat {
     background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
   }
-  .m-stat .sl { font-size: 10.5px; color: var(--ink-muted); font-weight: 600; }
+  .m-stat .sl { font-size: 12px; color: var(--ink-muted); font-weight: 600; }
   .m-stat .sn { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
   .m-stat .sn.up { color: var(--bad); }
   .m-stat .sn.down { color: var(--good); }
 
   .m-section-title {
-    font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
-    color: var(--ink-muted); margin: 20px 0 8px; padding-top: 14px; border-top: 1px solid var(--gridline);
+    font-size: 13px; font-weight: 700;
+    color: var(--ink-secondary); margin: 20px 0 8px; padding-top: 14px; border-top: 1px solid var(--gridline);
   }
   .m-read {
     font-size: 13px; line-height: 1.65; color: var(--ink-secondary);
@@ -385,11 +394,11 @@
   /* Plainer than .m-read so the two sections do not compete: this is background you read once,
      while the trend note under the chart is what changes every run. */
   .m-about {
-    font-size: 13px; line-height: 1.7; color: var(--ink-secondary);
+    font-size: 13.5px; line-height: 1.75; color: var(--ink-secondary); white-space: pre-line;
     border-left: 3px solid var(--gridline); padding: 2px 0 2px 12px;
   }
-  .m-note { font-size: 11.5px; color: var(--ink-muted); margin-top: 12px; line-height: 1.6; }
-  .news-caveat { font-size: 10.5px; color: var(--ink-muted); margin-bottom: 8px; font-style: italic; }
+  .m-note { font-size: 12.5px; color: var(--ink-muted); margin-top: 12px; line-height: 1.6; }
+  .news-caveat { font-size: 12px; color: var(--ink-muted); margin-bottom: 8px; }
 
   /* SCFI ships only this week and last, so it starts as a stat tile and switches to a chart
      once data-history.json has accumulated enough weeks to plot. */
@@ -400,7 +409,7 @@
   .stat-tile .sc.down { color: var(--good); }
   .stat-tile .sc.flat { color: var(--ink-muted); }
   .stat-tile .prev-row {
-    font-size: 12px; color: var(--ink-secondary); display: flex; justify-content: space-between;
+    font-size: 12.5px; color: var(--ink-secondary); display: flex; justify-content: space-between;
     padding: 5px 0; border-top: 1px solid var(--gridline);
   }
 
@@ -413,40 +422,52 @@
   .lane-row:first-of-type { border-top: none; }
   .lane-row .ln { font-size: 13px; color: var(--ink-primary); font-weight: 600; }
   .lane-row .lv { font-size: 14px; font-weight: 700; }
-  .lane-row .lc { font-size: 12px; font-weight: 700; min-width: 74px; text-align: right; }
+  .lane-row .lc { font-size: 12.5px; font-weight: 700; min-width: 74px; text-align: right; }
   .lane-row .lc.up { color: var(--bad); }
   .lane-row .lc.down { color: var(--good); }
   .lane-row .lc.flat { color: var(--ink-muted); }
   /* 물류 운영 핵심 지표 요약판. 운임·환율·유가·내륙운송료를 한 표에서 비교하고, 경향 판정과
      보고용 요약 복사·원자료 내려받기를 한곳에 둔다. 표는 좁은 화면에서 카드 안에서만 가로로 밀린다. */
   .ops-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
-  .ops-sentence { font-size: 13px; color: var(--ink-secondary); line-height: 1.55; flex: 1 1 360px; }
+  .ops-groups { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 13.5px; color: var(--ink-secondary); line-height: 1.5; flex: 1 1 420px; }
+  .ops-groups .og { font-weight: 700; margin-right: 6px; }
+  .ops-groups .og.up { color: var(--bad); }
+  .ops-groups .og.down { color: var(--good); }
+  .ops-groups .og.mixed { color: var(--warn); }
+  .ops-groups .og.flat { color: var(--ink-muted); }
+  .ops-spark { display: block; margin-left: auto; overflow: visible; }
+  .ops-spark path { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+  .ops-spark .up { stroke: var(--bad); }
+  .ops-spark .down { stroke: var(--good); }
+  .ops-spark .mixed { stroke: var(--warn); }
+  .ops-spark .flat { stroke: var(--ink-muted); }
   .ops-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-  .ops-btn { font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+  .ops-btn { font: inherit; font-size: 12.5px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
     background: transparent; color: var(--ink-secondary); cursor: pointer; white-space: nowrap; }
   .ops-btn:hover { color: var(--ink-primary); border-color: var(--accent); }
   .ops-scroll { overflow-x: auto; margin-top: 10px; }
-  .ops-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; min-width: 620px; }
-  .ops-table th { font-size: 11px; color: var(--ink-muted); font-weight: 600; text-align: right; padding: 6px 8px;
+  .ops-table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; min-width: 760px; }
+  .ops-table th { font-size: 12px; color: var(--ink-muted); font-weight: 600; text-align: right; padding: 6px 8px;
     border-bottom: 1px solid var(--gridline); line-height: 1.3; }
   .ops-table th:first-child, .ops-table td:first-child { text-align: left; padding-left: 0; }
   .ops-table td { padding: 8px; border-bottom: 1px solid var(--gridline); text-align: right; white-space: nowrap; vertical-align: top; }
-  .ops-table td:first-child { white-space: normal; }
+  .ops-table td:first-child { white-space: normal; width: 24%; }
+  .ops-table td.mid { vertical-align: middle; }
   .ops-table tr[data-ops] { cursor: pointer; }
   .ops-table tr[data-ops]:hover td { background: var(--accent-wash); }
   .ops-table .on { font-weight: 650; color: var(--ink-primary); }
-  .ops-table .ou { font-size: 11px; color: var(--ink-muted); }
-  .ops-table .os { font-size: 11px; color: var(--ink-muted); margin-top: 2px; font-weight: 400; }
+  .ops-table .ou { font-size: 12px; color: var(--ink-muted); }
+  .ops-table .os { font-size: 12px; color: var(--ink-muted); margin-top: 2px; font-weight: 400; }
   .ops-table td.up { color: var(--bad); font-weight: 650; }
   .ops-table td.down { color: var(--good); font-weight: 650; }
-  .ops-method { font-size: 11px; color: var(--ink-muted); margin-top: 8px; line-height: 1.55; }
-  .trend-chip { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 10px;
+  .ops-method { font-size: 12px; color: var(--ink-muted); margin-top: 8px; line-height: 1.55; }
+  .trend-chip { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 10px;
     border: 1px solid currentColor; line-height: 1.6; white-space: nowrap; }
   .trend-chip.up { color: var(--bad); }
   .trend-chip.down { color: var(--good); }
   .trend-chip.mixed { color: var(--warn); }
   .trend-chip.flat { color: var(--ink-muted); }
-  .trend-line { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-muted); margin: -2px 0 6px; flex-wrap: wrap; }
+  .trend-line { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-muted); margin: -2px 0 6px; flex-wrap: wrap; }
   /* 예상치: 범위와 과거 성적을 늘 함께 보여 준다. 부채꼴은 80% 이상 예상 범위. */
   .fc-dir.up { color: var(--bad); }
   .fc-dir.down { color: var(--good); }
@@ -460,25 +481,29 @@
     border: 1px solid var(--border); color: var(--ink-secondary); }
   .sf-verdict.up { color: var(--bad); border-color: currentColor; }
   .sf-verdict.down { color: var(--good); border-color: currentColor; }
-  .sf-line { font-size: 12.5px; color: var(--ink-secondary); line-height: 1.55; margin-top: 6px; }
+  .sf-line { font-size: 13px; color: var(--ink-secondary); line-height: 1.55; margin-top: 6px; }
   .sf-line b { color: var(--ink-primary); font-variant-numeric: tabular-nums; }
   .sf-line .up { color: var(--bad); }
   .sf-line .down { color: var(--good); }
-  .sf-sub { font-size: 11px; color: var(--ink-muted); margin: 10px 0 2px; }
-  .sf-est { font-size: 10.5px; color: var(--ink-muted); border: 1px dashed var(--border); border-radius: 4px; padding: 0 4px; margin-left: 3px; }
-  .sf-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 12.5px; margin-top: 6px; }
-  .sf-table th { font-size: 11px; color: var(--ink-muted); font-weight: 600; text-align: right; padding: 4px 0 4px 8px; }
+  .sf-sub { font-size: 12px; color: var(--ink-muted); margin: 10px 0 2px; }
+  .sf-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 2px 0 4px; }
+  .sf-apply { font-size: 13px; font-weight: 650; color: var(--ink-secondary); }
+  .sf-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .sf-table td:first-child { white-space: nowrap; }
+  .sf-est { font-size: 12px; color: var(--ink-muted); border: 1px dashed var(--border); border-radius: 4px; padding: 0 4px; margin-left: 3px; }
+  .sf-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; margin-top: 6px; }
+  .sf-table th { font-size: 12px; color: var(--ink-muted); font-weight: 600; text-align: right; padding: 4px 0 4px 8px; }
   .sf-table th:first-child, .sf-table td:first-child { text-align: left; padding-left: 0; }
   .sf-table td { padding: 5px 0 5px 8px; border-top: 1px solid var(--gridline); text-align: right; }
   .sf-table td.up { color: var(--bad); font-weight: 700; }
   .sf-table td.down { color: var(--good); font-weight: 700; }
   .locked-note {
-    font-size: 12px; color: var(--ink-secondary); line-height: 1.6;
+    font-size: 12.5px; color: var(--ink-secondary); line-height: 1.6;
     background: var(--accent-wash); border: 1px dashed var(--border);
     border-radius: 8px; padding: 10px 12px; margin-top: 4px;
   }
   .locked-note code {
-    font-size: 11px; background: var(--gridline); padding: 1px 5px; border-radius: 4px;
+    font-size: 12px; background: var(--gridline); padding: 1px 5px; border-radius: 4px;
   }
 
   .holiday-card {
@@ -487,7 +512,7 @@
   }
   .hol-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .holiday-card .dday {
-    background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
+    background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 700;
     padding: 3px 10px; border-radius: 999px; flex: none;
   }
   .holiday-card .hol-name { font-size: 17px; font-weight: 700; }
@@ -497,7 +522,7 @@
   .holiday-card .hol-len { font-weight: 700; color: var(--ink-primary); }
 
   .upcoming-label {
-    font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink-muted);
+    font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink-muted);
     text-transform: uppercase; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--gridline);
   }
   /* No scrolling - a scrollbar inside a card this small reads as a browser control bolted on,
@@ -505,9 +530,9 @@
      left the bottom third empty. The list takes the leftover space (flex: 1) and renders enough
      rows to fill it, with the footer pinned to the bottom edge where it reads as a deliberate
      end rather than as the list giving up early. */
-  .upcoming-list { font-size: 12.5px; color: var(--ink-secondary); flex: 1; }
+  .upcoming-list { font-size: 13px; color: var(--ink-secondary); flex: 1; }
   .upcoming-more {
-    font-size: 11px; color: var(--ink-muted); padding-top: 7px; margin-top: 3px;
+    font-size: 12px; color: var(--ink-muted); padding-top: 7px; margin-top: 3px;
     border-top: 1px solid var(--gridline); flex: none;
   }
   .upcoming-list .up-row {
@@ -517,14 +542,15 @@
   .upcoming-list .up-row:first-child { border-top: none; }
   .upcoming-list .up-row .un { color: var(--ink-primary); }
   .upcoming-list .up-row .ud { color: var(--ink-muted); white-space: nowrap; }
-  .upcoming-list .up-row .uc { font-size: 10.5px; font-weight: 700; color: var(--ink-muted); margin-right: 5px; }
+  .upcoming-list .up-row .uc { font-size: 12px; font-weight: 700; color: var(--ink-muted); margin-right: 5px; }
   .upcoming-list .up-row .ud.soon { color: var(--bad); font-weight: 600; }
+  .upcoming-list .up-row .dd { font-weight: 700; margin-left: 6px; }
 
-  .news-item { font-size: 12.5px; padding: 7px 0; border-top: 1px solid var(--gridline); }
+  .news-item { font-size: 13px; padding: 7px 0; border-top: 1px solid var(--gridline); }
   .news-item:first-child { border-top: none; }
   .news-item a { color: var(--accent); text-decoration: none; }
   .news-item a:hover { text-decoration: underline; }
-  .news-item .src { color: var(--ink-muted); font-size: 11px; margin-left: 4px; }
+  .news-item .src { color: var(--ink-muted); font-size: 12px; margin-left: 4px; }
 
   /* Flagged headlines. The left rule and the weight do the pulling; the chip says what the
      reader would get by opening it, which is the part that earns the click. Kept to a couple
@@ -538,7 +564,7 @@
   .news-item.flagged a { color: var(--ink-primary); font-weight: 650; }
   .news-item.flagged a:hover { color: var(--accent); }
   .news-reason {
-    display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .02em;
+    display: inline-block; font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
     background: var(--bad); color: #fff; padding: 1px 7px; border-radius: 4px;
     margin-bottom: 4px;
   }
@@ -549,15 +575,15 @@
   .card-failed { border-style: dashed; background: var(--surface); }
   .card-failed h3 { color: var(--ink-muted); }
   .fail-tag {
-    display: inline-block; font-size: 11px; font-weight: 700; color: var(--warn);
+    display: inline-block; font-size: 12px; font-weight: 700; color: var(--warn);
     background: var(--warn-wash); padding: 2px 8px; border-radius: 5px; margin: 2px 0 8px;
   }
   .fail-last { font-size: 13px; color: var(--ink-secondary); font-variant-numeric: tabular-nums; }
   .fail-last b { color: var(--ink-primary); font-size: 15px; }
-  .fail-when { color: var(--ink-muted); font-size: 11.5px; }
-  .empty-note { font-size: 12px; color: var(--ink-muted); font-style: italic; }
+  .fail-when { color: var(--ink-muted); font-size: 12.5px; }
+  .empty-note { font-size: 12.5px; color: var(--ink-muted); font-style: italic; }
 
-  .footnote { max-width: 1480px; margin: 32px auto 0; font-size: 11.5px; color: var(--ink-muted); line-height: 1.7; }
+  .footnote { max-width: 1480px; margin: 32px auto 0; font-size: 12.5px; color: var(--ink-muted); line-height: 1.7; }
 
   /* Sits under the source notes and separated from them: the notes are caveats about the data,
      this is authorship, and running them together reads as one more disclaimer. */
@@ -565,14 +591,14 @@
     max-width: 1480px; margin: 18px auto 0; padding-top: 14px;
     border-top: 1px solid var(--gridline);
     display: flex; align-items: center; gap: 10px;
-    font-size: 12px; color: var(--ink-muted);
+    font-size: 12.5px; color: var(--ink-muted);
   }
   .credit .by { display: inline-flex; align-items: center; gap: 7px; }
   .credit .mark {
     display: inline-flex; align-items: center; justify-content: center;
     width: 22px; height: 22px; border-radius: 6px;
     background: var(--accent); color: #fff;
-    font-size: 11px; font-weight: 700; letter-spacing: -0.02em;
+    font-size: 12px; font-weight: 700; letter-spacing: -0.02em;
   }
   .credit .name { color: var(--ink-primary); font-weight: 650; }
   .credit a { color: var(--accent); text-decoration: none; }
@@ -622,7 +648,7 @@
         <span class="ico">🔄</span> 지금 업데이트
       </a>
       <div class="update-hint">
-        GitHub Actions에서 <b>Run workflow</b> 클릭 → 약 1분 뒤 전체 데이터 갱신
+        GitHub Actions 화면에서 <b>[Run workflow]</b>를 누르면 몇 분 뒤 새 값이 반영됩니다.
       </div>
     </div>
   </div>
@@ -635,25 +661,22 @@
 
     <div class="top-row">
       <div>
-        <div class="section-title">날씨 / 온습도</div>
+        <div class="section-title">날씨</div>
         <div id="weatherGrid"></div>
       </div>
 
       <div>
-        <div class="section-title">공휴일 · 연휴</div>
+        <div class="section-title">공휴일·연휴</div>
         <div id="holidaySection"></div>
       </div>
 
       <div>
-        <div class="section-title">베트남 태풍 감시 (하노이·호치민)</div>
+        <div class="section-title">태풍 감시 (베트남 출발~국내 입항)</div>
         <div id="typhoonSection"></div>
       </div>
     </div>
 
-    <div>
-      <div class="section-title">원자재 · 물류 가격</div>
-      <div class="grid" id="pricesGrid"></div>
-    </div>
+    <div class="price-groups" id="priceGroups"></div>
 
     <div>
       <div class="section-title">수급 뉴스</div>
@@ -675,10 +698,10 @@
        here, but every card now carries that in its own 상세 popup, where it sits next to the
        number it qualifies instead of in a block nobody reads at the bottom. -->
   <div class="footnote">
-    출처 — 날씨 Open-Meteo · 공휴일 Nager.Date · 태풍 GDACS · 환율·유가 Yahoo Finance ·
-    수지 DCE/CZCE · 운임 Shanghai Shipping Exchange · KCl World Bank ·
-    국내 유가 오피넷 · 전기요금 EPSIS · 물가지수 한국은행 · 뉴스 Google 뉴스<br>
-    각 카드의 <b>상세 ↗</b>에 그 숫자가 무엇이고 어떻게 읽어야 하는지 적어두었습니다. 모두 참고용입니다.
+    출처: 날씨 Open-Meteo, 공휴일 Nager.Date, 태풍 GDACS, 환율과 국제유가 Yahoo Finance,
+    수지 DCE·CZCE, 운임지수 Shanghai Shipping Exchange, KCl World Bank,
+    국내 유가 오피넷, 전기요금 EPSIS, 물가지수 한국은행, 뉴스 Google 뉴스<br>
+    각 카드의 [상세]에서 지표 설명과 판단 근거를 확인할 수 있습니다. 모든 값은 업무 참고용입니다.
   </div>
 
   <div class="credit">
@@ -702,6 +725,7 @@ const SCFI = __SCFI_JSON__;
 const SSE_LANES = __SSE_LANES_JSON__;
 const LANE_ABOUT = __LANE_ABOUT_JSON__;
 const CARD_SORTS = __CARD_SORTS_JSON__;
+const CARD_GROUPS = __CARD_GROUPS_JSON__;
 const SAFE_FREIGHT = __SAFE_FREIGHT_JSON__;
 const OPS_SUMMARY = __OPS_SUMMARY_JSON__;
 const NEWS_OUTAGE = __NEWS_OUTAGE__;
@@ -742,12 +766,10 @@ function changeBasis(prevLabel) {
 function changeBadgeHtml(prior, latest) {
   const diff = latest.value - prior.value;
   const pct = prior.value ? (diff / prior.value) * 100 : null;
-  const basis = changeBasis(prior.label);
-  const basisHtml = basis ? `<span class="chg-basis">${esc(basis)}</span>` : "";
-  if (pct !== null && Math.abs(pct) < 0.05) return `<span class="chg flat">보합</span>${basisHtml}`;
+  if (pct !== null && Math.abs(pct) < 0.05) return `<span class="chg flat">보합</span>`;
   const up = diff >= 0;
   const pctText = pct === null ? "" : ` (${up ? "+" : ""}${pct.toFixed(1)}%)`;
-  return `<span class="chg ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${fmtNum(Math.abs(diff))}${pctText}</span>${basisHtml}`;
+  return `<span class="chg ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${fmtNum(Math.abs(diff))}${pctText}</span>`;
 }
 
 // Every number on this page is baked in at build time, so how old the build is *is* how old
@@ -764,9 +786,9 @@ function changeBadgeHtml(prior, latest) {
     const txt = mins < 1 ? "방금" : mins < 60 ? `${mins}분 전`
       : mins < 1440 ? `${Math.floor(mins / 60)}시간 전`
       : `${Math.floor(mins / 1440)}일 전`;
-    ageHtml = ` · <span class="age${mins >= 1440 ? " stale" : ""}">${txt}</span>`;
+    ageHtml = ` (<span class="age${mins >= 1440 ? " stale" : ""}">${txt}</span>)`;
   }
-  el.innerHTML = `데이터 기준: ${esc(stamp)}${ageHtml}`;
+  el.innerHTML = `데이터 기준 ${esc(stamp)}${ageHtml}`;
 })();
 
 function advisoryBadges(advisories) {
@@ -853,7 +875,7 @@ if (!WEATHER || WEATHER.length === 0) {
         <h3>${esc(w.displayName)}</h3>
         <div class="weather-now">
           <span class="temp">${w.tempC}°C</span>
-          <span class="desc">${esc(w.desc)} · 체감 ${w.feelsLikeC}°C</span>
+          <span class="desc">${esc(w.desc)}, 체감 ${w.feelsLikeC}°C</span>
         </div>
         <div class="weather-meta">습도 ${w.humidity}% ${advisoryBadges(w.advisories)}</div>
         <div class="week-strip">${strip}</div>
@@ -894,7 +916,7 @@ if (!HOLIDAY) {
   // Sized to fill the card rather than to a round number: the top row stretches all three cards
   // to the tallest, so 8 rows left the bottom third of this one empty.
   // Nine now that the Vietnam/China list shares the card; the rest are counted below it.
-  const SHOW = 9;
+  const SHOW = 6;
   const shown = grouped.slice(0, SHOW);
   const upcoming = shown.map(g => {
     const range = g.start === g.end ? fmt(g.start) : `${fmt(g.start)}~${fmt(g.end)}`;
@@ -906,7 +928,7 @@ if (!HOLIDAY) {
   const hiddenCount = grouped.length - shown.length;
   const lastYear = grouped.length ? grouped[grouped.length - 1].start.slice(0, 4) : "";
   const moreNote = hiddenCount > 0
-    ? `<div class="upcoming-more">${lastYear}년까지 ${hiddenCount}건 더 있음</div>`
+    ? `<div class="upcoming-more">이후 ${lastYear}년까지 ${hiddenCount}건</div>`
     : "";
 
   // Vietnam/China blocks, where 부자재 ships from and freight transships - a week of 뗏 or 국경절
@@ -915,21 +937,21 @@ if (!HOLIDAY) {
   // and two 신정 push 뗏 and 춘절 - the weeks that actually stop shipments - off the list.
   const foreign = (FOREIGN_HOLIDAYS || []).filter(f => f.days >= 3 || f.dDay <= 30).slice(0, 5);
   const foreignHtml = foreign.length ? `
-      <div class="upcoming-label">베트남·중국 휴무 (선적 영향)</div>
+      <div class="upcoming-label">베트남·중국 연휴 (선적 영향)</div>
       <div class="upcoming-list">${foreign.map(f => {
         const range = f.startDate === f.endDate ? fmt(f.startDate) : `${fmt(f.startDate)}~${fmt(f.endDate)}`;
         const when = f.dDay <= 0 ? "진행 중" : `D-${f.dDay}`;
-        return `<div class="up-row" title="${esc(f.impact || "")} · ${esc(f.nameEn || "")}"><span class="un"><span class="uc">${esc(f.country)}</span>${esc(f.name)}${f.days > 1 ? ` · ${f.days}일` : ""}</span><span class="ud${f.dDay <= 10 ? " soon" : ""}">${esc(range)} · ${when}</span></div>`;
+        return `<div class="up-row" title="${esc(f.impact || "")} (${esc(f.nameEn || "")})"><span class="un"><span class="uc">${esc(f.country)}</span>${esc(f.name)}${f.days > 1 ? ` ${f.days}일` : ""}</span><span class="ud${f.dDay <= 10 ? " soon" : ""}">${esc(range)}<span class="dd">${when}</span></span></div>`;
       }).join("")}</div>` : "";
 
-  const rangeText = `${fmt(HOLIDAY.startDate)} ~ ${fmt(HOLIDAY.endDate)}`;
+  const rangeText = `${fmt(HOLIDAY.startDate)}~${fmt(HOLIDAY.endDate)}`;
   holidaySection.innerHTML = `
     <div class="holiday-card">
       <div class="hol-head">
         <span class="dday">${dDayText}</span>
         <span class="hol-name">${esc(names)}</span>
       </div>
-      <div class="hol-range">${HOLIDAY.startDate.slice(0, 4)}. ${esc(rangeText)} · <span class="hol-len">${HOLIDAY.days}일 연휴</span></div>
+      <div class="hol-range">${HOLIDAY.startDate.slice(0, 4)}. ${esc(rangeText)}, <span class="hol-len">${HOLIDAY.days}일 연휴</span></div>
       <div class="upcoming-label">다가오는 공휴일</div>
       <div class="upcoming-list">${upcoming}</div>
       ${moreNote}
@@ -951,14 +973,24 @@ if (!TYPHOON) {
     : `<span class="imp route">항로</span>`;
 
   const whereText = t => (t.legs && t.legs.length)
-    ? t.legs.map(l => esc(l.detail)).filter(Boolean).join(" · ")
+    ? t.legs.map(l => esc(String(l.detail || "").replace(/ · /g, ", "))).filter(Boolean).join(", ")
     : "";
+  // GDACS 는 영어 문장("Tropical Storm (maximum wind speed of 296 km/h)")으로 준다. 메일과 같은 방식으로 줄인다.
+  const severityKo = txt => {
+    if (!txt) return "";
+    const m = String(txt).match(/(\d+(?:\.\d+)?)\s*km\/h/);
+    const kind = /Severe Tropical/.test(txt) ? "강한 열대폭풍" : /Tropical Depression/.test(txt) ? "열대저압부"
+      : /Tropical Storm/.test(txt) ? "열대폭풍" : /Typhoon|Hurricane|Cyclone/.test(txt) ? "태풍" : "";
+    const parts = [kind, m ? `최대풍속 ${m[1]}km/h` : ""].filter(Boolean);
+    return parts.length ? parts.join(", ") : String(txt);
+  };
+  const ALERT_KO = { Red: "빨강(높음)", Orange: "주황(중간)", Green: "초록(낮음)" };
 
   // A storm whose track GDACS would not hand over is judged on its last reported point alone -
   // the method that missed every storm that actually delayed a shipment last August. The verdict
   // is still shown, because a weak read beats none, but it must not pass as the same thing.
   const trackNote = t => t.trackOk === false
-    ? ' <span class="track-warn" title="GDACS에서 이 태풍의 전체 경로를 받지 못해 마지막 관측 위치 한 점으로만 판정했습니다. 실제 경로가 더 가까웠을 수 있습니다.">경로 미확인</span>'
+    ? ' <span class="track-warn" title="GDACS에서 이 태풍의 전체 경로를 받지 못해 마지막 관측 위치로만 판정했습니다. 실제 경로는 더 가까웠을 수 있습니다.">경로 미확인</span>'
     : "";
 
   // Where this month sits in 47 years of storms. The card already showed what happened
@@ -984,15 +1016,15 @@ if (!TYPHOON) {
         const h = maxN ? Math.round(((x[k] || 0) / maxN) * 30) : 0;
         return h > 0 ? `<div class="clim-seg ${k}" style="height:${h}px"></div>` : "";
       }).reverse().join("");
-      return `<div class="clim-col${x.month === m ? " now" : ""}" title="${x.month}월 · 출발 ${x.origin} / 항로 ${x.route} / 도착 ${x.arrival}">
+      return `<div class="clim-col${x.month === m ? " now" : ""}" title="${x.month}월: 출발지 ${x.origin}건, 항로 ${x.route}건, 도착지 ${x.arrival}건">
                 <div class="clim-stack">${seg}</div>
                 <div class="clim-m">${x.month}</div>
               </div>`;
     }).join("");
 
     const gap = row.gapMedian
-      ? `과거 이맘때 다음 태풍까지 <b>중앙값 ${row.gapMedian}일</b> <span class="clim-dim">(절반이 ${row.gapQ1}~${row.gapQ3}일 · 표본 ${row.gapN}건)</span>`
-      : `이 시기는 표본이 적어 간격을 내지 않습니다`;
+      ? `과거 이맘때 다음 태풍까지 걸린 기간은 <b>중앙값 ${row.gapMedian}일</b>입니다 <span class="clim-dim">(절반이 ${row.gapQ1}~${row.gapQ3}일, 표본 ${row.gapN}건)</span>`
+      : `이 시기는 표본이 적어 간격을 계산하지 않습니다.`;
 
     const legLine = legOrder.map(k =>
       `<span class="clim-key"><i class="${k}"></i>${esc((L[k] || {}).label || k)} ${row[k] || 0}건</span>`
@@ -1000,31 +1032,33 @@ if (!TYPHOON) {
 
     return `
       <div class="clim">
-        <div class="clim-head">계절성 · ${esc(CLIMATOLOGY.span)} ${CLIMATOLOGY.years}년 · 베트남 → 국내 입항 전 구간</div>
-        <div class="clim-lead">
-          ${m}월은 연중 <b>${rank || "-"}번째</b>로 잦은 달입니다
-        </div>
-        <div class="clim-legend">${legLine}</div>
+        <div class="clim-head">월별 발생 빈도 (${esc(CLIMATOLOGY.span)}, ${CLIMATOLOGY.years}년)</div>
+        <div class="clim-lead">${m}월은 연중 <b>${rank || "-"}번째</b>로 태풍이 잦은 달입니다.</div>
         <div class="clim-chart">${bars}</div>
-        <div class="clim-gap">${gap}</div>
-        <div class="clim-note">
-          구간별 정점이 다릅니다 —
-          ${legOrder.map(k => `<b>${esc((L[k] || {}).label || k)} ${(L[k] || {}).peak}월</b>`).join(" · ")}.
-          국내 입항 위험은 6~9월에 몰려 있어, 베트남이 정점인 10월에는 앞 구간만 조심하면 됩니다.
-          연평균 ${legOrder.map(k => `${esc((L[k] || {}).label || k)} ${(L[k] || {}).perYear}건`).join(" · ")}.
-          과거 빈도이지 예보가 아닙니다. 출처 ${esc(CLIMATOLOGY.source)}.
-        </div>
+        <div class="clim-legend">${legLine}</div>
+        <div class="clim-gap" style="margin-top:6px;">${gap}</div>
+        <details>
+          <summary>구간별 설명 보기</summary>
+          <div class="clim-note">
+            구간별로 태풍이 가장 잦은 달이 다릅니다.
+            ${legOrder.map(k => `${esc((L[k] || {}).label || k)} ${(L[k] || {}).peak}월`).join(", ")}입니다.
+            국내 입항 구간의 위험은 6~9월에 몰려 있습니다.
+            연평균 발생 건수는 ${legOrder.map(k => `${esc((L[k] || {}).label || k)} ${(L[k] || {}).perYear}건`).join(", ")}입니다.
+            과거 빈도이며 예보가 아닙니다. 출처: ${esc(CLIMATOLOGY.source)}.
+          </div>
+        </details>
       </div>`;
   }
 
-  const past = TYPHOON.past || [];
+  // 최근 3건만. 여섯 줄을 다 보이면 지금 알아야 할 내용보다 지난 기록이 더 길었다.
+  const past = (TYPHOON.past || []).slice(0, 3);
   const pastBlock = past.length
-    ? `<div class="past-label">최근 발생 이력 · 다음 시기 가늠용</div>` +
+    ? `<div class="past-label">최근 발생 이력</div>` +
       past.map(t => `
         <div class="typhoon-row past">
           ${impactTag(t)} <b>${esc(t.name)}</b> <span class="ago">${t.daysAgo}일 전</span><br>
-          ${esc((t.toDate || "").slice(0, 10))} 소멸 · ${whereText(t)}${trackNote(t)}
-          <a href="${esc(t.reportUrl)}" target="_blank" rel="noopener">리포트 →</a>
+          ${esc((t.toDate || "").slice(0, 10))} 소멸, ${whereText(t)}${trackNote(t)}
+          <a href="${esc(t.reportUrl)}" target="_blank" rel="noopener">리포트</a>
         </div>`).join("")
     : "";
 
@@ -1032,13 +1066,15 @@ if (!TYPHOON) {
     const anyDirect = TYPHOON.active.some(t => t.impact === "direct");
     const rows = TYPHOON.active.map(t => `
       <div class="typhoon-row">
-        ${impactTag(t)} <b>${esc(t.name)}</b> (${esc(t.alertLevel)})<br>
-        ${whereText(t)}${trackNote(t)} · ${esc(t.severityText)}
-        <a href="${esc(t.reportUrl)}" target="_blank" rel="noopener">GDACS 리포트 →</a>
+        ${impactTag(t)} <b>${esc(t.name)}</b> <span class="clim-dim">GDACS 경보 ${esc(ALERT_KO[t.alertLevel] || t.alertLevel || "")}</span><br>
+        ${whereText(t)}${trackNote(t)}<br>
+        ${esc(severityKo(t.severityText))}
+        <a href="${esc(t.reportUrl)}" target="_blank" rel="noopener">GDACS 리포트</a>
       </div>`).join("");
     typhoonSection.innerHTML = `
       <div class="typhoon-card alert">
-        <div class="headline">⚠ ${anyDirect ? "태풍 직접 영향권" : "항로상 태풍 활동 중"} — 부자재 입고 지연 주의</div>
+        <div class="headline">⚠ ${anyDirect ? "베트남 태풍 직접 영향권" : "항로상 태풍 활동 중"}</div>
+        <div class="headline-sub">부자재 입고가 늦어질 수 있습니다.</div>
         ${rows}
         ${pastBlock}
         ${climatologyBlock()}
@@ -1046,7 +1082,8 @@ if (!TYPHOON) {
   } else {
     typhoonSection.innerHTML = `
       <div class="typhoon-card calm">
-        <div class="headline">활성 태풍 없음 · 입고 일정 영향 없음</div>
+        <div class="headline">활성 태풍 없음</div>
+        <div class="headline-sub">현재 입고 일정에 영향을 주는 태풍이 없습니다.</div>
         ${pastBlock}
         ${climatologyBlock()}
       </div>`;
@@ -1171,12 +1208,6 @@ function posText(t) {
   const p = t.percentile || 0;
   return p >= 50 ? `상위 ${Math.max(1, 100 - p)}%` : `하위 ${Math.max(1, p)}%`;
 }
-// 흐름 문장의 '상승 흐름:' 같은 머리말을 판정 색으로 굵게.
-function opsSentenceHtml(t) {
-  const cls = { "상승 흐름": "up", "하락 흐름": "down", "엇갈림": "mixed", "보합": "flat" };
-  return esc(t || "").replace(/(상승 흐름|하락 흐름|엇갈림|보합):/g,
-    (m, k) => `<b class="trend-chip ${cls[k]}" style="border:none;padding:0;">${k}</b>:`);
-}
 function trendLine(t) {
   if (!t) return "";
   const where = (t.band === "최고" || t.band === "최저") ? esc(t.position) : `${esc(t.position)} (${posText(t)})`;
@@ -1184,12 +1215,14 @@ function trendLine(t) {
 }
 function trendExplain(t) {
   const where = (t.band === "최고" || t.band === "최저")
-    ? `${esc(t.rangeName)} 범위의 <b>${esc(t.band)}치</b>입니다`
-    : `${esc(t.rangeName)} 범위에서 <b>${esc(t.band)}</b>(${posText(t)})에 있습니다`;
-  return `<b>${esc(t.trend)}</b>로 판정했습니다. 최근 ${esc(t.shortLabel)} ${pctText(t.shortPct)},
-    ${esc(t.longLabel)} ${pctText(t.longPct)} 변했고, 이 지표가 평소 ${esc(t.shortLabel)} 동안 움직이는 폭은 ±${t.normalMove}% 정도입니다.
-    지금 값은 ${where}.<br><span style="color:var(--ink-muted);font-size:12px;">판정 규칙: 단기·중기 변화가 평소 변동폭의 절반을
-    넘으면 상승·하락으로 보고, 둘 다 같은 방향이면 '추세', 방향이 엇갈리면 '조정' 또는 '반등'으로 적습니다.</span>`;
+    ? `${esc(t.rangeName)} 중 <b>${esc(t.band)}치</b>입니다`
+    : `${esc(t.rangeName)} 범위에서 <b>${esc(t.band)}</b>(${posText(t)})입니다`;
+  return `<b>${esc(t.trend)}</b>로 판정했습니다.
+    최근 ${esc(t.shortLabel)} 변화는 ${pctText(t.shortPct)}, ${esc(t.longLabel)} 변화는 ${pctText(t.longPct)}입니다.
+    이 지표의 평소 ${esc(t.shortLabel)} 변동폭은 ±${t.normalMove}% 정도입니다.
+    현재 값은 ${where}.
+    <div style="color:var(--ink-muted);font-size:12.5px;margin-top:6px;">판정 기준: ${esc(t.shortLabel)}와 ${esc(t.longLabel)} 변화가 평소 변동폭의 절반을 넘으면 상승 또는 하락으로 봅니다.
+    두 기간이 같은 방향이면 추세, 방향이 다르면 조정 또는 반등으로 표시합니다.</div>`;
 }
 
 // ---- 예상치 표시 ----------------------------------------------------------------------
@@ -1199,7 +1232,7 @@ function fcRange(h, cur) { return `${esc(cur || "")}${fmtNum(h.low)}~${esc(cur |
 function fcLine(fc, cur) {
   if (!fc || !fc.horizons || !fc.horizons.length) return "";
   const h = fc.horizons[0];
-  return `<div class="trend-line"><span>${esc(h.label)} 예상 ${fcRange(h, cur)}</span>
+  return `<div class="trend-line"><span>${esc(h.label)} 예상 <b style="color:var(--ink-secondary);font-weight:600;">${fcRange(h, cur)}</b></span>
     <span class="fc-dir ${fcCls(h.direction)}">${esc(h.direction)}</span></div>`;
 }
 // 상세 화면용 차트: 최근 기록 + 앞으로의 예상 범위(부채꼴)와 중간값(점선).
@@ -1249,18 +1282,20 @@ function forecastSection(c) {
       <td>${esc(cur)}${fmtNum(h.mid)}</td><td>${fcRange(h, cur)}</td>
       <td>${pctText(h.lowPct)} ~ ${pctText(h.highPct)}</td>
       <td class="fc-dir ${fcCls(h.direction)}">${esc(h.direction)}</td></tr>`).join("");
-  const how = fc.horizons.map(h => h.method === "감쇠 추세"
-    ? `${esc(h.label)}: 감쇠 추세 지수평활(${esc(h.params)}). 과거 ${h.tests}회 시험에서 평균 오차 ±${h.mae}%로 '지금 값 유지'(±${h.naiveMae}%)보다 잘 맞았습니다. 실제값이 범위 안에 든 비율 ${h.coverage}%.${h.tests < 10 ? " 시험 횟수가 적어 참고로만 보세요." : ""}`
-    : `${esc(h.label)}: 지금 값 유지. 과거 ${h.tests}회 시험에서 추세를 반영한 방법(±${h.trendMae}%)이 '지금 값 유지'(±${h.naiveMae}%)보다 낫지 않아 지금 값을 중간값으로 씁니다. 실제값이 범위 안에 든 비율 ${h.coverage}%.${h.tests < 10 ? " 시험 횟수가 적어 참고로만 보세요." : ""}`
-  ).join("<br>");
-  return `<div class="m-section-title">앞으로의 예상 (통계적 예측)</div>
+  const how = fc.horizons.map(h => {
+    const few = h.tests < 10 ? " 시험 횟수가 적어 참고용으로만 보시기 바랍니다." : "";
+    return h.method === "감쇠 추세"
+      ? `<b>${esc(h.label)}</b>: 최근 추세를 반영하는 방법(감쇠 추세 지수평활)으로 계산했습니다. 과거 ${h.tests}회 시험에서 평균 오차는 ±${h.mae}%로, 현재 값을 유지하는 방법(±${h.naiveMae}%)보다 작았습니다. 실제 값이 예상 범위 안에 든 비율은 ${h.coverage}%입니다.${few}`
+      : `<b>${esc(h.label)}</b>: 현재 값을 중간값으로 썼습니다. 과거 ${h.tests}회 시험에서 추세를 반영한 방법(±${h.trendMae}%)이 현재 값 유지(±${h.naiveMae}%)보다 정확하지 않았습니다. 실제 값이 예상 범위 안에 든 비율은 ${h.coverage}%입니다.${few}`;
+  }).join("<br>");
+  return `<div class="m-section-title">향후 예상</div>
     <div class="chart-wrap">${forecastChartSvg(c.points, fc)}</div>
     <table class="sf-table" style="margin-top:8px;">
-      <tr><th>시점</th><th>중간값</th><th>예상 범위</th><th>지금 대비</th><th>방향</th></tr>
+      <tr><th>시점</th><th>중간값</th><th>예상 범위</th><th>현재 대비</th><th>방향</th></tr>
       ${rows}
     </table>
-    <div class="m-note">${how}<br>예상 범위는 과거 시험에서 실제값의 약 80%가 들어오도록 잡았습니다(지표별 실제 적중률은 위 숫자).
-      방향은 범위 전체가 지금 값보다 위(아래)일 때만 상승(하락) 예상으로 적고, 아니면 보합권입니다.
+    <div class="m-note">${how}<br>예상 범위는 과거 시험에서 실제 값의 약 80%가 들어오도록 정했습니다.
+      범위 전체가 현재 값보다 높거나 낮을 때만 상승 예상 또는 하락 예상으로 표시하고, 그 밖에는 보합권으로 표시합니다.
       ${esc(fc.note || "")}</div>`;
 }
 
@@ -1332,21 +1367,29 @@ function trendSentence(c) {
 
   // fall back through shorter windows so a 7-day series still gets a read
   const m3 = changeOver(pts, 90) || changeOver(pts, 30) || changeOver(pts, 7) || changeOver(pts, 3);
-  let dir = "뚜렷한 방향성이 없습니다";
+  let dir = "뚜렷한 방향이 없습니다.";
   if (m3 && m3.pct !== null) {
     const a = Math.abs(m3.pct);
     const word = m3.pct >= 0 ? "상승" : "하락";
-    dir = a < 2 ? `최근 <b>보합권</b>입니다 (${m3.pct >= 0 ? "+" : ""}${m3.pct.toFixed(1)}%)`
-        : a < 10 ? `최근 완만한 <b>${word}세</b>입니다 (${m3.pct >= 0 ? "+" : ""}${m3.pct.toFixed(1)}%)`
-        : `최근 뚜렷한 <b>${word}세</b>입니다 (${m3.pct >= 0 ? "+" : ""}${m3.pct.toFixed(1)}%)`;
+    const pc = `${m3.pct >= 0 ? "+" : ""}${m3.pct.toFixed(1)}%`;
+    dir = a < 2 ? `최근 변화는 ${pc}로 <b>보합권</b>입니다.`
+        : a < 10 ? `최근 ${pc} 변해 완만한 <b>${word}세</b>입니다.`
+        : `최근 ${pc} 변해 뚜렷한 <b>${word}세</b>입니다.`;
   }
 
-  const band = posPct >= 80 ? "관측 구간 <b>상단</b>" : posPct >= 55 ? "구간 중상단"
-             : posPct >= 45 ? "구간 <b>중간</b>" : posPct >= 20 ? "구간 중하단" : "관측 구간 <b>하단</b>";
+  const band = posPct >= 80 ? "<b>상단</b>" : posPct >= 55 ? "중상단"
+             : posPct >= 45 ? "<b>중간</b>" : posPct >= 20 ? "중하단" : "<b>하단</b>";
 
   // currency-prefixed series ($82.85) vs unit-suffixed ones (1,845 원/L)
   const money = v => c.currency ? `${c.currency}${fmtNum(v)}` : `${fmtNum(v)}${c.unit ? " " + c.unit : ""}`;
-  return `${dir} 현재가는 이 기간 최저 ${money(lo)} · 최고 ${money(hi)} 중 ${band}에 있습니다.`;
+  return `${dir} 현재 값은 차트 기간의 최저 ${money(lo)}와 최고 ${money(hi)} 사이에서 ${band}에 있습니다.`;
+}
+
+function subLine(c) {
+  const parts = [];
+  if (c.note) parts.push(esc(c.note));
+  if (c.source) parts.push(`출처: ${esc(c.source)}`);
+  return parts.length ? `<div class="m-sub">${parts.join("<br>")}</div>` : "";
 }
 
 function openDetail(id) {
@@ -1362,7 +1405,7 @@ function openDetail(id) {
   // line before knowing which is how a Chinese VAT-inclusive quote gets mistaken for a domestic
   // purchase price.
   if (c.about) {
-    body += `<div class="m-section-title" style="margin-top:0;padding-top:0;border-top:none;">이 숫자는 무엇인가</div>
+    body += `<div class="m-section-title" style="margin-top:0;padding-top:0;border-top:none;">지표 설명</div>
       <div class="m-about">${esc(c.about)}</div>`;
   }
 
@@ -1370,65 +1413,61 @@ function openDetail(id) {
     const chartId = "modal-" + id;
     CHART_DATA[chartId] = { points: pts, currency: c.currency || "", unit: c.unit || "", decimals: 2 };
     const last = pts[pts.length - 1];
-    body += `<div class="m-sub">${esc(c.note || "")} · 출처 ${esc(c.source || "")}</div>
+    body += `${subLine(c)}
       <div class="price-now">
         <span class="pv">${esc(c.currency || "")}${fmtNum(last.value)}</span>
         <span class="pu">${esc(c.unit || "")}</span>
-        <span class="pd">${esc(last.label)} 기준 · ${pts.length}개 시점</span>
+        <span class="pd">${esc(last.label)} 기준 (자료 ${pts.length}건)</span>
       </div>
       <div class="chart-wrap">${priceChartSvg(pts, chartId)}<div class="ch-tip"></div></div>
       <div class="m-stats">${statWindowsFor(pts).map(w => statBox(w.label, changeOver(pts, w.days))).join("")}</div>
-      ${c.trend ? `<div class="m-section-title">경향성 판정</div><div class="m-read">${trendExplain(c.trend)}</div>` : ""}
-      ${forecastSection(c)}
-      <div class="m-section-title">추이 해설</div>
-      <div class="m-read">${trendSentence(c)}</div>`;
+      ${c.trend ? `<div class="m-section-title">경향 판정</div><div class="m-read">${trendExplain(c.trend)}</div>`
+        : `<div class="m-section-title">추이 요약</div><div class="m-read">${trendSentence(c)}</div>`}
+      ${forecastSection(c)}`;
   } else if (c.isScfi) {
     const up = c.change >= 0;
-    body += `<div class="m-sub">${esc(c.note || "")} · 출처 ${esc(c.source || "")}</div>
+    body += `${subLine(c)}
       <div class="price-now">
         <span class="pv">${c.current.toLocaleString()}</span>
         <span class="chg ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(c.change)} (${c.changePct}%)</span>
         <span class="pd">${esc(c.currentDate)} 기준</span>
       </div>
-      <div class="m-section-title">추이 해설</div>
+      <div class="m-section-title">추이 요약</div>
       <div class="m-read">전주(${esc(c.lastDate)}) <b>${c.previous.toLocaleString()}</b>에서
-        금주 <b>${c.current.toLocaleString()}</b>으로 ${up ? "상승" : "하락"}했습니다
-        (${up ? "+" : ""}${c.changePct}%). 운임지수가 오르면 수입 부자재의 물류비 부담이 커지고,
-        통상 선복 부족·항만 적체·성수기 수요와 함께 움직입니다.</div>
-      <div class="m-note">과거 시계열은 SSE 구독 계정 전용이라 주간 값과 전주 대비 변화만 제공됩니다.</div>`;
+        금주 <b>${c.current.toLocaleString()}</b>로 ${up ? "올랐습니다" : "내렸습니다"}(${up ? "+" : ""}${c.changePct}%).</div>
+      <div class="m-note">과거 자료는 유료 구독으로만 제공되어 매주 받은 값을 쌓고 있습니다. 3주 이상 쌓이면 차트를 표시합니다.</div>`;
   } else if (c.isSafeFreight) {
     const s = c.scenario;
     const notes = (c.history || []).filter(r => r.note).map(r => `${esc(r.window)}: ${esc(r.note)}`);
-    body += `<div class="m-sub">${esc(c.notice || "")} · 출처 ${esc(c.source || "")}</div>
+    body += `<div class="m-sub">기준 고시: ${esc(c.notice || "")}<br>출처: ${esc(c.source || "")}</div>
       <div class="m-section-title">유가 산정 이력</div>
       ${sfHistoryTable(c.history || [], { window: c.window.label, avg: c.base.avg, applyLabel: c.window.applyLabel, verdict: c.base.verdict })}
       ${notes.length ? `<div class="m-note" style="margin-top:6px;">* ${notes.join("<br>* ")}</div>` : ""}
       <div class="m-section-title">기준 유가</div>
       <div class="m-read">다음 판정은 <b>${esc(c.baseWindow)} 평균 ${sfWon(c.baseFuel)}원</b>${c.baseProvisional ? "(잠정)" : ""}과 비교합니다.
-        지금 운임에 반영된 산정 기간의 유가가 기준이라, 동결된 분기는 기준을 바꾸지 않습니다.
-        ${c.pending && c.applied ? `<br>현재 시행 중인 운임은 ${esc(c.applied.window)} 평균 ${sfWon(c.applied.fuel)}원 기준이고,
-          ${esc(c.pending.effective)}부터 ${esc(c.pending.window)} 평균 기준으로 ${esc(c.pending.verdict)} 적용 예정입니다.` : ""}</div>
+        기준은 현재 운임에 반영된 산정 기간의 유가입니다. 동결된 분기는 기준을 바꾸지 않습니다.
+        ${c.pending && c.applied ? `<br>현재 운임은 ${esc(c.applied.window)} 평균 ${sfWon(c.applied.fuel)}원 기준입니다.
+          ${esc(c.pending.effective)}부터는 ${esc(c.pending.window)} 평균 기준으로 ${esc(c.pending.verdict)}된 운임이 적용될 예정입니다.` : ""}</div>
       <div class="m-section-title">산정 기간 ${esc(c.window.label)} 월평균 경유가 (오피넷 전국평균)</div>
       ${sfMonthTable(c.window.months, s ? s.current.months : null)}
       <div class="m-section-title">판정</div>
-      <div class="m-read">기본 가정(${esc(c.base.assumption)})이면 산정 기간 평균 <b>${sfWon(c.base.avg)}원</b>,
-        기준 대비 <b>${sfSigned(c.base.diff)}원</b>이라 <b>${esc(c.base.verdict)}</b> 예상입니다
-        (적용 기간 ${esc(c.window.applyLabel)}).
-        ${s ? `<br>${esc(s.label)}: 다음 날부터 경유가 ${sfWon(s.won)}원 오른다고 보면
-          산정 ${esc(s.current.window)} <b>${sfWon(s.current.avg)}원</b>(${sfSigned(s.current.diff)}원, ${esc(s.current.verdict)}),
-          산정 ${esc(s.next.window)} <b>${sfWon(s.next.avg)}원</b>(기준 ${sfWon(s.next.base)}원 대비 ${sfSigned(s.next.diff)}원, ${esc(s.next.verdict)}).` : ""}</div>
-      ${c.base.verdict !== "동결" ? sfImpactTable(c.base.impact, `적용 기간 ${c.window.applyLabel} 예상 운임 (기본 가정, 20FT, 원)`, c.rateFrom) : ""}
-      ${s && s.trigger ? sfImpactTable(s.trigger.impact, `적용 기간 ${s.trigger.applyLabel} 예상 운임 (시나리오, 20FT, 원)`, c.rateFrom) : ""}
-      <div class="m-note">판정 규칙: 평균유가 산정 기간(3개월) 경유 평균이 지금 운임에 반영된 산정 기간의 유가보다 ${c.threshold}원 이상
-        오르거나 내리면 운임을 다시 고시하고, 산정 기간이 끝난 뒤 두 달째부터 3개월간 적용합니다.
-        산정 기간 평균은 월평균 3개의 단순평균이고, 월평균은 대시보드가 매일 쌓은 오피넷 전국평균의 평균이라
-        오피넷 월간 평균과 1원 안팎 차이가 날 수 있습니다(26년 9월: 대시보드 1,843.6원, 오피넷 1,844원).
-        최종 평균유가는 안전운임위원회가 부가가치세를 뺀 판매가와 유가보조금을 고려해 정합니다.
-        운임 변동액은 왕복거리 ÷ 연비 ${sfWon(c.kmPerLiter)}km/L × 유가 변동으로 계산한 근사치이고,
-        연간 운임 재산정(인건비·물가 반영)은 들어 있지 않습니다.</div>`;
+      <div class="m-read">${esc(c.base.assumption)}하면 산정 기간 평균은 <b>${sfWon(c.base.avg)}원</b>입니다.
+        기준 대비 <b>${sfSigned(c.base.diff)}원</b>이므로 ${esc(c.window.applyLabel)} 적용분은 <b>${esc(c.base.verdict)}</b> 예상입니다.
+        ${s ? `<br><br><b>${esc(s.label)}</b>: 다음 날부터 경유 가격이 ${sfWon(s.won)}원 오른다고 가정했습니다.
+          산정 ${esc(s.current.window)} 평균은 ${sfWon(s.current.avg)}원(${sfSigned(s.current.diff)}원, ${esc(s.current.verdict)})입니다.
+          산정 ${esc(s.next.window)} 평균은 ${sfWon(s.next.avg)}원(기준 ${sfWon(s.next.base)}원 대비 ${sfSigned(s.next.diff)}원, ${esc(s.next.verdict)})입니다.` : ""}</div>
+      ${c.base.verdict !== "동결" ? sfImpactTable(c.base.impact, `${c.window.applyLabel} 적용 예상 운임 (기본 가정, 20FT 왕복, 원)`, c.rateFrom) : ""}
+      ${s && s.trigger ? sfImpactTable(s.trigger.impact, `${s.trigger.applyLabel} 적용 예상 운임 (유류세 인하 종료 시, 20FT 왕복, 원)`, c.rateFrom) : ""}
+      <div class="m-note">판정 기준: 평균유가 산정 기간(3개월)의 경유 평균이 현재 운임에 반영된 유가보다 ${c.threshold}원 이상
+        오르거나 내리면 운임을 다시 고시합니다. 조정된 운임은 산정 기간이 끝난 뒤 두 달째부터 3개월간 적용됩니다.<br>
+        산정 기간 평균은 월평균 3개의 단순평균입니다. 월평균은 매일 받은 오피넷 전국평균으로 계산하므로
+        오피넷 월간 평균과 1원 안팎 차이가 날 수 있습니다(26년 9월: 이 페이지 1,843.6원, 오피넷 1,844원).
+        최종 평균유가는 안전운임위원회가 부가세를 제외한 판매가격과 유가보조금을 고려해 정합니다.<br>
+        운임 변동액은 왕복거리 ÷ 연비 ${sfWon(c.kmPerLiter)}km/L × 유가 변동으로 계산한 근사치입니다.
+        인건비와 물가를 반영하는 연간 운임 재산정은 포함하지 않았습니다.</div>`;
   } else if (c.lanes && c.lanes.length) {
-    body += `<div class="m-sub">${esc(c.note || "")} · 출처 ${esc(c.source || "")}</div>
-      <div class="m-section-title">항로별 현황 (${esc(c.lanes[0].currentDate)} 기준)</div>` +
+    body += `${subLine(c)}
+      <div class="m-section-title">항로별 현황 (${esc(c.lanes[0].currentDate)} 기준, 전주 대비)</div>` +
       c.lanes.map(l => {
         const cls = Math.abs(l.changePct) < 0.05 ? "flat" : (l.change >= 0 ? "up" : "down");
         const mark = cls === "flat" ? "―" : (l.change >= 0 ? "▲" : "▼");
@@ -1442,7 +1481,7 @@ function openDetail(id) {
     // Same 3-week floor the SCFI card uses: two points is last week's move, already in the rows.
     const charted = c.lanes.filter(l => (l.points || []).length >= 3);
     if (charted.length) {
-      body += `<div class="m-section-title">항로별 추이 (누적 ${charted[0].points.length}주)</div>` +
+      body += `<div class="m-section-title">항로별 추이 (최근 ${charted[0].points.length}주)</div>` +
         charted.map(l => {
           const chartId = "modal-lane-" + l.id;
           CHART_DATA[chartId] = { points: l.points, currency: "", unit: "pt", decimals: 1 };
@@ -1450,17 +1489,16 @@ function openDetail(id) {
             <div class="chart-wrap">${priceChartSvg(l.points, chartId)}<div class="ch-tip"></div></div>`;
         }).join("");
     } else {
-      body += `<div class="m-note">과거 시계열이 SSE 구독 전용이라 매주 직접 수집 중입니다. 3주부터 항로별 차트가 여기에 표시됩니다.</div>`;
+      body += `<div class="m-note">과거 자료는 유료 구독으로만 제공되어 매주 받은 값을 쌓고 있습니다. 3주 이상 쌓이면 항로별 차트를 표시합니다.</div>`;
     }
   }
 
   const news = c.news || [];
-  body += `<div class="m-section-title">가격 변동 배경 뉴스</div>`;
+  body += `<div class="m-section-title">관련 뉴스</div>`;
   body += news.length
     ? news.map(newsItemHtml).join("")
     : `<div class="empty-note">관련 뉴스를 찾지 못했습니다.</div>`;
-  body += `<div class="m-note">해설은 시계열 수치에서 자동 계산한 요약이고, 뉴스는 해당 품목 검색 결과입니다.
-    기사와 가격 움직임의 인과관계가 검증된 것은 아니니 참고용으로만 보세요.</div>`;
+  body += `<div class="m-note">뉴스는 지표 이름으로 검색한 결과입니다. 가격 변동의 원인으로 확인된 기사는 아니므로 참고용으로 보시기 바랍니다.</div>`;
 
   document.getElementById("modalBody").innerHTML = body;
   document.getElementById("modalBackdrop").classList.add("open");
@@ -1497,7 +1535,7 @@ function staleTag(label) {
   const days = Math.floor((Date.now() - d.getTime()) / 86400000);
   if (days < 45) return "";
   const months = Math.floor(days / 30);
-  return ` <span class="stale" title="이 카드의 최신 발표가 ${months}개월 전입니다">${months}개월 전 발표</span>`;
+  return ` <span class="stale" title="최신 발표가 ${months}개월 전입니다">${months}개월 전 발표</span>`;
 }
 
 function priceCardHtml(c, idx) {
@@ -1514,7 +1552,7 @@ function priceCardHtml(c, idx) {
         <div class="card-head"><h3>${esc(c.displayName)}</h3></div>
         <div class="fail-tag">⚠ 오늘 수집 실패</div>
         ${last}
-        <div class="chart-note">데이터 출처가 응답하지 않았거나 형식이 바뀌었을 수 있습니다. 다음 실행에서 자동으로 다시 시도합니다.</div>
+        <div class="chart-note">자료 제공 사이트가 응답하지 않았거나 형식이 바뀌었을 수 있습니다. 다음 실행 때 자동으로 다시 조회합니다.</div>
       </div>`;
   }
   if (!pts.length) return "";
@@ -1526,35 +1564,39 @@ function priceCardHtml(c, idx) {
   CARD_BY_ID[c.id] = c;
 
   const changeHtml = prior ? changeBadgeHtml(prior, latest) : "";
+  const basis = prior ? changeBasis(prior.label) : "";
 
+  // 카드에는 숫자·등락·경향·예상·차트만 둔다. 지표 설명은 [상세]로 옮겼다(카드마다 세 줄씩 붙어 있어 숫자가 묻혔다).
   return `
     <div class="card">
       <div class="card-head">
         <h3>${esc(c.displayName)}</h3>
-        <button class="detail-btn" data-detail="${esc(c.id)}">상세 ↗</button>
+        <button class="detail-btn" data-detail="${esc(c.id)}">상세</button>
       </div>
       <div class="price-now">
         <span class="pv">${esc(c.currency || "")}${fmtNum(latest.value)}</span>
         <span class="pu">${esc(c.unit || "")}</span>
         ${changeHtml}
-        <span class="pd">${esc(latest.label)}${staleTag(latest.label)}</span>
       </div>
+      <div class="price-meta">${esc(latest.label)} 기준${basis ? ` (${esc(basis)})` : ""}${staleTag(latest.label)}</div>
       ${trendLine(c.trend)}
       ${fcLine(c.forecast, c.currency)}
       <div class="chart-wrap">
         ${priceChartSvg(pts, chartId, CH_CARD)}
         <div class="ch-tip"></div>
       </div>
-      <div class="chart-note">${esc(c.note || "")} · ${esc(c.source || "")}</div>
+      <div class="card-src">출처: ${esc(c.source || "")}</div>
     </div>`;
 }
 
-const pricesGrid = document.getElementById("pricesGrid");
+const priceGroupsEl = document.getElementById("priceGroups");
 // Each entry carries the sort key config assigned, because these cards come from two places -
 // the freight ones are built here, the priced ones arrive already ordered from the generator -
 // and interleaving them by push order is what put KCl last.
 const priceCards = [];
 const pushCard = (sort, html) => priceCards.push({ sort, html });
+// 정렬 키의 백의 자리가 구역 번호다(생성 스크립트의 Get-CardSort). 구역 밖 카드는 900번대.
+const groupOf = sort => Math.floor((typeof sort === "number" ? sort : 900) / 100);
 
 if (SCFI) {
   const up = SCFI.change >= 0;
@@ -1567,28 +1609,25 @@ if (SCFI) {
   if (hasChart) CHART_DATA[chartId] = { points: pts, currency: "", unit: "pt", decimals: 1 };
 
   pushCard(CARD_SORTS.scfi, `
-    <div class="card stat-tile">
+    <div class="card">
       <div class="card-head">
         <h3>${esc(SCFI.displayName)}</h3>
-        <button class="detail-btn" data-detail="scfi">상세 ↗</button>
+        <button class="detail-btn" data-detail="scfi">상세</button>
       </div>
-      <div class="stat-row">
-        <span class="sv">${SCFI.current.toLocaleString()}</span>
+      <div class="price-now">
+        <span class="pv">${fmtNum(SCFI.current)}</span>
+        <span class="pu">pt</span>
         ${Math.abs(SCFI.changePct) < 0.05
-          ? `<span class="sc flat">보합</span>`
-          : `<span class="sc ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${fmtNum(Math.abs(SCFI.change))} (${up ? "+" : ""}${SCFI.changePct}%)</span>`}
-        <span class="pd">${esc(SCFI.currentDate)} · 전주 대비</span>
+          ? `<span class="chg flat">보합</span>`
+          : `<span class="chg ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${fmtNum(Math.abs(SCFI.change))} (${up ? "+" : ""}${SCFI.changePct}%)</span>`}
       </div>
+      <div class="price-meta">${esc(SCFI.currentDate)} 기준 (전주 대비)</div>
       ${trendLine(SCFI.trend)}
       ${fcLine(SCFI.forecast, "")}
       ${hasChart
         ? `<div class="chart-wrap">${priceChartSvg(pts, chartId, CH_CARD)}<div class="ch-tip"></div></div>`
         : `<div class="prev-row"><span>전주 (${esc(SCFI.lastDate)})</span><span>${SCFI.previous.toLocaleString()}</span></div>`}
-      <div class="chart-note">${esc(SCFI.note || "")} · ${esc(SCFI.source || "")}<br>${
-        hasChart
-          ? `주간 발표 · 누적 ${pts.length}주 수집`
-          : `주간 발표 · 과거 시계열이 SSE 구독 전용이라 매주 직접 수집 중 (현재 ${pts.length}주, 3주부터 차트 표시)`
-      }</div>
+      <div class="card-src">출처: ${esc(SCFI.source || "")} (주간 발표${hasChart ? "" : `, ${pts.length}주째 수집 중`})</div>
     </div>`);
 }
 
@@ -1627,15 +1666,11 @@ if (SSE_LANES && SSE_LANES.length) {
     <div class="card">
       <div class="card-head">
         <h3>CCFI 항로별 운임지수</h3>
-        ${LANE_ABOUT ? `<button class="detail-btn" data-detail="ccfi-lanes">상세 ↗</button>` : ""}
+        ${LANE_ABOUT ? `<button class="detail-btn" data-detail="ccfi-lanes">상세</button>` : ""}
       </div>
-      <div class="flag">${esc(anyLane.currentDate)} 기준 · 전주 대비</div>
+      <div class="flag">${esc(anyLane.currentDate)} 기준 (전주 대비)</div>
       ${laneRows}
-      <div class="chart-note">
-        중국발 수출 컨테이너 운임(계약운임 포함) · Shanghai Shipping Exchange<br>
-        SCFI는 무료 공개 범위에서 항로별 값이 비어 있어 항로 비교는 CCFI를 씁니다. 인도 항로는 CCFI에 없습니다.<br>
-        주간 발표 · 누적 ${laneWeeks}주 수집${!LANE_ABOUT ? "" : laneWeeks >= 3 ? " · 항로별 추이는 상세에서" : " (3주부터 상세에 항로별 차트)"}
-      </div>
+      <div class="card-src">출처: Shanghai Shipping Exchange (주간 발표${laneWeeks >= 3 && LANE_ABOUT ? ", 항로별 차트는 [상세]" : `, ${laneWeeks}주째 수집 중`})</div>
     </div>`);
 }
 
@@ -1663,7 +1698,7 @@ function sfImpactTable(rows, title, rateFrom) {
     </table>`;
 }
 function sfRateTable(routes, rateFrom) {
-  return `<div class="sf-sub">운임 (조정 없음 예상)</div>
+  return `<div class="sf-sub">현재 운임 (조정 없음 예상)</div>
     <table class="sf-table">
       <tr><th>노선 (왕복)</th><th>${sfFrom(rateFrom)} 20FT 안전운송운임</th></tr>
       ${routes.map(r => `<tr><td>${esc(r.name)} ${sfWon(r.km)}km</td><td>${sfWon(r.rate)}원</td></tr>`).join("")}
@@ -1692,53 +1727,56 @@ function sfMonthTable(months, scenMonths) {
 if (SAFE_FREIGHT) {
   const sf = SAFE_FREIGHT;
   CARD_BY_ID["safe-freight"] = Object.assign({}, sf, { isSafeFreight: true, points: [] });
-  const prov = sf.baseProvisional ? `<span class="sf-est" title="오피넷 월간 평균으로 낸 잠정치입니다">잠정</span>` : "";
-  const assume = sf.window.projectedDays ? ` + 남은 ${sf.window.projectedDays}일은 현재가 유지 가정` : "";
+  const prov = sf.baseProvisional ? `<span class="sf-est" title="오피넷 월간 평균으로 계산한 잠정치입니다">잠정</span>` : "";
+  const assume = sf.window.projectedDays ? `, 남은 ${sf.window.projectedDays}일은 현재 가격 유지 가정` : "";
   // 적용 예정인 조정이 있으면(10/22 현재 7~9월 인하분이 11/1 적용 예정) 지금 시행 중인 값과 함께 먼저 보여 준다.
   const pendingLine = (sf.pending && sf.applied)
-    ? `<div class="sf-line" style="margin-top:4px;">현재 적용 <b>${sfWon(sf.applied.fuel)}원</b>
-        <span style="color:var(--ink-muted);">(${esc(sf.applied.window)} 산정)</span> →
-        ${esc(sfMd(sf.pending.effective))}부터 <b>${sfWon(sf.pending.fuel)}원</b>
-        <b class="${sfCls(sf.pending.verdict)}">${esc(sf.pending.verdict)}</b> 적용 예정</div>` : "";
+    ? `<div class="sf-line">${esc(sfMd(sf.pending.effective))}부터 <b>${sfWon(sf.pending.fuel)}원</b> 기준
+        <b class="${sfCls(sf.pending.verdict)}">${esc(sf.pending.verdict)}</b> 운임 적용 예정
+        <span style="color:var(--ink-muted);">(현재 ${sfWon(sf.applied.fuel)}원 기준)</span></div>` : "";
   const baseLine = `산정 기간 ${esc(sf.window.label)} 평균 <b>${sfWon(sf.base.avg)}원</b>
     <span style="color:var(--ink-muted);">(실측 ${sf.window.actualDays}일${assume})</span><br>
-    기준 ${esc(sf.baseWindow)} <b>${sfWon(sf.baseFuel)}원</b>${prov} 대비
+    기준 유가 ${esc(sf.baseWindow)} <b>${sfWon(sf.baseFuel)}원</b>${prov} 대비
     <b class="${sfCls(sf.base.verdict)}">${sfSigned(sf.base.diff)}원</b>
-    (±${sf.threshold}원 ${sf.base.verdict === "동결" ? "미만" : "이상"})`;
+    <span style="color:var(--ink-muted);">(조정 기준 ±${sf.threshold}원 ${sf.base.verdict === "동결" ? "미만" : "이상"})</span>`;
 
   let scenario = "";
   let impact = sf.base.verdict !== "동결"
-    ? { rows: sf.base.impact, title: `적용 기간 ${sf.window.applyLabel} 예상 운임 (20FT, 원)` } : null;
+    ? { rows: sf.base.impact, title: `${sf.window.applyLabel} 적용 예상 운임 (20FT 왕복, 원)` } : null;
   if (sf.scenario) {
     const s = sf.scenario;
-    let path = `산정 ${esc(s.current.window)} <b>${sfSigned(s.current.diff)}원</b> ${s.current.verdict}`;
-    if (s.current.verdict === "동결") {
-      path += ` → 산정 ${esc(s.next.window)} <b>${sfSigned(s.next.diff)}원</b> ${s.next.verdict}`;
-    }
-    if (s.trigger) {
-      path += ` → <b class="${sfCls(s.trigger.verdict)}">${esc(s.trigger.applyLabel)} 적용분 ${s.trigger.verdict} 예상</b>`;
-    }
-    scenario = `<div class="sf-sub">시나리오: ${esc(s.label)} (D-${s.dDay}, 경유 +${sfWon(s.won)}원)</div>
-      <div class="sf-line" style="margin-top:2px;">${path}</div>`;
-    if (!impact && s.trigger) {
-      impact = { rows: s.trigger.impact, title: `시나리오대로면 적용 기간 ${s.trigger.applyLabel} 운임 (20FT, 원)` };
+    const t = s.trigger;
+    const tw = t ? (t.window || (s.current.verdict !== "동결" ? s.current.window : s.next.window)) : "";
+    const result = t
+      ? `산정 ${esc(tw)} 평균이 기준보다 <b>${sfSigned(t.diff)}원</b> 달라져
+         <b class="${sfCls(t.verdict)}">${esc(t.applyLabel)} 적용분 ${esc(t.verdict)}</b> 예상입니다.`
+      : `산정 ${esc(s.current.window)}과 ${esc(s.next.window)} 모두 조정 기준(±${sf.threshold}원) 미만입니다.`;
+    scenario = `<div class="sf-sub">유류세 인하 종료 시 (${esc(sfMd(s.until))} 종료 예정, D-${s.dDay})</div>
+      <div class="sf-line" style="margin-top:2px;">경유 가격이 ${sfWon(s.won)}원 오른다고 가정하면 ${result}</div>`;
+    if (!impact && t) {
+      impact = { rows: t.impact, title: `유류세 인하 종료 시 ${t.applyLabel} 적용 예상 운임 (20FT 왕복, 원)` };
     }
   }
 
   pushCard(typeof CARD_SORTS.safeFreight === "number" ? CARD_SORTS.safeFreight : 900, `
-    <div class="card">
+    <div class="card span2">
       <div class="card-head">
         <h3>${esc(sf.displayName)}</h3>
-        <button class="detail-btn" data-detail="safe-freight">상세 ↗</button>
+        <button class="detail-btn" data-detail="safe-freight">상세</button>
       </div>
-      <div class="flag">다음 유가 조정 전망 · 적용 기간 ${esc(sf.window.applyLabel)}</div>
-      <span class="sf-verdict ${sfCls(sf.base.verdict)}">${esc(sf.base.verdict)} 예상</span>
-      ${pendingLine}
-      <div class="sf-line">${baseLine}</div>
-      ${scenario}
-      ${impact ? sfImpactTable(impact.rows, impact.title, sf.rateFrom) : sfRateTable(sf.routes || [], sf.rateFrom)}
-      <div class="chart-note">${esc(sf.rateBasis || "")}<br>
-        운임 변동은 왕복거리 ÷ 연비 ${sfWon(sf.kmPerLiter)}km/L × 유가 변동으로 계산한 근사치 · 경유 ${esc(sf.latest.label)} 기준</div>
+      <div class="sf-top">
+        <span class="sf-verdict ${sfCls(sf.base.verdict)}">${esc(sf.base.verdict)} 예상</span>
+        <span class="sf-apply">다음 유가 조정 (${esc(sf.window.applyLabel)} 적용분)</span>
+      </div>
+      <div class="sf-cols">
+        <div>
+          ${pendingLine}
+          <div class="sf-line">${baseLine}</div>
+          ${scenario}
+        </div>
+        <div>${impact ? sfImpactTable(impact.rows, impact.title, sf.rateFrom) : sfRateTable(sf.routes || [], sf.rateFrom)}</div>
+      </div>
+      <div class="card-src">운임 변동은 왕복거리 ÷ 연비 ${sfWon(sf.kmPerLiter)}km/L × 유가 변동으로 계산한 근사치입니다. 경유 ${esc(sf.latest.label)} 기준입니다.</div>
     </div>`);
 }
 
@@ -1749,11 +1787,11 @@ if (SAFE_FREIGHT) {
 });
 
 if (!HAS_FUEL_KEY) {
-  pushCard(950, `
+  pushCard(typeof CARD_SORTS.fuel === "number" ? CARD_SORTS.fuel : 950, `
     <div class="card">
-      <h3>국내 경유 · 휘발유 (전국평균)</h3>
+      <h3>국내 경유·휘발유 (전국평균)</h3>
       <div class="locked-note">
-        오피넷 무료 API 키가 필요합니다 (1,500회/일).<br>
+        오피넷 무료 API 키가 필요합니다(하루 1,500회).<br>
         <a href="https://www.opinet.co.kr/user/custapi/custApiInfo.do" target="_blank" rel="noopener">오피넷에서 키 발급</a> 후
         GitHub 저장소 시크릿에 <code>OPINET_API_KEY</code>로 등록하면 이 카드가 자동으로 채워집니다.
       </div>
@@ -1764,31 +1802,50 @@ if (!HAS_FUEL_KEY) {
 // resolves the workbook link from the World Bank's own page and retries, so landing here means
 // something changed at the source rather than a blip.
 if (!HAS_KCL) {
-  pushCard(951, `
+  pushCard(typeof CARD_SORTS.kcl === "number" ? CARD_SORTS.kcl : 951, `
     <div class="card">
       <h3>KCl (염화칼륨)</h3>
       <div class="locked-note">
-        이번 실행에서 World Bank Pink Sheet 데이터를 가져오지 못했습니다.<br>
-        스프레드시트 주소나 시트 구성이 바뀌었을 수 있습니다 —
+        이번 실행에서 World Bank Pink Sheet 자료를 받지 못했습니다.<br>
+        파일 주소나 시트 구성이 바뀌었을 수 있으므로
         <a href="https://www.worldbank.org/en/research/commodity-markets" target="_blank" rel="noopener">Commodity Markets 페이지</a>에서
-        확인이 필요합니다. 다음 실행에서 복구되면 이 카드는 자동으로 사라집니다.
+        확인이 필요합니다. 다음 실행에서 정상적으로 받으면 이 안내는 자동으로 사라집니다.
       </div>
     </div>`);
 }
 
 // Stable: Array.prototype.sort is stable in every engine this targets, so equal keys keep the
 // order they were pushed in.
-pricesGrid.innerHTML = priceCards.length
-  ? priceCards.slice().sort((a, b) => a.sort - b.sort).map(c => c.html).join("")
-  : `<div class="empty-note">가격 정보를 가져오지 못했습니다.</div>`;
+(function renderPriceGroups() {
+  if (!priceCards.length) {
+    priceGroupsEl.innerHTML = `<div><div class="section-title">가격 지표</div><div class="empty-note">가격 정보를 가져오지 못했습니다.</div></div>`;
+    return;
+  }
+  const sorted = priceCards.slice().sort((a, b) => a.sort - b.sort);
+  const groups = [];
+  sorted.forEach(c => {
+    const gi = groupOf(c.sort);
+    let g = groups.find(x => x.gi === gi);
+    if (!g) { g = { gi, cards: [] }; groups.push(g); }
+    g.cards.push(c);
+  });
+  const titleOf = gi => (CARD_GROUPS && CARD_GROUPS[gi] && CARD_GROUPS[gi].title)
+    || ((CARD_GROUPS && CARD_GROUPS.length) ? "기타 지표" : "원자재·물류 가격");
+  priceGroupsEl.innerHTML = groups.map(g => `
+    <div>
+      <div class="section-title">${esc(titleOf(g.gi))}</div>
+      <div class="grid">${g.cards.map(c => c.html).join("")}</div>
+    </div>`).join("");
+})();
 
-document.querySelectorAll("#pricesGrid .chart-wrap").forEach(attachChartHover);
+document.querySelectorAll("#priceGroups .chart-wrap").forEach(attachChartHover);
 
 // ---- 물류 운영 핵심 지표 요약판 ----------------------------------------------------------
 function opsReportText() {
   const when = FETCHED_AT ? FETCHED_AT.slice(0, 16).replace("T", " ") : "";
   const lines = [`[물류팀 운영 참고지표] ${when} 기준`];
-  if (OPS_SUMMARY.sentence) lines.push(OPS_SUMMARY.sentence);
+  (OPS_SUMMARY.groups || []).forEach(g => lines.push(`${g.label}: ${(g.names || []).join(", ")}`));
+  lines.push("");
   OPS_SUMMARY.rows.forEach(r => {
     const parts = [];
     if (r.value !== null && r.value !== undefined) {
@@ -1804,7 +1861,8 @@ function opsReportText() {
     if (r.fc) parts.push(`${r.fc.label} 예상 ${r.currency || ""}${fmtNum(r.fc.low)}~${r.currency || ""}${fmtNum(r.fc.high)}(${r.fc.direction})`);
     lines.push(`- ${r.name}: ${parts.join(", ")}`);
   });
-  lines.push(`※ ${OPS_SUMMARY.method} 예상 범위는 과거 자료로 시험한 통계적 예측(약 80% 범위)이며 사건·정책 변화는 반영하지 않습니다.`);
+  lines.push("");
+  lines.push(`※ ${OPS_SUMMARY.method} 예상 범위는 과거 자료로 시험한 통계적 예측(약 80% 범위)이며 사건과 정책 변화는 반영하지 않습니다.`);
   lines.push(`대시보드: ${OPS_SUMMARY.dashboardUrl}`);
   return lines.join("\n");
 }
@@ -1859,6 +1917,25 @@ function opsCsv() {
     box.innerHTML = `<div class="empty-note">핵심 지표 요약을 만들지 못했습니다.</div>`;
     return;
   }
+  // 지표별 최근 6개월 흐름(작은 선). 판정 색을 따른다.
+  const seriesOf = r => {
+    if (r.id === "scfi") return (SCFI && SCFI.points) || [];
+    const lane = (SSE_LANES || []).find(l => l.id === r.id);
+    if (lane) return lane.points || [];
+    const c = (PRICES || []).find(p => p.id === r.id);
+    return (c && c.points) || [];
+  };
+  const spark = r => {
+    const pts = seriesOf(r);
+    if (pts.length < 3) return "";
+    const lastD = parseLabel(pts[pts.length - 1].label);
+    let use = lastD ? pts.filter(p => { const d = parseLabel(p.label); return d && (lastD - d) / 86400000 <= 183; }) : pts;
+    if (use.length < 3) use = pts.slice(-Math.min(pts.length, 12));
+    const vals = use.map(p => p.value), lo = Math.min(...vals), hi = Math.max(...vals), span = (hi - lo) || 1;
+    const W = 96, H = 26;
+    const d = use.map((p, i) => `${i ? "L" : "M"}${(i / (use.length - 1) * W).toFixed(1)},${(2 + (1 - (p.value - lo) / span) * (H - 4)).toFixed(1)}`).join(" ");
+    return `<svg class="ops-spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d}" class="${esc(r.tone || "flat")}"/></svg>`;
+  };
   const rows = OPS_SUMMARY.rows.map(r => {
     const val = (r.value !== null && r.value !== undefined)
       ? `${esc(r.currency || "")}${fmtNum(r.value)} <span class="ou">${esc(r.unit || "")}</span>` : "";
@@ -1867,26 +1944,28 @@ function opsCsv() {
     return `<tr${clickable}>
       <td><div class="on">${esc(r.name)}</div>${sub ? `<div class="os">${esc(sub)}</div>` : ""}</td>
       <td>${val}${r.label ? `<div class="os">${esc(r.label)}</div>` : ""}</td>
+      <td class="mid">${spark(r) || `<span class="os">–</span>`}</td>
       <td class="${pctCls(r.shortPct)}">${pctText(r.shortPct)}</td>
       <td class="${pctCls(r.longPct)}">${pctText(r.longPct)}</td>
       <td>${trendChip(r.trend, r.tone)}</td>
       <td>${r.fc ? `${fcRange(r.fc, r.currency)}<div class="os fc-dir ${fcCls(r.fc.direction)}">${esc(r.fc.direction)}</div>`
-        : (r.value !== null && r.value !== undefined) ? `<span class="os" title="예상은 기록 30개 이상, 시험 시점 10개 이상부터 냅니다">기록 쌓는 중</span>` : "–"}</td>
+        : (r.value !== null && r.value !== undefined) ? `<span class="os" title="자료가 30건 이상 쌓이면 예상 범위를 표시합니다">자료 수집 중</span>` : "–"}</td>
     </tr>`;
   }).join("");
   box.innerHTML = `<div class="card">
       <div class="ops-head">
-        <div class="ops-sentence">${opsSentenceHtml(OPS_SUMMARY.sentence)}</div>
+        <div class="ops-groups">${(OPS_SUMMARY.groups || []).map(g =>
+          `<span><span class="og ${esc(g.tone)}">${esc(g.label)}</span>${(g.names || []).map(esc).join(", ")}</span>`).join("")}</div>
         <div class="ops-actions">
           <button class="ops-btn" id="opsCopy">📋 보고용 요약 복사</button>
-          <button class="ops-btn" id="opsCsv">📥 지표 데이터 내려받기(CSV)</button>
+          <button class="ops-btn" id="opsCsv">📥 CSV 내려받기</button>
         </div>
       </div>
       <div class="ops-scroll"><table class="ops-table">
-        <tr><th>지표</th><th>현재</th><th>단기 변화<br>(4주·1개월)</th><th>중기 변화<br>(13주·3개월)</th><th>경향</th><th>단기 예상<br>(4주·1개월 후)</th></tr>
+        <tr><th>지표</th><th>현재</th><th>최근 6개월</th><th>단기 변화<br>(4주·1개월)</th><th>중기 변화<br>(13주·3개월)</th><th>경향</th><th>단기 예상<br>(4주·1개월 후)</th></tr>
         ${rows}
       </table></div>
-      <div class="ops-method">${esc(OPS_SUMMARY.method || "")} 단기 예상은 과거 자료로 시험해 더 잘 맞은 방법(감쇠 추세 지수평활 또는 지금 값 유지)으로 낸 범위이며, 사건·정책 변화는 반영하지 않습니다. 행을 누르면 해당 지표의 상세 화면(예상 근거와 과거 적중률)이 열립니다.</div>
+      <div class="ops-method">${esc(OPS_SUMMARY.method || "")} 예상 범위는 과거 자료로 시험해 정확도가 높았던 방법으로 계산하며, 사건과 정책 변화는 반영하지 않습니다. 행을 누르면 상세 화면이 열립니다.</div>
     </div>`;
   box.addEventListener("click", e => {
     if (e.target.closest("#opsCopy")) { opsCopy(e.target.closest("#opsCopy")); return; }
@@ -1902,7 +1981,7 @@ document.querySelectorAll("[data-detail]").forEach(btn =>
 // One renderer for both the 수급 뉴스 cards and the price-card popups, so a flagged headline
 // looks the same wherever it turns up.
 function newsItemHtml(n) {
-  const src = `<span class="src">${esc(n.source || "")}${n.date ? " · " + esc(n.date) : ""}</span>`;
+  const src = `<span class="src">${esc(n.source || "")}${n.date ? ", " + esc(n.date) : ""}</span>`;
   const link = `<a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a>`;
   if (!n.flag) return `<div class="news-item">· ${link}${src}</div>`;
   const chip = n.reason ? `<div><span class="news-reason">${esc(n.reason)}</span></div>` : "";
@@ -1912,24 +1991,22 @@ function newsItemHtml(n) {
 const materialsGrid = document.getElementById("materialsGrid");
 if (NEWS_OUTAGE) {
   // 구글 뉴스가 막힌 날. 빈 카드만 늘어서 있으면 고장처럼 보이므로 이유를 적는다.
-  materialsGrid.innerHTML = `<div class="empty-note">구글 뉴스가 응답하지 않아 오늘은 뉴스를 싣지 못했습니다. 다음 실행에서 자동으로 다시 가져옵니다.</div>`;
+  materialsGrid.innerHTML = `<div class="empty-note">구글 뉴스가 응답하지 않아 오늘은 뉴스를 싣지 못했습니다. 다음 실행 때 자동으로 다시 가져옵니다.</div>`;
 } else if (!MATERIALS || MATERIALS.length === 0) {
   materialsGrid.innerHTML = `<div class="empty-note">뉴스를 가져오지 못했습니다.</div>`;
 } else {
   materialsGrid.innerHTML = MATERIALS.map(m => {
     const news = (m.news && m.news.length)
       ? m.news.map(newsItemHtml).join("")
-      : `<div class="empty-note">관련 뉴스 없음</div>`;
+      : `<div class="empty-note">관련 뉴스가 없습니다.</div>`;
     const flagged = (m.news || []).filter(n => n.flag).length;
     // Says the badge is a keyword rule rather than a reading of the article, in the same
     // place and the same voice the price cards already use for their own limits.
-    const caveat = flagged
-      ? `제목 키워드로 매긴 중요도입니다 — 기사를 읽고 판단한 것이 아니니 참고로만 보세요`
-      : `관련 뉴스`;
+    const caveat = flagged ? `중요도 표시는 기사 제목의 단어로 자동 분류한 결과입니다.` : "";
     return `
       <div class="card">
         <h3>${esc(m.displayName)}</h3>
-        <div class="news-caveat">${caveat}</div>
+        ${caveat ? `<div class="news-caveat">${caveat}</div>` : ""}
         ${news}
       </div>`;
   }).join("");

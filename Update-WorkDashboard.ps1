@@ -185,12 +185,12 @@ function Get-TempAdvisories {
 
     $advisories = @()
     if ($null -ne $heatRefC) {
-        if ($heatRefC -ge 35) { $advisories += [PSCustomObject]@{ text = "폭염경보 수준 · 온열질환 각별 주의"; tone = "danger" } }
-        elseif ($heatRefC -ge 33) { $advisories += [PSCustomObject]@{ text = "폭염주의보 수준 · 온열질환 주의"; tone = "warn" } }
+        if ($heatRefC -ge 35) { $advisories += [PSCustomObject]@{ text = "폭염경보 수준(온열질환 각별 주의)"; tone = "danger" } }
+        elseif ($heatRefC -ge 33) { $advisories += [PSCustomObject]@{ text = "폭염주의보 수준(온열질환 주의)"; tone = "warn" } }
     }
     if ($null -ne $minC) {
-        if ($minC -le -15) { $advisories += [PSCustomObject]@{ text = "한파경보 수준 · 동파 등 각별 주의"; tone = "danger" } }
-        elseif ($minC -le -12) { $advisories += [PSCustomObject]@{ text = "한파주의보 수준 · 대비 필요"; tone = "warn" } }
+        if ($minC -le -15) { $advisories += [PSCustomObject]@{ text = "한파경보 수준(동파 각별 주의)"; tone = "danger" } }
+        elseif ($minC -le -12) { $advisories += [PSCustomObject]@{ text = "한파주의보 수준(대비 필요)"; tone = "warn" } }
     }
     @($advisories)
 }
@@ -624,7 +624,7 @@ function Get-TyphoonWatch {
                     $d = @()
                     if ($crossesScs) { $d += "남중국해 통과" }
                     if ($nearPort -and $nearPort.km -le 400) { $d += "$($nearPort.hub) $($nearPort.km)km" }
-                    [PSCustomObject]@{ code = "route"; label = "항로"; detail = ($d -join " · ") }
+                    [PSCustomObject]@{ code = "route"; label = "항로"; detail = ($d -join ", ") }
                 }
                 if ($nearKr -and $nearKr.km -le 400) {
                     [PSCustomObject]@{ code = "arrival"; label = "도착지"
@@ -927,7 +927,7 @@ function Get-DceResinSeries {
             note        = $cfg.Note
             # Exchange comes from config: resin trades on Dalian, the alkalis on Zhengzhou.
             # Sina serves both from one endpoint, so only the label differs.
-            source      = "$(if ($cfg.Exchange) { $cfg.Exchange } else { '대련상품거래소(DCE)' }) · Sina"
+            source      = "$(if ($cfg.Exchange) { $cfg.Exchange } else { '대련상품거래소(DCE)' }), Sina"
             currency    = $cfg.Currency
             points      = @($points)
             newsQuery   = $cfg.NewsQuery
@@ -1209,7 +1209,7 @@ function Get-IndustrialPowerPrice {
             displayName = "산업용 전기요금"
             unit        = "원/kWh"
             currency    = ""
-            note        = "한전 산업용 평균 판매단가 · 연 1회(7월경) 갱신 · 업계 평균이라 개별 계약 단가와는 차이"
+            note        = "한전 산업용 평균 판매단가(연 1회 갱신, 개별 계약 단가와 차이 있음)"
             source      = "전력거래소 EPSIS"
             points      = $points
         }
@@ -1254,7 +1254,7 @@ function Get-DomesticFuelPrices {
                 displayName = $p.name
                 unit        = "원/L"
                 currency    = ""
-                note        = "최근 7일 전국 주유소 평균"
+                note        = "전국 주유소 평균(최근 7일)"
                 source      = "한국석유공사 오피넷"
                 points      = @($points)
             }
@@ -1357,7 +1357,7 @@ function Get-TrendStats {
 
     $yr = @($rows | Where-Object { $_.d -ge $last.d.AddDays(-365) })
     $span = ($last.d - $yr[0].d).TotalDays
-    $rangeName = if ($span -ge 300) { "1년" } else { "관측 $([int]$span)일" }
+    $rangeName = if ($span -ge 300) { "1년" } else { "최근 $([int]$span)일" }
     $vals = @($yr | ForEach-Object { $_.v })
     $max = ($vals | Measure-Object -Maximum).Maximum
     $min = ($vals | Measure-Object -Minimum).Minimum
@@ -1378,7 +1378,7 @@ function Get-TrendStats {
         rangeName  = $rangeName
         percentile = $pctile
         band       = $band
-        position   = "$rangeName $band"
+        position   = "$rangeName 중 $band"
         points     = $rows.Count
     }
 }
@@ -1529,7 +1529,7 @@ function Get-Forecast {
         lastLabel = $last.d.ToString($(if ($unit -eq "month") { "yyyy-MM" } else { "yyyy-MM-dd" }))
         lastValue = $last.v
         horizons  = $out
-        note      = "과거 자료의 흐름만으로 낸 통계적 예상입니다. 사건·정책 변화(유류세, 관세, 전쟁, 파업 등)는 반영하지 않습니다."
+        note      = "과거 흐름만으로 계산한 통계적 예상입니다. 유류세, 관세, 전쟁, 파업 같은 사건과 정책 변화는 반영하지 않습니다."
     }
 }
 
@@ -1755,10 +1755,10 @@ function Get-SafeFreightOutlook {
                 months = $wBase.months; actualDays = $wBase.actualDays; projectedDays = $wBase.projectedDays
                 effective = $cur.effective.ToString("yyyy-MM-dd") }
             base        = [PSCustomObject]@{ avg = $base.avg; diff = $base.diff; verdict = $base.verdict
-                assumption = "남은 기간은 마지막 값($(Format-Won $latest)원/L) 유지 가정"; impact = $baseImpact }
+                assumption = "남은 기간은 마지막 값($(Format-Won $latest)원/L)이 유지된다고 가정"; impact = $baseImpact }
             scenario    = $scenario
             routes      = @($cfg.routes | ForEach-Object { [PSCustomObject]@{ name = $_.name; km = [double]$_.km; rate = [double]$_.rate } })
-            source      = "한국석유공사 오피넷(경유 전국평균) · 국토교통부 안전운임 고시"
+            source      = "한국석유공사 오피넷(경유 전국평균), 국토교통부 안전운임 고시"
         }
     } catch {
         Write-Warning "안전운임 전망 계산 실패: $($_.Exception.Message)"
@@ -2084,7 +2084,7 @@ if ($kcl) {
         currency    = "$"
         # KCl is the feedstock for both KOH (KCl brine electrolysis) and K2CO3 (KOH + CO2),
         # neither of which has a free price series - so this doubles as their cost indicator.
-        note        = "월간 국제가 · KOH/K2CO3 원료"
+        note        = "월간 국제가격(KOH, K2CO3 원료)"
         source      = $kcl.source
         points      = $kcl.points
     }
@@ -2136,7 +2136,7 @@ if ($config.customsSeries -and @($config.customsSeries).Count -gt 0) {
 
 Write-Host "Fetching SCFI..."
 $scfi = Get-SseIndex -indexName "scfi" -itemType "SCFI_T" -id "scfi" `
-    -displayName "컨테이너 운임지수 (SCFI)" -note "상하이 → 세계 주요 13개 항로 수출 컨테이너 운임"
+    -displayName "컨테이너 운임지수 (SCFI)" -note "상하이발 세계 13개 항로 수출 컨테이너 현물 운임"
 
 # Lane-level rates, which the SCFI composite above averages away - it is weighted toward Europe
 # and the Americas, so a move on the lanes this cargo actually uses barely registers in it.
@@ -2166,7 +2166,7 @@ foreach ($f in $fuel) {
     # nobody is looking closely.
     $merged = @(Merge-HistorySeries -store $historyStore -key "fuel-$($f.id)" -points $f.points)
     $f.points = $merged
-    $f.note = "전국 주유소 평균 · 누적 $($merged.Count)일"
+    $f.note = "전국 주유소 평균(누적 $($merged.Count)일)"
 }
 if ($scfi) {
     $scfiPoints = @(
@@ -2366,11 +2366,17 @@ foreach ($c in $priceCards) {
 # rather than here - ordering by hand would mean keeping two lists in step, and they had already
 # drifted: KCl, the feedstock this company converts, was rendering last.
 $orderList = @($config.cardOrder)
+# 카드 구역(config.cardGroups). 정렬 키 = 구역 번호 × 100 + cardOrder 순서. 구역에 없는 카드는 900번대로 맨 뒤.
+$cardGroups = @($config.cardGroups | Where-Object { $_ -and $_.title })
 function Get-CardSort {
     param($id)
     $i = [array]::IndexOf($orderList, [string]$id)
-    # Unlisted ids keep their existing relative position, after everything listed.
-    if ($i -lt 0) { 900 } else { $i }
+    if ($i -lt 0) { $i = 99 }
+    if ($cardGroups.Count -eq 0) { return $(if ($i -eq 99) { 900 } else { $i }) }
+    for ($g = 0; $g -lt $cardGroups.Count; $g++) {
+        if (@($cardGroups[$g].items) -contains [string]$id) { return $g * 100 + $i }
+    }
+    900 + $i
 }
 foreach ($c in $priceCards) {
     $c | Add-Member -NotePropertyName sort -NotePropertyValue (Get-CardSort $c.id) -Force
@@ -2414,9 +2420,9 @@ function Get-OpsSummaryRow {
         $row.trend = "$($sf.base.verdict) 예상"
         $row.tone = if ($sf.base.verdict -eq "인상") { "up" } elseif ($sf.base.verdict -eq "인하") { "down" } else { "flat" }
         $sign = if ($sf.base.diff -gt 0) { "+" } else { "" }
-        $row.note = "산정 $($sf.window.label) 평균 $(Format-Won $sf.base.avg)원, 기준 대비 $sign$(Format-Won $sf.base.diff)원"
+        $row.note = "산정 $($sf.window.label) 평균 $(Format-Won $sf.base.avg)원(기준 대비 $sign$(Format-Won $sf.base.diff)원)"
         if ($sf.scenario -and $sf.scenario.trigger) {
-            $row.note += " · 유류세 인하 종료 시 $($sf.scenario.trigger.applyLabel) $($sf.scenario.trigger.verdict)"
+            $row.note += ", 유류세 인하 종료 시 $($sf.scenario.trigger.applyLabel) $($sf.scenario.trigger.verdict) 예상"
         }
         return [PSCustomObject]$row
     }
@@ -2454,19 +2460,24 @@ function Get-OpsSummaryRow {
 $opsSummary = $null
 if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
     $opsRows = @(@(foreach ($id in @($config.opsSummary.items)) { Get-OpsSummaryRow ([string]$id) }) | Where-Object { $_ })
-    # 한 문장 흐름 요약: 판정별로 지표 이름을 묶는다.
-    $groups = [ordered]@{ "상승 흐름" = @(); "하락 흐름" = @(); "엇갈림" = @(); "보합" = @() }
+    # 판정별로 지표 이름을 묶는다(페이지 요약판 머리, 메일, 보고용 글이 함께 쓴다).
+    $groups = [ordered]@{ up = @(); down = @(); mixed = @(); flat = @() }
+    $groupLabel = @{ up = "상승"; down = "하락"; mixed = "방향 전환"; flat = "보합" }
     foreach ($r in $opsRows) {
         if ($r.trend -eq "수집 실패" -or $r.trend -eq "기록 부족") { continue }
-        $k = switch ($r.tone) { "up" { "상승 흐름" } "down" { "하락 흐름" } "mixed" { "엇갈림" } default { "보합" } }
+        $k = if ($groups.Contains([string]$r.tone)) { [string]$r.tone } else { "flat" }
         $groups[$k] += $r.name
     }
-    $sentence = (@(foreach ($k in $groups.Keys) { if ($groups[$k].Count) { "$k`: $($groups[$k] -join ', ')" } }) -join " / ")
+    $opsGroups = @(foreach ($k in $groups.Keys) {
+        if ($groups[$k].Count) { [PSCustomObject]@{ tone = $k; label = $groupLabel[$k]; names = @($groups[$k]) } }
+    })
+    $sentence = (@($opsGroups | ForEach-Object { "$($_.label): $($_.names -join ', ')" }) -join " / ")
     $opsSummary = [PSCustomObject]@{
         title    = if ($config.opsSummary.title) { $config.opsSummary.title } else { "물류 운영 핵심 지표" }
         rows     = $opsRows
         sentence = $sentence
-        method   = "경향은 최근 4주·13주(월간 지표는 1·3개월) 변화율을 지표마다 평소 변동폭과 비교해 매일 같은 규칙으로 자동 판정한 값입니다. 판단 근거로 쓸 때는 상세 화면의 원자료와 함께 확인하세요."
+        groups   = $opsGroups
+        method   = "경향은 4주와 13주(월간 지표는 1개월과 3개월) 변화율을 지표별 평소 변동폭과 비교해 자동으로 판정합니다."
         dashboardUrl = "https://jhkim0603.github.io/work-dashboard/"
     }
     Write-Host "  핵심 지표 요약 $($opsRows.Count)개 · $sentence"
@@ -2562,7 +2573,9 @@ $pricesJson = ConvertTo-JsonOrNull -InputObject @($priceCards) -Depth 6
 $scfiJson = ConvertTo-JsonOrNull -InputObject $scfi -Depth 4
 $sseLanesJson = ConvertTo-JsonOrNull -InputObject @($sseLanes) -Depth 4
 $laneAboutJson = ConvertTo-JsonOrNull -InputObject $laneAbout -Depth 2
-$sortsJson = ConvertTo-Json -InputObject ([PSCustomObject]@{ scfi = $scfiSort; lanes = $laneSort; safeFreight = $sfSort }) -Depth 2 -Compress
+$sortsJson = ConvertTo-Json -InputObject ([PSCustomObject]@{ scfi = $scfiSort; lanes = $laneSort; safeFreight = $sfSort; fuel = (Get-CardSort "D047"); kcl = (Get-CardSort "kcl") }) -Depth 2 -Compress
+$cardGroupsJson = ConvertTo-Json -InputObject @(@($cardGroups | ForEach-Object { [PSCustomObject]@{ title = [string]$_.title } })) -Depth 3 -Compress
+if (-not $cardGroupsJson -or $cardGroupsJson -eq "null") { $cardGroupsJson = "[]" }
 $safeFreightJson = ConvertTo-JsonOrNull -InputObject $safeFreight -Depth 8
 $hasFuelKey = if ($env:OPINET_API_KEY) { "true" } else { "false" }
 # A failed KCl fetch used to just not append a card, so the page came back one card shorter
@@ -2580,7 +2593,7 @@ $opsSummaryJson = ConvertTo-JsonOrNull -InputObject $opsSummary -Depth 6
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
-$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__SAFE_FREIGHT_JSON__", $safeFreightJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__OPS_SUMMARY_JSON__", $opsSummaryJson).Replace("__NEWS_OUTAGE__", $(if ($newsOutage) { "true" } else { "false" })).Replace("__FETCHED_AT__", $fetchedAt)
+$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__CARD_GROUPS_JSON__", $cardGroupsJson).Replace("__SAFE_FREIGHT_JSON__", $safeFreightJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__OPS_SUMMARY_JSON__", $opsSummaryJson).Replace("__NEWS_OUTAGE__", $(if ($newsOutage) { "true" } else { "false" })).Replace("__FETCHED_AT__", $fetchedAt)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8
@@ -2647,7 +2660,7 @@ $weatherRowsHtml = foreach ($w in $weather) {
     <div style="font-weight:700;font-size:13.5px;color:#0b0b0b;">$($w.displayName)</div>
     <div style="margin-top:5px;">
       <span style="font-size:20px;font-weight:700;color:#0b0b0b;">$($w.tempC)°C</span>
-      <span style="font-size:12px;color:#52514e;">체감 $($w.feelsLikeC)° · 습도 $($w.humidity)% · $($w.desc)</span>
+      <span style="font-size:12px;color:#52514e;">$($w.desc), 체감 $($w.feelsLikeC)°, 습도 $($w.humidity)%</span>
     </div>
     <div style="margin-top:3px;">$curAdvisoryHtml</div>
     <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;">$($dayRows -join "")</table>
@@ -2673,7 +2686,7 @@ if ($holiday -or $foreignSoon.Count -gt 0) {
     }
     $fRows = foreach ($f in $foreignSoon) {
         $dText = if ($f.dDay -le 0) { "진행 중" } else { "D-$($f.dDay)" }
-        "<div style='font-size:12px;color:#3d3b37;margin-top:4px;'><b>$($f.country) $($f.name)</b> $($f.startDate.Substring(5)) ~ $($f.endDate.Substring(5)) ($($f.days)일, $dText) <span style='color:#898781;'>· $($f.impact)</span></div>"
+        "<div style='font-size:12px;color:#3d3b37;margin-top:4px;'><b>$($f.country) $($f.name)</b> $($f.startDate.Substring(5)) ~ $($f.endDate.Substring(5)) ($($f.days)일, $dText) <span style='color:#898781;'>$($f.impact)</span></div>"
     }
     $fHtml = if ($fRows) { "<div style='margin-top:9px;padding-top:8px;border-top:1px solid #cfe0f5;font-size:11px;font-weight:700;color:#6e6c66;'>베트남·중국 휴무 (30일 이내)</div>$($fRows -join '')" } else { "" }
     $holidayHtml = @"
@@ -2699,7 +2712,12 @@ function Format-TyphoonSeverity {
     }
     $parts = @(@($kind, $wind) | Where-Object { $_ })
     if ($parts.Count -eq 0) { return $text }
-    $parts -join " · "
+    $parts -join ", "
+}
+
+function Format-AlertLevel {
+    param($level)
+    switch ([string]$level) { "Red" { "빨강(높음)" } "Orange" { "주황(중간)" } "Green" { "초록(낮음)" } default { [string]$level } }
 }
 
 function Get-TyphoonBadge {
@@ -2720,37 +2738,38 @@ function Get-TyphoonWhere {
     if ($t.crossesScs) { $parts += "남중국해 항로 통과" }
     if ($t.nearestPort) { $parts += "$($t.nearestPort) $($t.portDistanceKm)km" }
     if ($parts.Count -eq 0) { return "$($t.nearestHub) $($t.distanceKm)km" }
-    $parts -join " · "
+    $parts -join ", "
 }
 
 $typhoonHtml = ""
 if ($typhoon) {
     # The old history list was six near-identical grey sentences that outweighed the one line
     # that mattered. As a table the columns line up, so it scans as reference material.
-    $pastRows = foreach ($t in $typhoon.past) {
+    # 최근 3건만 싣는다. 여섯 줄을 다 실으면 오늘 알아야 할 줄보다 지난 기록이 더 길었다.
+    $pastRows = foreach ($t in @($typhoon.past | Select-Object -First 3)) {
         @"
 <tr>
   <td style="padding:3px 8px 3px 0;white-space:nowrap;">$(Get-TyphoonBadge $t.impact)</td>
   <td style="padding:3px 8px 3px 0;font-weight:600;color:#3d3b37;white-space:nowrap;">$($t.name)</td>
   <td style="padding:3px 8px 3px 0;color:#0b0b0b;font-weight:600;white-space:nowrap;">$($t.daysAgo)일 전</td>
-  <td style="padding:3px 0;color:#6e6c66;">$(Format-DateOnly $t.toDate) 소멸 · $(Get-TyphoonWhere $t)</td>
+  <td style="padding:3px 0;color:#6e6c66;">$(Format-DateOnly $t.toDate) 소멸, $(Get-TyphoonWhere $t)</td>
 </tr>
 "@
     }
     $pastBlockHtml = if ($pastRows) {
         @"
-<div style="margin-top:12px;padding-top:10px;border-top:1px solid #e1e0d9;font-size:11px;color:#898781;">최근 발생 이력 · 다음 시기 가늠용</div>
+<div style="margin-top:12px;padding-top:10px;border-top:1px solid #e1e0d9;font-size:11px;color:#898781;">최근 발생 이력</div>
   <table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-top:4px;">$($pastRows -join "")</table>
 "@
     } else { "" }
 
     # 직접/항로 is the whole point of this watch, but the email never said what they meant -
     # the page carries that explanation and the mail was read on its own.
-    $legendHtml = "<div style='margin-top:10px;font-size:11px;color:#898781;line-height:1.6;'><b>직접</b> = 베트남 상륙 또는 하노이/호치민 500km 이내 · <b>항로</b> = 남중국해 항로 통과 또는 환적항(홍콩·선전/가오슝/상하이·닝보) 400km 이내. 항로 태풍은 베트남에 상륙하지 않아도 선적을 밀어냅니다.</div>"
+    $legendHtml = "<div style='margin-top:10px;font-size:11px;color:#898781;line-height:1.6;'><b>직접</b>: 베트남 상륙 또는 하노이, 호치민 500km 이내입니다. <b>항로</b>: 남중국해 항로 통과 또는 환적항(홍콩·선전, 가오슝, 상하이·닝보) 400km 이내입니다. 베트남에 상륙하지 않은 태풍도 선적을 늦출 수 있습니다.</div>"
 
     if ($typhoon.active.Count -gt 0) {
         $anyDirect = @($typhoon.active | Where-Object { $_.impact -eq "direct" }).Count -gt 0
-        $headline = if ($anyDirect) { "태풍 직접 영향권 — 베트남 부자재 입고 지연 주의" } else { "항로상 태풍 활동 중 — 베트남 부자재 입고 지연 가능성" }
+        $headline = if ($anyDirect) { "베트남 태풍 직접 영향권, 부자재 입고 지연 주의" } else { "항로상 태풍 활동 중, 베트남 부자재 입고 지연 가능" }
         $activeRows = foreach ($t in $typhoon.active) {
             $reportLink = if ($t.reportUrl) { " <a href='$($t.reportUrl)' style='color:#2a78d6;text-decoration:none;font-size:11px;'>GDACS 리포트 →</a>" } else { "" }
             # The mail is where this warning gets acted on, and the page's tooltip cannot be
@@ -2758,7 +2777,7 @@ if ($typhoon) {
             $trackWarn = if ($t.trackOk -eq $false) { " <span style='font-size:10.5px;font-weight:700;color:#8a5a00;background:#fdf3dd;padding:1px 5px;'>경로 미확인</span>" } else { "" }
             @"
 <div style="margin-top:9px;padding:9px 11px;background:#ffffff;border:1px solid #f3caca;">
-      <div>$(Get-TyphoonBadge $t.impact) <b style="font-size:14px;color:#0b0b0b;">$($t.name)</b> <span style="font-size:11px;color:#898781;">경보등급 $($t.alertLevel)</span></div>
+      <div>$(Get-TyphoonBadge $t.impact) <b style="font-size:14px;color:#0b0b0b;">$($t.name)</b> <span style="font-size:11px;color:#898781;">GDACS 경보 $(Format-AlertLevel $t.alertLevel)</span></div>
       <div style="font-size:12.5px;color:#0b0b0b;font-weight:600;margin-top:4px;">$(Get-TyphoonWhere $t)$trackWarn</div>
       <div style="font-size:11.5px;color:#6e6c66;margin-top:2px;">$(Format-TyphoonSeverity $t.severityText)$reportLink</div>
     </div>
@@ -2775,7 +2794,7 @@ if ($typhoon) {
     } elseif ($pastRows) {
         $typhoonHtml = @"
 <div style="margin:16px 0;padding:13px 15px;background:#f1f6f1;border:1px solid #cfe3cf;border-left:4px solid #0a6b0a;">
-  <div style="font-weight:700;font-size:14px;color:#0a6b0a;">✓ 베트남 인근 활성 태풍 없음 · 입고 일정 영향 없음</div>
+  <div style="font-weight:700;font-size:14px;color:#0a6b0a;">✓ 베트남 인근 활성 태풍 없음, 입고 일정 영향 없음</div>
   $legendHtml
   $pastBlockHtml
 </div>
@@ -2783,7 +2802,7 @@ if ($typhoon) {
     } else {
         $typhoonHtml = @"
 <div style="margin:16px 0;padding:13px 15px;background:#f1f6f1;border:1px solid #cfe3cf;border-left:4px solid #0a6b0a;">
-  <div style="font-weight:700;font-size:14px;color:#0a6b0a;">✓ 베트남 인근 태풍 활동 없음 · 부자재 입고 일정 영향 없음</div>
+  <div style="font-weight:700;font-size:14px;color:#0a6b0a;">✓ 베트남 인근 태풍 활동 없음, 부자재 입고 일정 영향 없음</div>
 </div>
 "@
     }
@@ -2794,8 +2813,8 @@ if ($typhoon) {
     # "확인 못 함"은 "없음"과 반드시 달라 보여야 한다.
     $typhoonHtml = @"
 <div style="margin:16px 0;padding:13px 15px;background:#fdf6e7;border:1px solid #f0dcb4;border-left:4px solid #a15c00;">
-  <div style="font-weight:700;font-size:14px;color:#a15c00;">⚠ 오늘 태풍 정보를 가져오지 못했습니다 — 태풍이 없다는 뜻이 아닙니다</div>
-  <div style="font-size:12px;color:#52514e;margin-top:5px;">GDACS 가 응답하지 않았습니다. 다음 실행에서 자동 재시도합니다. 급하면 <a href="https://www.gdacs.org/" style="color:#2a78d6;">GDACS</a> 에서 직접 확인하세요.</div>
+  <div style="font-weight:700;font-size:14px;color:#a15c00;">⚠ 오늘은 태풍 정보를 받지 못했습니다. 태풍이 없다는 뜻은 아닙니다.</div>
+  <div style="font-size:12px;color:#52514e;margin-top:5px;">GDACS 사이트가 응답하지 않았습니다. 다음 실행 때 자동으로 다시 조회합니다. 급한 경우 <a href="https://www.gdacs.org/" style="color:#2a78d6;">GDACS</a>에서 직접 확인하시기 바랍니다.</div>
 </div>
 "@
 }
@@ -2903,7 +2922,7 @@ function Get-PriceChartHtml {
     # Printing the band beside the chart is what stops the shape overstating the move.
     @"
 <div style="margin-top:9px;">$bars</div>
-    <div style="font-size:11px;color:#898781;margin-top:4px;">차트 구간 $currency$lo ~ $currency$hi · $($pts[0].label) ~ $($pts[-1].label) ($($pts.Count)개 시점)</div>
+    <div style="font-size:11px;color:#898781;margin-top:4px;">차트 범위 $currency$lo~$currency$hi ($($pts[0].label)~$($pts[-1].label), $($pts.Count)건)</div>
 "@
 }
 
@@ -2938,11 +2957,11 @@ $priceRowsHtml = foreach ($c in $priceCards) {
       <span style="font-size:20px;font-weight:700;color:#0b0b0b;">$($c.currency)$(Format-PriceValue $latest.value)</span>
       <span style="font-size:12px;color:#898781;">$($c.unit)</span>
       <span style="font-size:13px;margin-left:5px;">$($change.html)</span>
-      <span style="font-size:11px;color:#898781;">· $($latest.label) 기준</span>
+      <span style="font-size:11px;color:#898781;">$($latest.label) 기준</span>
     </div>
     $targetHtml
     $chartHtml
-    <div style="font-size:11px;color:#898781;margin-top:7px;">$($c.note) · $($c.source)</div>
+    <div style="font-size:11px;color:#898781;margin-top:7px;">출처: $($c.source)</div>
   </td>
 </tr>
 "@ }
@@ -2961,10 +2980,10 @@ if ($scfi) {
     <div style="margin-top:5px;">
       <span style="font-size:20px;font-weight:700;color:#0b0b0b;">$(Format-PriceValue $scfi.current)</span>
       <span style="font-size:13px;margin-left:5px;">$($scfiChange.html)</span>
-      <span style="font-size:11px;color:#898781;">· $($scfi.currentDate) 기준, 전주 $(Format-PriceValue $scfi.previous)</span>
+      <span style="font-size:11px;color:#898781;">$($scfi.currentDate) 기준(전주 $(Format-PriceValue $scfi.previous))</span>
     </div>
     $scfiChartHtml
-    <div style="font-size:11px;color:#898781;margin-top:7px;">$($scfi.note) · $($scfi.source)</div>
+    <div style="font-size:11px;color:#898781;margin-top:7px;">출처: $($scfi.source)(주간 발표)</div>
   </td>
 </tr>
 "@
@@ -2994,9 +3013,9 @@ if ($sseLanes.Count -gt 0) {
 <tr>
   <td style="padding:14px 16px;border-bottom:1px solid #e1e0d9;">
     <div style="font-weight:700;font-size:13.5px;color:#0b0b0b;">CCFI 항로별 운임지수</div>
-    <div style="font-size:11px;color:#898781;margin-top:2px;">$($sseLanes[0].currentDate) 기준 · 전주 대비</div>
+    <div style="font-size:11px;color:#898781;margin-top:2px;">$($sseLanes[0].currentDate) 기준(전주 대비)</div>
     <table style="width:100%;border-collapse:collapse;margin-top:7px;">$($laneRows -join "")</table>
-    <div style="font-size:11px;color:#898781;margin-top:7px;">중국발 수출 컨테이너 운임(계약운임 포함) · Shanghai Shipping Exchange</div>
+    <div style="font-size:11px;color:#898781;margin-top:7px;">출처: Shanghai Shipping Exchange(주간 발표)</div>
   </td>
 </tr>
 "@
@@ -3009,30 +3028,29 @@ if ($safeFreight) {
     $vColor = @{ "인상" = "#b3221f"; "인하" = "#0a6b0a"; "동결" = "#6e6c66" }
     function Get-SignedWon { param($v) $d = [double]$v; $s = if ($d -gt 0) { "+" } elseif ($d -lt 0) { "-" } else { "" }; "$s$(Format-Won ([math]::Abs($d)))" }
     $estTag = if ($sf.baseProvisional) { ", 잠정" } else { "" }
-    $baseLine = "<b style='color:$($vColor[$sf.base.verdict]);'>$($sf.base.verdict) 예상</b> (적용 기간 $($sf.window.applyLabel)) · 산정 기간 $($sf.window.label) 평균 $(Format-Won $sf.base.avg)원, 기준 $(Format-Won $sf.baseFuel)원($($sf.baseWindow)$estTag) 대비 $(Get-SignedWon $sf.base.diff)원 (±$(Format-Won $sf.threshold)원 기준)"
+    $baseLine = "<b style='color:$($vColor[$sf.base.verdict]);'>$($sf.window.applyLabel) 적용분 $($sf.base.verdict) 예상</b><br>산정 기간 $($sf.window.label) 평균 $(Format-Won $sf.base.avg)원, 기준 $(Format-Won $sf.baseFuel)원($($sf.baseWindow)$estTag) 대비 $(Get-SignedWon $sf.base.diff)원(조정 기준 ±$(Format-Won $sf.threshold)원)"
     if ($sf.pending -and $sf.applied) {
         $pd = [DateTime]$sf.pending.effective
-        $baseLine = "현재 적용 $(Format-Won $sf.applied.fuel)원($($sf.applied.window) 산정) → $($pd.Month)/$($pd.Day)부터 $(Format-Won $sf.pending.fuel)원 $($sf.pending.verdict) 적용 예정<br>" + $baseLine
+        $baseLine = "$($pd.Month)/$($pd.Day)부터 $(Format-Won $sf.pending.fuel)원 기준 $($sf.pending.verdict) 운임 적용 예정(현재 $(Format-Won $sf.applied.fuel)원 기준)<br>" + $baseLine
     }
     $scLine = ""
     $impactRows = @()
     $impactTitle = ""
     if ($sf.base.verdict -ne "동결") {
         $impactRows = @($sf.base.impact)
-        $impactTitle = "적용 기간 $($sf.window.applyLabel) 예상 운임"
+        $impactTitle = "$($sf.window.applyLabel) 적용 예상 운임(20FT 왕복)"
     }
     if ($sf.scenario) {
         $s = $sf.scenario
-        $scLine = "$($s.label)(D-$($s.dDay)): $($s.current.window) $(Format-Won $s.current.avg)원($(Get-SignedWon $s.current.diff)원, $($s.current.verdict))"
-        if ($s.current.verdict -eq "동결") {
-            $scLine += " → $($s.next.window) $(Format-Won $s.next.avg)원($(Get-SignedWon $s.next.diff)원, $($s.next.verdict))"
-        }
+        $scLine = "$($s.label)(D-$($s.dDay), 경유 +$(Format-Won $s.won)원 가정): "
         if ($s.trigger) {
-            $scLine += " → <b style='color:$($vColor[$s.trigger.verdict]);'>$($s.trigger.applyLabel) 적용분 $($s.trigger.verdict) 예상</b>"
+            $scLine += "산정 $($s.trigger.window) 평균이 기준 대비 $(Get-SignedWon $s.trigger.diff)원이 되어 <b style='color:$($vColor[$s.trigger.verdict]);'>$($s.trigger.applyLabel) 적용분 $($s.trigger.verdict) 예상</b>"
             if ($impactRows.Count -eq 0) {
                 $impactRows = @($s.trigger.impact)
-                $impactTitle = "시나리오: 적용 기간 $($s.trigger.applyLabel) 예상 운임"
+                $impactTitle = "유류세 인하 종료 시 $($s.trigger.applyLabel) 적용 예상 운임(20FT 왕복)"
             }
+        } else {
+            $scLine += "산정 $($s.current.window) $(Get-SignedWon $s.current.diff)원, $($s.next.window) $(Get-SignedWon $s.next.diff)원으로 조정 기준 미만"
         }
     }
     $impactHtml = ""
@@ -3051,7 +3069,7 @@ if ($safeFreight) {
     <div style="font-size:12.5px;color:#0b0b0b;margin-top:5px;">$baseLine</div>
     $scHtml
     $impactHtml
-    <div style="font-size:11px;color:#898781;margin-top:7px;">$($sf.rateBasis). 운임 변동은 왕복거리 ÷ 연비 $($sf.kmPerLiter)km/L × 유가 변동으로 계산한 근사치입니다.</div>
+    <div style="font-size:11px;color:#898781;margin-top:7px;">기준 운임: $($sf.rateBasis). 운임 변동은 왕복거리 ÷ 연비 $($sf.kmPerLiter)km/L × 유가 변동으로 계산한 근사치입니다.</div>
   </td>
 </tr>
 "@
@@ -3064,7 +3082,6 @@ $priceSectionRows += @($priceRowsHtml)
 if ($scfiHtml) { $priceSectionRows += [PSCustomObject]@{ sort = $scfiSort; html = $scfiHtml } }
 if ($laneHtml) { $priceSectionRows += [PSCustomObject]@{ sort = $laneSort; html = $laneHtml } }
 if ($sfHtml) { $priceSectionRows += [PSCustomObject]@{ sort = $sfSort; html = $sfHtml } }
-$priceSectionHtml = (@($priceSectionRows | Sort-Object sort | ForEach-Object { $_.html }) -join "`n")
 
 # Collection failures go near the top of the mail, above the news. Someone maintaining this
 # needs to know a source went quiet on the day it happens - finding out weeks later, from a
@@ -3075,13 +3092,13 @@ if ($missingCards.Count -gt 0) {
         $last = if ($null -ne $m.lastValue) {
             "<span style='color:#6e6c66;'>마지막 수집값 $($m.lastValue)$(if ($m.lastLabel) { " ($($m.lastLabel) 기준)" })</span>"
         } else { "<span style='color:#6e6c66;'>이전 수집값 없음</span>" }
-        "<div style='margin-top:6px;font-size:12.5px;color:#0b0b0b;'>· <b>$($m.displayName)</b> — $last</div>"
+        "<div style='margin-top:6px;font-size:12.5px;color:#0b0b0b;'>· <b>$($m.displayName)</b>: $last</div>"
     }
     $failureHtml = @"
 <div style="margin:16px 0;padding:13px 15px;background:#fdf6e7;border:1px solid #f0dcb4;border-radius:8px;">
   <div style="font-size:12px;font-weight:700;color:#a15c00;">⚠ 오늘 수집하지 못한 항목 $($missingCards.Count)건</div>
   $($rows -join "")
-  <div style="font-size:10.5px;color:#898781;margin-top:9px;">출처가 응답하지 않았거나 형식이 바뀌었을 수 있습니다. 다음 실행에서 자동 재시도하며, 계속 반복되면 점검이 필요합니다.</div>
+  <div style="font-size:10.5px;color:#898781;margin-top:9px;">자료 제공 사이트가 응답하지 않았거나 형식이 바뀌었을 수 있습니다. 다음 실행 때 자동으로 다시 조회합니다. 같은 상태가 계속되면 점검이 필요합니다.</div>
 </div>
 "@
 }
@@ -3099,14 +3116,14 @@ if ($highlights.Count -gt 0) {
         $chip = if ($h.reason) {
             "<span style='display:inline-block;font-size:10px;font-weight:700;background:#b3221f;color:#ffffff;padding:1px 7px;border-radius:4px;margin-right:6px;'>$($h.reason)</span>"
         } else { "" }
-        $meta = Get-HtmlText ((@($h.source, $h.date) | Where-Object { $_ }) -join " · ")
+        $meta = Get-HtmlText ((@($h.source, $h.date) | Where-Object { $_ }) -join ", ")
         "<div style='margin-top:8px;'>$chip<a href='$(Get-HtmlText $h.link)' style='font-size:13px;font-weight:700;color:#0b0b0b;text-decoration:none;'>$(Get-HtmlText $h.title)</a><div style='font-size:11px;color:#898781;margin-top:2px;'>$meta</div></div>"
     }
     $highlightHtml = @"
 <div style="margin:16px 0;padding:13px 15px;background:#fdeeee;border:1px solid #f3caca;border-radius:8px;">
   <div style="font-size:12px;font-weight:700;color:#b3221f;">오늘 눈여겨볼 기사 $($highlights.Count)건</div>
   $($rows -join "")
-  <div style="font-size:10.5px;color:#898781;margin-top:9px;">제목 키워드로 매긴 중요도입니다 — 기사를 읽고 판단한 것이 아니니 참고로만 보세요.</div>
+  <div style="font-size:10.5px;color:#898781;margin-top:9px;">중요도는 기사 제목의 단어로 자동 분류한 결과입니다. 참고용으로 보시기 바랍니다.</div>
 </div>
 "@
 }
@@ -3115,7 +3132,7 @@ $materialsHtml = foreach ($m in $materials) {
     $newsLines = foreach ($n in ($m.news | Select-Object -First 3)) {
         # Outlet and date were already fetched but thrown away here, leaving three unattributed
         # blue lines - knowing who ran it and when is most of what makes a headline worth trusting.
-        $meta = Get-HtmlText ((@($n.source, $n.date) | Where-Object { $_ }) -join " · ")
+        $meta = Get-HtmlText ((@($n.source, $n.date) | Where-Object { $_ }) -join ", ")
         $nTitle = Get-HtmlText $n.title
         $nLink = Get-HtmlText $n.link
         $metaHtml = if ($meta) { "<div style='font-size:11px;color:#898781;margin-top:1px;'>$meta</div>" } else { "" }
@@ -3176,12 +3193,12 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
     $opsHtml = @"
 <div style="margin:16px 0;padding:13px 15px;background:#ffffff;border:1px solid #e1e0d9;border-radius:8px;">
   <div style="font-size:12px;font-weight:700;color:#0b0b0b;">$($opsSummary.title)</div>
-  <div style="font-size:12px;color:#52514e;margin-top:4px;">$($opsSummary.sentence)</div>
+  <div style="font-size:12px;color:#52514e;margin-top:4px;line-height:1.6;">$((@($opsSummary.groups | ForEach-Object { "<b><font color=$($toneColor[$_.tone])>$($_.label)</font></b> $($_.names -join ', ')" })) -join '<br>')</div>
   <table width="100%" cellpadding=4 cellspacing=0 style="margin-top:6px;font-size:12.5px;color:#0b0b0b;">
     <tr style="font-size:10.5px;color:#898781;"><td>지표</td><td align=right>현재</td><td align=right>단기</td><td align=right>중기</td><td align=right>경향</td></tr>
     $($opsRowHtml -join "")
   </table>
-  <div style="font-size:10.5px;color:#898781;margin-top:8px;">단기 4주·중기 13주(월간 지표는 1·3개월). $($opsSummary.method) 경향 아래 범위는 과거 예측 오차로 낸 80% 예상 범위입니다(사건·정책 미반영).</div>
+  <div style="font-size:10.5px;color:#898781;margin-top:8px;">단기는 4주, 중기는 13주입니다(월간 지표는 1개월, 3개월). $($opsSummary.method) 경향 아래 숫자는 4주(1개월) 후 예상 범위이며 사건과 정책 변화는 반영하지 않습니다.</div>
 </div>
 "@
 }
@@ -3203,6 +3220,13 @@ function Get-EmailSection {
   </table>
 "@
 }
+
+# 페이지와 같은 구역(운임·물류비 / 환율·국제유가 / 원재료·전력)으로 나눠 싣는다. 정렬 키의 백의 자리가 구역 번호다.
+$priceSectionHtml = (@($priceSectionRows | Sort-Object sort | Group-Object { [math]::Floor([double]$_.sort / 100) } | ForEach-Object {
+    $gi = [int]$_.Name
+    $gt = if ($gi -lt $cardGroups.Count) { [string]$cardGroups[$gi].title } elseif ($cardGroups.Count) { "기타 지표" } else { "원자재·물류 가격" }
+    Get-EmailSection $gt (@($_.Group | ForEach-Object { $_.html }) -join "`n")
+}) -join "`n")
 
 $dashboardUrl = "https://jhkim0603.github.io/work-dashboard/"
 $updateUrl = "https://github.com/JHKim0603/work-dashboard/actions/workflows/update-dashboard.yml"
@@ -3234,11 +3258,11 @@ $emailHtml = @"
   $opsHtml
   $highlightHtml
   $typhoonHtml
-  $(Get-EmailSection "날씨 · 온습도" ($weatherRowsHtml -join "`n"))
-  $(Get-EmailSection "원자재 · 물류 가격" $priceSectionHtml)
+  $(Get-EmailSection "날씨" ($weatherRowsHtml -join "`n"))
+  $priceSectionHtml
   $(Get-EmailSection "수급 뉴스" ($materialsHtml -join "`n"))
   <div style="margin-top:16px;font-size:11px;color:#898781;line-height:1.6;">
-    날씨: Open-Meteo · 공휴일: Nager.Date · 베트남·중국 휴무: Google 캘린더 · 태풍: GDACS · 유가/목재: Yahoo Finance · KCl: World Bank · 운임지수: Shanghai Shipping Exchange · 뉴스: Google 뉴스. 업무 참고용 요약입니다.<br>
+    출처: 날씨 Open-Meteo, 공휴일 Nager.Date, 해외 휴무 Google 캘린더, 태풍 GDACS, 환율과 국제유가 Yahoo Finance, 국내 유가 오피넷, KCl World Bank, 운임지수 Shanghai Shipping Exchange, 뉴스 Google 뉴스. 업무 참고용 요약입니다.<br>
     자세한 내용은 <a href="$dashboardUrl" style="color:#2a78d6;">대시보드</a>에서 확인하세요.
   </div>
 </div>
@@ -3265,7 +3289,7 @@ foreach ($w in $weather) {
     # 오늘 특보만 제목에 올린다. 예보 특보까지 넣으면 한여름엔 거의 매일 붙어서 신호가 죽는다.
     foreach ($a in @($w.advisories)) {
         if (-not $a) { continue }
-        $short = ($a.text -split ' ·')[0]
+        $short = ($a.text -split '\(')[0]
         $pri = if ($a.tone -eq "danger") { 95 } else { 90 }
         [void]$wdHighlights.Add([PSCustomObject]@{ text = "$($w.displayName) $short"; priority = $pri })
     }
