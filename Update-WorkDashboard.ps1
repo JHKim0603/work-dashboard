@@ -971,7 +971,12 @@ function Get-EcosSeries {
             $to = $from + $pageSize - 1
             $uri = "https://ecos.bok.or.kr/api/StatisticSearch/$([uri]::EscapeDataString($key))/json/kr/$from/$to/" +
                    "$($cfg.StatCode)/M/$startStr/$endStr/$($cfg.ItemCode)"
-            $resp = Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 30
+            # 간헐적 시간 초과(10월 정상 실행 12회 중 2회)라 한 번 더 시도한다.
+            $resp = $null
+            for ($try = 1; $try -le 2 -and -not $resp; $try++) {
+                try { $resp = Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 30 }
+                catch { if ($try -eq 2) { throw }; Start-Sleep -Seconds 3 }
+            }
 
             if ($resp.RESULT) { throw "ECOS: $($resp.RESULT.CODE) $($resp.RESULT.MESSAGE)" }
             $page = @($resp.StatisticSearch.row)
@@ -1112,7 +1117,12 @@ function Get-SseIndex {
         $sseHeaders = $headers.Clone()
         $sseHeaders["Referer"] = "https://en.sse.net.cn/indices/scfinew.jsp"
         $sseHeaders["X-Requested-With"] = "XMLHttpRequest"
-        $resp = Invoke-RestMethod -Uri "https://en.sse.net.cn/currentIndex?indexName=$indexName" -Headers $sseHeaders
+        # CCFI 항로가 간헐적으로 시간 초과·SSL 오류로 빠져(10월 12회 중 3회) 한 번 더 시도한다.
+        $resp = $null
+        for ($try = 1; $try -le 2 -and -not $resp; $try++) {
+            try { $resp = Invoke-RestMethod -Uri "https://en.sse.net.cn/currentIndex?indexName=$indexName" -Headers $sseHeaders }
+            catch { if ($try -eq 2) { throw }; Start-Sleep -Seconds 3 }
+        }
 
         $data = $resp.data
         if (-not $data) { throw "no data node in response" }
@@ -1253,6 +1263,123 @@ function Get-DomesticFuelPrices {
     } catch {
         Write-Warning "Opinet fuel price fetch failed: $($_.Exception.Message)"
         $null
+    }
+}
+
+# --- 경향성 분석 ---------------------------------------------------------------------------
+# 물류팀 운영 참고지표의 '추이와 경향성 분석' 부분. 카드마다 숫자와 차트는 있었지만, 지금이 오름세인지
+# 내림세인지, 1년 중 어디쯤인지는 보는 사람이 차트를 보고 판단해야 했다. 판단 근거로 쓰려면 같은
+# 규칙으로 매일 똑같이 매겨진 판정이 있어야 하므로, 간단하고 설명 가능한 규칙으로 계산한다.
+#
+#   짧은 창(주간·일간 계열 4주, 월간 계열 1개월)과 긴 창(13주 / 3개월) 변화율을,
+#   그 지표의 평소 흔들림(과거 짧은 창 변화율 표준편차의 절반, 최소 0.5%)과 비교한다.
+#   환율은 한 달에 1~2%, 벌크 운임 ETF 는 10% 넘게 움직이므로 같은 2% 를 쓰면 한쪽은 늘 보합,
+#   다른 쪽은 늘 급변이 된다. 긴 창 기준은 짧은 창 기준 × √(긴 창/짧은 창).
+#   1년(기록이 짧으면 관측 기간) 안에서 지금 값이 몇 번째인지로 위치를 붙인다.
+#
+# 연간 계열(산업용 전기요금)은 정책으로 계단식으로 바뀌어 경향 판정이 맞지 않아 뺀다.
+function ConvertTo-LabelDate {
+    param($label)
+    $s = [string]$label
+    $ci = [Globalization.CultureInfo]::InvariantCulture
+    if ($s -match '^\d{4}-\d{2}-\d{2}') { return [DateTime]::ParseExact($s.Substring(0, 10), "yyyy-MM-dd", $ci) }
+    if ($s -match '^\d{4}-\d{2}$') { return [DateTime]::ParseExact("$s-01", "yyyy-MM-dd", $ci) }
+    $null
+}
+
+function Find-PointBefore {
+    # rows[0..idx-1] 가운데 rows[idx] 보다 $days 앞에 가장 가까운 점. 창의 1/3 넘게 벗어나면 없음.
+    param($rows, [int]$idx, [double]$days)
+    if ($idx -lt 1) { return $null }
+    $target = $rows[$idx].d.AddDays(-$days)
+    $lo = 0; $hi = $idx - 1
+    while ($lo -lt $hi) {
+        $mid = [int][math]::Floor(($lo + $hi) / 2)
+        if ($rows[$mid].d -lt $target) { $lo = $mid + 1 } else { $hi = $mid }
+    }
+    $best = $null; $bestDist = [double]::MaxValue
+    foreach ($j in @(($lo - 1), $lo)) {
+        if ($j -lt 0 -or $j -ge $idx) { continue }
+        $dist = [math]::Abs(($rows[$j].d - $target).TotalDays)
+        if ($dist -lt $bestDist) { $bestDist = $dist; $best = $rows[$j] }
+    }
+    if ($null -eq $best -or $bestDist -gt $days / 3) { return $null }
+    $best
+}
+
+function Get-TrendStats {
+    param($points)
+    $rows = @(foreach ($p in @($points)) {
+        if ($null -eq $p -or $null -eq $p.value) { continue }
+        $d = ConvertTo-LabelDate $p.label
+        if ($d) { [PSCustomObject]@{ d = $d; v = [double]$p.value } }
+    })
+    $rows = @($rows | Sort-Object d)
+    if ($rows.Count -lt 3) { return $null }
+    $gaps = @(for ($i = 1; $i -lt $rows.Count; $i++) { ($rows[$i].d - $rows[$i - 1].d).TotalDays }) | Sort-Object
+    $gap = @($gaps)[[int][math]::Floor(@($gaps).Count / 2)]
+    if ($gap -ge 200) { return $null }
+    $monthly = $gap -ge 25
+    $sDays = if ($monthly) { 31 } else { 28 }
+    $lDays = if ($monthly) { 92 } else { 91 }
+
+    $n = $rows.Count - 1
+    $last = $rows[$n]
+    $chg = {
+        param($from)
+        if ($null -eq $from -or $from.v -eq 0) { return $null }
+        [math]::Round(($last.v - $from.v) / [math]::Abs($from.v) * 100, 1)
+    }
+    $chS = & $chg (Find-PointBefore $rows $n $sDays)
+    $chL = & $chg (Find-PointBefore $rows $n $lDays)
+
+    $hist = @(for ($i = 1; $i -le $n; $i++) {
+        $f = Find-PointBefore $rows $i $sDays
+        if ($f -and $f.v -ne 0) { ($rows[$i].v - $f.v) / [math]::Abs($f.v) * 100 }
+    })
+    $sd = $null
+    if ($hist.Count -ge 6) {
+        $mean = ($hist | Measure-Object -Average).Average
+        $sd = [math]::Sqrt((($hist | ForEach-Object { ($_ - $mean) * ($_ - $mean) }) | Measure-Object -Sum).Sum / ($hist.Count - 1))
+    }
+    $thrS = if ($sd) { [math]::Max(0.5, 0.5 * $sd) } else { 2.0 }
+    $thrL = [math]::Max(1.0, $thrS * [math]::Sqrt($lDays / $sDays))
+
+    $upS = ($null -ne $chS) -and ($chS -ge $thrS); $dnS = ($null -ne $chS) -and ($chS -le -$thrS)
+    $upL = ($null -ne $chL) -and ($chL -ge $thrL); $dnL = ($null -ne $chL) -and ($chL -le -$thrL)
+    if ($upL -and $dnS)     { $trend = "상승 후 조정"; $tone = "mixed" }
+    elseif ($dnL -and $upS) { $trend = "하락 후 반등"; $tone = "mixed" }
+    elseif ($upL -and $upS) { $trend = "상승 추세"; $tone = "up" }
+    elseif ($dnL -and $dnS) { $trend = "하락 추세"; $tone = "down" }
+    elseif ($upL -or $upS)  { $trend = "상승"; $tone = "up" }
+    elseif ($dnL -or $dnS)  { $trend = "하락"; $tone = "down" }
+    else                    { $trend = "보합"; $tone = "flat" }
+
+    $yr = @($rows | Where-Object { $_.d -ge $last.d.AddDays(-365) })
+    $span = ($last.d - $yr[0].d).TotalDays
+    $rangeName = if ($span -ge 300) { "1년" } else { "관측 $([int]$span)일" }
+    $vals = @($yr | ForEach-Object { $_.v })
+    $max = ($vals | Measure-Object -Maximum).Maximum
+    $min = ($vals | Measure-Object -Minimum).Minimum
+    $pctile = [int][math]::Round(@($vals | Where-Object { $_ -le $last.v }).Count / $vals.Count * 100)
+    $band = if ($vals.Count -lt 3 -or $max -eq $min) { "중간" }
+            elseif ($last.v -ge $max) { "최고" } elseif ($last.v -le $min) { "최저" }
+            elseif ($pctile -ge 80) { "상단" } elseif ($pctile -ge 60) { "중상단" }
+            elseif ($pctile -ge 40) { "중간" } elseif ($pctile -ge 20) { "중하단" } else { "하단" }
+
+    [PSCustomObject]@{
+        shortLabel = if ($monthly) { "1개월" } else { "4주" }
+        shortPct   = $chS
+        longLabel  = if ($monthly) { "3개월" } else { "13주" }
+        longPct    = $chL
+        normalMove = [math]::Round($thrS * 2, 1)    # 평소 짧은 창 변동폭(표준편차)
+        trend      = $trend
+        tone       = $tone
+        rangeName  = $rangeName
+        percentile = $pctile
+        band       = $band
+        position   = "$rangeName $band"
+        points     = $rows.Count
     }
 }
 
@@ -1592,6 +1719,11 @@ function Get-NewsImportance {
 # 오늘 아낀 시간을 503 재시도로 도로 잃는다.
 Add-Type -AssemblyName System.Net.Http
 $script:prefetched = @{}
+# 구글 뉴스 차단기. 구글이 러너 IP 를 막은 날은 쿼리마다 세 번씩 기다리느라 실행이 16분까지 늘고
+# (10-18), 결국 뉴스 0건 점검에 걸려 가격·날씨·태풍까지 그날 배포가 멈췄다(10-18, 10-25).
+$script:newsThrottleFails = 0     # 503/429 로 끝내 실패한 쿼리 수
+$script:newsConsecThrottle = 0    # 연달아 막힌 쿼리 수
+$script:newsBreaker = $false      # true 면 남은 쿼리는 네트워크를 타지 않는다
 
 function Invoke-Prefetch {
     param([string[]]$urls, [int]$concurrency = 3, [int]$timeoutSec = 25, [int]$pauseMs = 300)
@@ -1650,6 +1782,8 @@ function Get-NewsHeadlines {
     # 호출한 쪽이 요청 사이 쉬는 시간을 건너뛸 수 있게, 네트워크를 탔는지 남겨 둔다.
     $content = Get-Prefetched $uri
     $script:newsFromPrefetch = [bool]$content
+    # 연달아 세 쿼리가 막혔으면 남은 검색은 기다리지 않고 건너뛴다(호출한 쪽의 쉬는 시간도 건너뛰게 한다).
+    if (-not $content -and $script:newsBreaker) { $script:newsFromPrefetch = $true; return @() }
     # 러너 IP 에서 Google 이 503 을 뿌리는 구간이 있다. 2026-09-10 에만 두 번, 모든 쿼리가 통째로
     # 503 이었고 그때마다 "수급 뉴스 0건"으로 생성물 점검이 배포와 메일을 막았다. 점검은 제 일을
     # 한 것이지만, 한 번 튕겼다고 그날 요약을 통째로 포기할 이유는 없다 — 재시도가 없어서 503
@@ -1664,12 +1798,21 @@ function Get-NewsHeadlines {
             $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
             # 스로틀이 아닌 오류는 다시 물어도 나아지지 않는다.
             if (($status -ne 503 -and $status -ne 429) -or $try -eq 3) {
+                if ($status -eq 503 -or $status -eq 429) {
+                    $script:newsThrottleFails++
+                    $script:newsConsecThrottle++
+                    if ($script:newsConsecThrottle -ge 3 -and -not $script:newsBreaker) {
+                        $script:newsBreaker = $true
+                        Write-Warning "구글 뉴스가 연달아 응답하지 않아(HTTP $status) 남은 뉴스 검색을 건너뜁니다."
+                    }
+                }
                 Write-Warning "News fetch failed for '$query' (HTTP $status): $($_.Exception.Message)"
                 return @()
             }
             Start-Sleep -Seconds ($try * 4)
         }
     }
+    if ($content) { $script:newsConsecThrottle = 0 }
 
     try {
         [xml]$rss = $content
@@ -1863,6 +2006,8 @@ $fuel = @(Get-DomesticFuelPrices | Where-Object { $_ })
 # accumulated store - that is what turns 7 days of pump prices and 2 weeks of SCFI into a
 # series worth charting over months.
 $historyStore = Read-HistoryStore
+# 예전 SMP 카드가 남긴 기록. 카드를 산업용 전기요금으로 바꾼 뒤로 아무도 읽지 않는다.
+[void]$historyStore.Remove("smp")
 foreach ($f in $fuel) {
     # @() at the call site, not just inside the function: a function returning a one-element
     # collection has it unrolled to a bare object on capture, and ConvertTo-Json then writes
@@ -2081,6 +2226,93 @@ foreach ($c in $priceCards) {
     $c | Add-Member -NotePropertyName sort -NotePropertyValue (Get-CardSort $c.id) -Force
 }
 $priceCards = @($priceCards | Sort-Object sort)
+
+# 경향성: 시계열이 있는 카드마다 붙인다. 페이지 카드·상세 팝업·핵심 지표 요약·메일이 모두 이 값을 읽는다.
+foreach ($c in $priceCards) {
+    if ($c.failed) { continue }
+    $t = Get-TrendStats $c.points
+    if ($t) { $c | Add-Member -NotePropertyName trend -NotePropertyValue $t -Force }
+}
+if ($scfi -and $scfi.points) {
+    $t = Get-TrendStats $scfi.points
+    if ($t) { $scfi | Add-Member -NotePropertyName trend -NotePropertyValue $t -Force }
+}
+foreach ($l in $sseLanes) {
+    $t = Get-TrendStats $l.points
+    if ($t) { $l | Add-Member -NotePropertyName trend -NotePropertyValue $t -Force }
+}
+
+# 물류 운영 핵심 지표 요약. 카드가 열 개 넘게 흩어져 있으면 운임·환율·유가·내륙운송료를 서로 비교하려고
+# 화면을 오르내려야 한다. 물류팀이 판단에 쓰는 지표만 config.opsSummary.items 순서대로 한 표에 모은다.
+function Get-OpsSummaryRow {
+    param([string]$id)
+    $row = [ordered]@{ id = $id; detail = $id; name = $id; value = $null; currency = ""; unit = ""; label = ""
+        shortLabel = ""; shortPct = $null; longLabel = ""; longPct = $null; trend = ""; tone = "flat"; position = ""; note = "" }
+    $t = $null
+    if ($id -eq "safe-freight") {
+        if (-not $safeFreight) { return $null }
+        $sf = $safeFreight
+        $row.name = "컨테이너 내륙운송료"
+        $row.label = "적용 $($sf.window.applyLabel)"
+        $row.trend = "$($sf.base.verdict) 예상"
+        $row.tone = if ($sf.base.verdict -eq "인상") { "up" } elseif ($sf.base.verdict -eq "인하") { "down" } else { "flat" }
+        $sign = if ($sf.base.diff -gt 0) { "+" } else { "" }
+        $row.note = "산정 $($sf.window.label) 평균 $(Format-Won $sf.base.avg)원, 기준 대비 $sign$(Format-Won $sf.base.diff)원"
+        if ($sf.scenario -and $sf.scenario.trigger) {
+            $row.note += " · 유류세 인하 종료 시 $($sf.scenario.trigger.applyLabel) $($sf.scenario.trigger.verdict)"
+        }
+        return [PSCustomObject]$row
+    }
+    if ($id -eq "scfi") {
+        if (-not $scfi) { return $null }
+        $row.name = "SCFI 컨테이너 운임"; $row.value = $scfi.current; $row.unit = "pt"; $row.label = $scfi.currentDate
+        $t = $scfi.trend
+    } elseif ($id -like "ccfi-*") {
+        $l = @($sseLanes | Where-Object { $_.id -eq $id })[0]
+        if (-not $l) { return $null }
+        $row.name = "CCFI $($l.displayName)"; $row.value = $l.current; $row.unit = "pt"; $row.label = $l.currentDate
+        $row.detail = "ccfi-lanes"; $t = $l.trend
+    } else {
+        $c = @($priceCards | Where-Object { [string]$_.id -eq $id })[0]
+        if (-not $c) { return $null }
+        $row.name = $c.displayName
+        if ($c.failed) {
+            $row.trend = "수집 실패"; $row.note = "오늘 데이터를 가져오지 못했습니다"
+            return [PSCustomObject]$row
+        }
+        $pts = @($c.points)
+        $row.value = $pts[-1].value; $row.currency = [string]$c.currency; $row.unit = [string]$c.unit; $row.label = $pts[-1].label
+        $t = $c.trend
+    }
+    if ($t) {
+        $row.shortLabel = $t.shortLabel; $row.shortPct = $t.shortPct; $row.longLabel = $t.longLabel; $row.longPct = $t.longPct
+        $row.trend = $t.trend; $row.tone = $t.tone; $row.position = $t.position
+    } else {
+        $row.trend = "기록 부족"
+    }
+    [PSCustomObject]$row
+}
+
+$opsSummary = $null
+if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
+    $opsRows = @(@(foreach ($id in @($config.opsSummary.items)) { Get-OpsSummaryRow ([string]$id) }) | Where-Object { $_ })
+    # 한 문장 흐름 요약: 판정별로 지표 이름을 묶는다.
+    $groups = [ordered]@{ "상승 흐름" = @(); "하락 흐름" = @(); "엇갈림" = @(); "보합" = @() }
+    foreach ($r in $opsRows) {
+        if ($r.trend -eq "수집 실패" -or $r.trend -eq "기록 부족") { continue }
+        $k = switch ($r.tone) { "up" { "상승 흐름" } "down" { "하락 흐름" } "mixed" { "엇갈림" } default { "보합" } }
+        $groups[$k] += $r.name
+    }
+    $sentence = (@(foreach ($k in $groups.Keys) { if ($groups[$k].Count) { "$k`: $($groups[$k] -join ', ')" } }) -join " / ")
+    $opsSummary = [PSCustomObject]@{
+        title    = if ($config.opsSummary.title) { $config.opsSummary.title } else { "물류 운영 핵심 지표" }
+        rows     = $opsRows
+        sentence = $sentence
+        method   = "경향은 최근 4주·13주(월간 지표는 1·3개월) 변화율을 지표마다 평소 변동폭과 비교해 매일 같은 규칙으로 자동 판정한 값입니다. 판단 근거로 쓸 때는 상세 화면의 원자료와 함께 확인하세요."
+        dashboardUrl = "https://jhkim0603.github.io/work-dashboard/"
+    }
+    Write-Host "  핵심 지표 요약 $($opsRows.Count)개 · $sentence"
+}
 $scfiSort = Get-CardSort "scfi"
 $laneSort = Get-CardSort "ccfi-lanes"
 $sfSort = Get-CardSort "safe-freight"
@@ -2178,11 +2410,19 @@ $hasFuelKey = if ($env:OPINET_API_KEY) { "true" } else { "false" }
 # A failed KCl fetch used to just not append a card, so the page came back one card shorter
 # with nothing saying so - indistinguishable from "we never tracked potash". Say it instead.
 $hasKcl = if ($kcl) { "true" } else { "false" }
+# 구글 뉴스가 막혀 뉴스가 한 건도 없는 날. 뉴스 때문에 가격·날씨·태풍까지 그날 갱신을 멈출 이유는
+# 없으므로 뉴스 칸에 안내만 띄우고 배포한다. 막힌 기록 없이 0건이면(읽어 오는 부분 고장) 아래 점검이 막는다.
+$newsOutage = (@($materials | ForEach-Object { $_.news } | Where-Object { $_ }).Count -eq 0) -and ($script:newsThrottleFails -gt 0)
+if ($newsOutage) {
+    Write-Warning "구글 뉴스 응답 없음 - 오늘은 뉴스 없이 배포합니다."
+    if ($env:CI) { Write-Host "::warning::구글 뉴스가 응답하지 않아 오늘은 뉴스 없이 배포합니다" }
+}
 $materialsJson = ConvertTo-JsonOrNull -InputObject @($materials) -Depth 6
+$opsSummaryJson = ConvertTo-JsonOrNull -InputObject $opsSummary -Depth 6
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
-$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__SAFE_FREIGHT_JSON__", $safeFreightJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__FETCHED_AT__", $fetchedAt)
+$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__SAFE_FREIGHT_JSON__", $safeFreightJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__OPS_SUMMARY_JSON__", $opsSummaryJson).Replace("__NEWS_OUTAGE__", $(if ($newsOutage) { "true" } else { "false" })).Replace("__FETCHED_AT__", $fetchedAt)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8
@@ -2752,6 +2992,46 @@ $materialsHtml = foreach ($m in $materials) {
 "@
 }
 
+# 물류 운영 핵심 지표 요약. 메일 맨 위쪽에 둔다 - 가격 카드 열 개를 내려 읽지 않아도 오늘 흐름이 보이게.
+# 메일 용량(Gmail 102KB)을 생각해 스타일은 표에 한 번 걸고 칸마다 정렬만 준다.
+$opsHtml = ""
+if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
+    $toneColor = @{ up = "#b3221f"; down = "#0a6b0a"; mixed = "#a15c00"; flat = "#6e6c66" }
+    function Get-PctText {
+        param($v)
+        if ($null -eq $v) { return "-" }
+        $d = [double]$v
+        $sg = if ($d -gt 0) { "+" } else { "" }
+        "$sg$($d.ToString('N1'))%"
+    }
+    $opsRowHtml = foreach ($r in $opsSummary.rows) {
+        $val = if ($null -ne $r.value) { "$($r.currency)$(Format-PriceValue $r.value)" } else { "" }
+        $tc = $toneColor[[string]$r.tone]
+        if (-not $tc) { $tc = "#6e6c66" }
+        $sub = if ($r.note) { $r.note } elseif ($r.position) { $r.position } else { "" }
+        # 칸마다 style 을 반복하면 행 하나가 700B 가까이 된다. 여백은 표의 cellpadding, 줄바꿈 막기는
+        # nowrap 속성으로 넘겨 행당 크기를 절반 아래로 줄였다(메일이 Gmail 잘림 기준 102KB 에 가깝다).
+        $subHtml = if ($sub) { "<br><font size=1 color=#898781>$(Get-HtmlText $sub)</font>" } else { "" }
+        "<tr><td><b>$($r.name)</b>$subHtml</td><td align=right nowrap>$val</td><td align=right nowrap>$(Get-PctText $r.shortPct)</td><td align=right nowrap>$(Get-PctText $r.longPct)</td><td align=right nowrap><b><font color=$tc>$($r.trend)</font></b></td></tr>"
+    }
+    $opsHtml = @"
+<div style="margin:16px 0;padding:13px 15px;background:#ffffff;border:1px solid #e1e0d9;border-radius:8px;">
+  <div style="font-size:12px;font-weight:700;color:#0b0b0b;">$($opsSummary.title)</div>
+  <div style="font-size:12px;color:#52514e;margin-top:4px;">$($opsSummary.sentence)</div>
+  <table width="100%" cellpadding=4 cellspacing=0 style="margin-top:6px;font-size:12.5px;color:#0b0b0b;">
+    <tr style="font-size:10.5px;color:#898781;"><td>지표</td><td align=right>현재</td><td align=right>단기</td><td align=right>중기</td><td align=right>경향</td></tr>
+    $($opsRowHtml -join "")
+  </table>
+  <div style="font-size:10.5px;color:#898781;margin-top:8px;">단기 4주·중기 13주(월간 지표는 1·3개월). $($opsSummary.method)</div>
+</div>
+"@
+}
+
+# 구글 뉴스 장애로 뉴스가 없는 날은 수급 뉴스 칸에 그 사실을 적는다(빈 카드만 늘어서 있으면 고장처럼 보인다).
+if ($newsOutage) {
+    $materialsHtml = @("<tr><td style=`"padding:14px 16px;font-size:12.5px;color:#52514e;`">구글 뉴스가 응답하지 않아 오늘은 뉴스를 싣지 못했습니다. 다음 실행에서 자동으로 다시 가져옵니다.</td></tr>")
+}
+
 function Get-EmailSection {
     # The digest used to be one undivided table running weather straight into prices and then
     # into news, so nothing signalled where one kind of information stopped.
@@ -2784,7 +3064,7 @@ $emailHtml = @"
 </head>
 <body style="margin:0;padding:0;background:#f9f9f7;font-family:'Malgun Gothic',sans-serif;">
 <div style="max-width:600px;margin:0 auto;padding:24px 16px;">
-  <h2 style="margin:0 0 4px;color:#0b0b0b;">업무 참고자료 Dashboard</h2>
+  <h2 style="margin:0 0 4px;color:#0b0b0b;">물류팀 운영 참고지표 Dashboard</h2>
   <div style="font-size:12px;color:#898781;margin-bottom:14px;">$emailDateStr 기준</div>
   <div style="margin-bottom:16px;">
     <a href="$dashboardUrl" style="display:inline-block;background:#2a78d6;color:#ffffff;font-size:13px;font-weight:bold;text-decoration:none;padding:10px 18px;border-radius:6px;">📋 대시보드 열기 →</a>
@@ -2792,6 +3072,7 @@ $emailHtml = @"
   </div>
   $holidayHtml
   $failureHtml
+  $opsHtml
   $highlightHtml
   $typhoonHtml
   $(Get-EmailSection "날씨 · 온습도" ($weatherRowsHtml -join "`n"))
@@ -2982,7 +3263,7 @@ foreach ($n in $allNews) {
         $problems.Add("차단 대상 기사가 통과했습니다: $($n.title)")
     }
 }
-if ($allNews.Count -eq 0) { $problems.Add("수급 뉴스가 한 건도 없습니다") }
+if ($allNews.Count -eq 0 -and -not $newsOutage) { $problems.Add("수급 뉴스가 한 건도 없습니다") }
 
 if ($problems.Count -gt 0) {
     Write-Host ""

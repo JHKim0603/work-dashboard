@@ -223,6 +223,11 @@
     ],
     "fuelTaxCut": { "until": "2026-11-30", "dieselWon": 145, "label": "유류세 인하(경유 25%)" }
   },
+  "//opsSummary": "페이지 맨 위 '물류 운영 핵심 지표' 요약판과 메일 요약표에 넣을 지표와 순서입니다. 가격 카드 id(cardOrder 와 같은 이름), CCFI 항로는 sseLanes 의 Id(예: ccfi-sea), 내륙운송료는 safe-freight 를 씁니다. 없는 id 는 건너뜁니다. 경향(상승 추세 등)은 최근 4주·13주(월간 지표는 1·3개월) 변화율을 지표마다 평소 변동폭과 비교해 자동으로 판정합니다.",
+  "opsSummary": {
+    "title": "물류 운영 핵심 지표",
+    "items": ["scfi", "ccfi-sea", "drybulk", "usdkrw", "D047", "B027", "safe-freight", "brent", "kcl"]
+  },
   "//cardOrder": "가격 카드 표시 순서. 사용자가 직접 지정한 순서입니다 - 여기 없는 id는 목록 뒤에 원래 순서대로 붙습니다. 대시보드와 메일이 같은 배열을 읽으므로 이것만 고치면 양쪽이 함께 바뀝니다.",
   "cardOrder": [
     "kcl",
