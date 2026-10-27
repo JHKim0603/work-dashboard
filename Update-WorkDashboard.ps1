@@ -1383,6 +1383,156 @@ function Get-TrendStats {
     }
 }
 
+# --- 앞으로의 예상치 (통계적 예측) -----------------------------------------------------------
+# 경향은 지난 흐름이라 "그래서 다음 달은?"에 답하지 못한다. 그렇다고 그럴듯한 숫자 하나를 내면 판단 근거로서
+# 위험하다. 환율·유가·운임은 사건 하나에 크게 움직이고, 짧은 기간에는 '지금 값 유지'가 정교한 모형보다
+# 잘 맞는 경우가 많다. 그래서 예상치에는 항상 범위와 그 방법의 과거 성적을 함께 붙인다.
+#
+#   1) 감쇠 추세 지수평활(Damped Holt): 최근 수준과 추세를 따라가되 먼 미래일수록 추세를 줄인다.
+#      수요예측에서 널리 쓰이고, 추세를 끝없이 뻗지 않아 과한 예측을 막는다.
+#   2) 롤링 백테스트: 과거 각 시점에서 그때까지 자료만으로 h 기간 뒤를 예측해 실제와 비교한다.
+#      앞쪽 절반 시점으로 계수(α, β, φ)를 고르고, 뒤쪽 절반으로 채점한다(고른 자료로 채점하면 성적이 부풀려진다).
+#      '지금 값 유지'보다 평균 오차가 3% 이상 작을 때만 추세 방법을 쓰고, 아니면 '지금 값 유지'를 쓴다.
+#   3) 예상 범위: 뒤쪽 절반 시험에서 실제로 난 오차의 10~90% 구간(80% 범위). 정규분포를 가정하지 않는다.
+#   방향은 80% 범위가 지금 값을 벗어날 때만 '상승 예상'·'하락 예상'이라 하고, 아니면 '보합권'이다.
+#
+# 로그값으로 계산해 오르내림을 비율로 다룬다. 사건·정책(유류세, 관세, 전쟁 등)은 반영하지 않는다.
+function Get-ForecastPath {
+    # 로그값 y 를 한 번 훑으며 각 시점의 수준 L, 추세 B 를 남긴다.
+    # 주의: PowerShell 변수는 대소문자를 가리지 않는다. 계수를 $b, 추세 배열을 $B 로 두면 같은 변수가 된다.
+    param([double[]]$y, [double]$alpha, [double]$beta, [double]$phi)
+    $n = $y.Count
+    $lv = New-Object double[] $n
+    $tr = New-Object double[] $n
+    $lv[0] = $y[0]; $tr[0] = 0.0
+    for ($t = 1; $t -lt $n; $t++) {
+        $pl = $lv[$t - 1]; $pb = $tr[$t - 1]
+        $lv[$t] = $alpha * $y[$t] + (1 - $alpha) * ($pl + $phi * $pb)
+        $tr[$t] = $beta * ($lv[$t] - $pl) + (1 - $beta) * $phi * $pb
+    }
+    , @($lv, $tr)
+}
+
+function Get-Quantile {
+    param([double[]]$arr, [double]$q)
+    $sorted = [double[]]@($arr | Sort-Object)
+    if ($sorted.Count -eq 0) { return 0.0 }
+    $pos = ($sorted.Count - 1) * $q
+    $lo = [int][math]::Floor($pos); $hi = [int][math]::Ceiling($pos)
+    if ($lo -eq $hi) { return $sorted[$lo] }
+    $sorted[$lo] + ($sorted[$hi] - $sorted[$lo]) * ($pos - $lo)
+}
+
+function Get-Forecast {
+    param($points)
+    $rows = @(foreach ($p in @($points)) {
+        if ($null -eq $p -or $null -eq $p.value) { continue }
+        $d = ConvertTo-LabelDate $p.label
+        if ($d -and [double]$p.value -gt 0) { [PSCustomObject]@{ d = $d; v = [double]$p.value } }
+    })
+    $rows = @($rows | Sort-Object d)
+    if ($rows.Count -lt 30) { return $null }
+    $gaps = @(for ($i = 1; $i -lt $rows.Count; $i++) { ($rows[$i].d - $rows[$i - 1].d).TotalDays }) | Sort-Object
+    $gap = @($gaps)[[int][math]::Floor(@($gaps).Count / 2)]
+    if ($gap -le 2) {
+        $unit = "day";   $hs = @(@{ h = 28; label = "4주 후" }, @{ h = 91; label = "13주 후" })
+    } elseif ($gap -le 10) {
+        $unit = "week";  $hs = @(@{ h = 4; label = "4주 후" }, @{ h = 13; label = "13주 후" })
+    } elseif ($gap -le 40) {
+        $unit = "month"; $hs = @(@{ h = 1; label = "1개월 후" }, @{ h = 3; label = "3개월 후" })
+    } else { return $null }
+
+    $n = $rows.Count
+    $y = [double[]]@($rows | ForEach-Object { [math]::Log($_.v) })
+    $minTrain = 20
+    $grid = @(foreach ($ga in 0.2, 0.4, 0.6, 0.8, 1.0) { foreach ($gb in 0.0, 0.05, 0.15, 0.3) { foreach ($gp in 0.8, 0.9, 0.98) {
+        $path = Get-ForecastPath -y $y -alpha $ga -beta $gb -phi $gp
+        [PSCustomObject]@{ a = $ga; b = $gb; phi = $gp; lv = $path[0]; tr = $path[1] }
+    } } })
+    $last = $rows[$n - 1]
+    # 한 기간(하루·한 주·한 달) 로그 변화의 표준편차. 범위 하한을 정하는 데 쓴다.
+    $d1 = [double[]]@(for ($i = 1; $i -lt $n; $i++) { $y[$i] - $y[$i - 1] })
+    $m1 = ($d1 | Measure-Object -Average).Average
+    $sig1 = [math]::Sqrt((($d1 | ForEach-Object { ($_ - $m1) * ($_ - $m1) }) | Measure-Object -Sum).Sum / [math]::Max(1, $d1.Count - 1))
+
+    $out = @(foreach ($hz in $hs) {
+        $h = [int]$hz.h
+        $firstO = $minTrain - 1; $lastO = $n - 1 - $h
+        if ($lastO - $firstO + 1 -lt 10) { continue }       # 시험할 시점이 10개 미만이면 예측하지 않는다
+        $origins = @($firstO..$lastO)
+        $half = [int][math]::Floor($origins.Count / 2)
+        $sel = @($origins[0..($half - 1)])
+        $ev = @($origins[$half..($origins.Count - 1)])
+
+        $best = $null; $bestErr = [double]::MaxValue
+        foreach ($g in $grid) {
+            $S = 0.0; for ($k = 1; $k -le $h; $k++) { $S += [math]::Pow($g.phi, $k) }
+            $sum = 0.0
+            foreach ($t in $sel) { $sum += [math]::Abs($y[$t + $h] - ($g.lv[$t] + $S * $g.tr[$t])) }
+            if ($sum -lt $bestErr) { $bestErr = $sum; $best = $g; $bestS = $S }
+        }
+        $eH = [double[]]@(foreach ($t in $ev) { $y[$t + $h] - ($best.lv[$t] + $bestS * $best.tr[$t]) })
+        $eN = [double[]]@(foreach ($t in $ev) { $y[$t + $h] - $y[$t] })
+        $maeH = ($eH | ForEach-Object { [math]::Abs($_) } | Measure-Object -Average).Average
+        $maeN = ($eN | ForEach-Object { [math]::Abs($_) } | Measure-Object -Average).Average
+        $useHolt = $maeH -lt 0.97 * $maeN
+        $errs = if ($useHolt) { $eH } else { $eN }
+        $f = if ($useHolt) { $best.lv[$n - 1] + $bestS * $best.tr[$n - 1] } else { $y[$n - 1] }
+        # 80% 범위의 반폭 = max(과거 실제 오차의 10~90% 구간 반폭, 한 기간 변동폭 × √h × 1.28).
+        # 먼 기간(13주)은 겹치는 시험 구간이 많아 독립 사례가 적고, 그 구간에 마침 한쪽으로 흐른 시기만
+        # 있으면 범위가 4주보다 좁게 잡히기도 했다. 시간이 길수록 불확실성이 커진다는 하한을 둔다.
+        # 중간값 기준으로 실제 오차의 80% 가 들어오는 폭(|오차|의 80번째 백분위). 오차가 한쪽으로 쏠린 시기에도
+        # '80% 이상'이라는 화면 설명과 실제 적중률이 어긋나지 않게 한다(원/달러: 10~90% 구간 반폭이면 71%).
+        if ($errs.Count -ge 6) {
+            $hwEmp = Get-Quantile ([double[]]@($errs | ForEach-Object { [math]::Abs($_) })) 0.8
+        } else {
+            $hwEmp = 1.2816 * [math]::Sqrt((($errs | ForEach-Object { $_ * $_ }) | Measure-Object -Sum).Sum / $errs.Count)
+        }
+        $hw = [math]::Max($hwEmp, 1.2816 * $sig1 * [math]::Sqrt($h))
+        # 과거 시험(뒤쪽 절반)에서 실제값이 이 범위 안에 든 비율. 화면에 그대로 보여 준다.
+        $cov = [int][math]::Round(@($errs | Where-Object { [math]::Abs($_) -le $hw }).Count / $errs.Count * 100)
+        $mid = [math]::Exp($f)
+        $low = [math]::Exp($f - $hw)
+        $high = [math]::Exp($f + $hw)
+        $dir = if ($low -gt $last.v) { "상승 예상" } elseif ($high -lt $last.v) { "하락 예상" } else { "보합권" }
+        $when = switch ($unit) {
+            "day"   { $last.d.AddDays($h).ToString("yyyy-MM-dd") }
+            "week"  { $last.d.AddDays(7 * $h).ToString("yyyy-MM-dd") }
+            "month" { $last.d.AddMonths($h).ToString("yyyy-MM") }
+        }
+        $pc = { param($v) [math]::Round(($v / $last.v - 1) * 100, 1) }
+        # 값 크기에 맞춰 반올림한다(환율 1,271.8~1,376.14 → 1,272~1,376). 변화율은 반올림 전 값으로 낸다.
+        $dg = if ($last.v -ge 1000) { 0 } elseif ($last.v -ge 100) { 1 } elseif ($last.v -ge 10) { 2 } else { 3 }
+        [PSCustomObject]@{
+            label     = $hz.label
+            steps     = $h
+            date      = $when
+            mid       = [math]::Round($mid, $dg)
+            low       = [math]::Round($low, $dg)
+            high      = [math]::Round($high, $dg)
+            pct       = & $pc $mid
+            lowPct    = & $pc $low
+            highPct   = & $pc $high
+            direction = $dir
+            method    = if ($useHolt) { "감쇠 추세" } else { "현재 유지" }
+            params    = if ($useHolt) { "α $($best.a) · β $($best.b) · φ $($best.phi)" } else { "" }
+            mae       = [math]::Round($(if ($useHolt) { $maeH } else { $maeN }) * 100, 1)
+            naiveMae  = [math]::Round($maeN * 100, 1)
+            trendMae  = [math]::Round($maeH * 100, 1)
+            tests     = $ev.Count
+            coverage  = $cov
+        }
+    })
+    if ($out.Count -eq 0) { return $null }
+    [PSCustomObject]@{
+        unit      = $unit
+        lastLabel = $last.d.ToString($(if ($unit -eq "month") { "yyyy-MM" } else { "yyyy-MM-dd" }))
+        lastValue = $last.v
+        horizons  = $out
+        note      = "과거 자료의 흐름만으로 낸 통계적 예상입니다. 사건·정책 변화(유류세, 관세, 전쟁, 파업 등)는 반영하지 않습니다."
+    }
+}
+
 # --- 컨테이너 내륙운송료 (화물자동차 안전운임 유가연동) 전망 --------------------------------
 # 수출입 컨테이너의 내륙운송은 2026~2028년 다시 시행된 안전운임제 대상이라, 화주가 내는 최저
 # 운임(안전운송운임)이 고시로 정해진다. 고시는 유가에 연동된다: 분기(3개월) 경유 평균이 현재
@@ -2232,10 +2382,15 @@ foreach ($c in $priceCards) {
     if ($c.failed) { continue }
     $t = Get-TrendStats $c.points
     if ($t) { $c | Add-Member -NotePropertyName trend -NotePropertyValue $t -Force }
+    # 예상치. 기록이 30개 미만이거나 시험할 시점이 모자라면(SCFI·CCFI 처럼 쌓는 중인 계열) 붙지 않는다.
+    $fc = Get-Forecast $c.points
+    if ($fc) { $c | Add-Member -NotePropertyName forecast -NotePropertyValue $fc -Force }
 }
 if ($scfi -and $scfi.points) {
     $t = Get-TrendStats $scfi.points
     if ($t) { $scfi | Add-Member -NotePropertyName trend -NotePropertyValue $t -Force }
+    $fc = Get-Forecast $scfi.points
+    if ($fc) { $scfi | Add-Member -NotePropertyName forecast -NotePropertyValue $fc -Force }
 }
 foreach ($l in $sseLanes) {
     $t = Get-TrendStats $l.points
@@ -2247,8 +2402,10 @@ foreach ($l in $sseLanes) {
 function Get-OpsSummaryRow {
     param([string]$id)
     $row = [ordered]@{ id = $id; detail = $id; name = $id; value = $null; currency = ""; unit = ""; label = ""
-        shortLabel = ""; shortPct = $null; longLabel = ""; longPct = $null; trend = ""; tone = "flat"; position = ""; note = "" }
+        shortLabel = ""; shortPct = $null; longLabel = ""; longPct = $null; trend = ""; tone = "flat"; position = ""; note = ""
+        fc = $null }
     $t = $null
+    $fcSrc = $null
     if ($id -eq "safe-freight") {
         if (-not $safeFreight) { return $null }
         $sf = $safeFreight
@@ -2266,7 +2423,7 @@ function Get-OpsSummaryRow {
     if ($id -eq "scfi") {
         if (-not $scfi) { return $null }
         $row.name = "SCFI 컨테이너 운임"; $row.value = $scfi.current; $row.unit = "pt"; $row.label = $scfi.currentDate
-        $t = $scfi.trend
+        $t = $scfi.trend; $fcSrc = $scfi.forecast
     } elseif ($id -like "ccfi-*") {
         $l = @($sseLanes | Where-Object { $_.id -eq $id })[0]
         if (-not $l) { return $null }
@@ -2282,7 +2439,7 @@ function Get-OpsSummaryRow {
         }
         $pts = @($c.points)
         $row.value = $pts[-1].value; $row.currency = [string]$c.currency; $row.unit = [string]$c.unit; $row.label = $pts[-1].label
-        $t = $c.trend
+        $t = $c.trend; $fcSrc = $c.forecast
     }
     if ($t) {
         $row.shortLabel = $t.shortLabel; $row.shortPct = $t.shortPct; $row.longLabel = $t.longLabel; $row.longPct = $t.longPct
@@ -2290,6 +2447,7 @@ function Get-OpsSummaryRow {
     } else {
         $row.trend = "기록 부족"
     }
+    if ($fcSrc -and @($fcSrc.horizons).Count -gt 0) { $row.fc = @($fcSrc.horizons)[0] }
     [PSCustomObject]$row
 }
 
@@ -3012,7 +3170,8 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
         # 칸마다 style 을 반복하면 행 하나가 700B 가까이 된다. 여백은 표의 cellpadding, 줄바꿈 막기는
         # nowrap 속성으로 넘겨 행당 크기를 절반 아래로 줄였다(메일이 Gmail 잘림 기준 102KB 에 가깝다).
         $subHtml = if ($sub) { "<br><font size=1 color=#898781>$(Get-HtmlText $sub)</font>" } else { "" }
-        "<tr><td><b>$($r.name)</b>$subHtml</td><td align=right nowrap>$val</td><td align=right nowrap>$(Get-PctText $r.shortPct)</td><td align=right nowrap>$(Get-PctText $r.longPct)</td><td align=right nowrap><b><font color=$tc>$($r.trend)</font></b></td></tr>"
+        $fcHtml = if ($r.fc) { "<br><font size=1 color=#52514e>$($r.fc.label) $($r.currency)$(Format-PriceValue $r.fc.low)~$(Format-PriceValue $r.fc.high)</font>" } else { "" }
+        "<tr><td><b>$($r.name)</b>$subHtml</td><td align=right nowrap>$val</td><td align=right nowrap>$(Get-PctText $r.shortPct)</td><td align=right nowrap>$(Get-PctText $r.longPct)</td><td align=right nowrap><b><font color=$tc>$($r.trend)</font></b>$fcHtml</td></tr>"
     }
     $opsHtml = @"
 <div style="margin:16px 0;padding:13px 15px;background:#ffffff;border:1px solid #e1e0d9;border-radius:8px;">
@@ -3022,7 +3181,7 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
     <tr style="font-size:10.5px;color:#898781;"><td>지표</td><td align=right>현재</td><td align=right>단기</td><td align=right>중기</td><td align=right>경향</td></tr>
     $($opsRowHtml -join "")
   </table>
-  <div style="font-size:10.5px;color:#898781;margin-top:8px;">단기 4주·중기 13주(월간 지표는 1·3개월). $($opsSummary.method)</div>
+  <div style="font-size:10.5px;color:#898781;margin-top:8px;">단기 4주·중기 13주(월간 지표는 1·3개월). $($opsSummary.method) 경향 아래 범위는 과거 예측 오차로 낸 80% 예상 범위입니다(사건·정책 미반영).</div>
 </div>
 "@
 }

@@ -446,7 +446,14 @@
   .trend-chip.down { color: var(--good); }
   .trend-chip.mixed { color: var(--warn); }
   .trend-chip.flat { color: var(--ink-muted); }
-  .trend-line { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-muted); margin: -2px 0 6px; }
+  .trend-line { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-muted); margin: -2px 0 6px; flex-wrap: wrap; }
+  /* 예상치: 범위와 과거 성적을 늘 함께 보여 준다. 부채꼴은 80% 이상 예상 범위. */
+  .fc-dir.up { color: var(--bad); }
+  .fc-dir.down { color: var(--good); }
+  .fc-fan { fill: var(--accent); opacity: 0.16; }
+  .fc-mid { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 5 4; }
+  .fc-now { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 2 3; }
+  .fc-dot { fill: var(--accent); }
 
   /* 안전운임 유가연동 전망 카드. 판정 배지는 비용 방향 색을 따른다: 인상 = 빨강, 인하 = 초록. */
   .sf-verdict { display: inline-block; font-size: 13px; font-weight: 700; padding: 2px 9px; border-radius: 6px;
@@ -1185,6 +1192,78 @@ function trendExplain(t) {
     넘으면 상승·하락으로 보고, 둘 다 같은 방향이면 '추세', 방향이 엇갈리면 '조정' 또는 '반등'으로 적습니다.</span>`;
 }
 
+// ---- 예상치 표시 ----------------------------------------------------------------------
+function fcCls(dir) { return dir === "상승 예상" ? "up" : dir === "하락 예상" ? "down" : ""; }
+function fcRange(h, cur) { return `${esc(cur || "")}${fmtNum(h.low)}~${esc(cur || "")}${fmtNum(h.high)}`; }
+// 카드 한 줄: 첫 번째 기간의 범위만.
+function fcLine(fc, cur) {
+  if (!fc || !fc.horizons || !fc.horizons.length) return "";
+  const h = fc.horizons[0];
+  return `<div class="trend-line"><span>${esc(h.label)} 예상 ${fcRange(h, cur)}</span>
+    <span class="fc-dir ${fcCls(h.direction)}">${esc(h.direction)}</span></div>`;
+}
+// 상세 화면용 차트: 최근 기록 + 앞으로의 예상 범위(부채꼴)와 중간값(점선).
+function forecastChartSvg(points, fc) {
+  const d = CH;
+  const keep = fc.unit === "month" ? 24 : fc.unit === "day" ? 90 : 52;
+  const hist = points.slice(-Math.min(points.length, keep));
+  const hs = fc.horizons.slice().sort((a, b) => a.steps - b.steps);
+  const n = hist.length - 1;
+  const total = n + hs[hs.length - 1].steps;
+  const vals = hist.map(p => p.value).concat(hs.flatMap(h => [h.low, h.high]));
+  const lo = Math.min(...vals), hi = Math.max(...vals), span = (hi - lo) || 1;
+  const x = i => d.PAD_L + (i / Math.max(total, 1)) * (d.W - d.PAD_L - d.PAD_R);
+  const y = v => d.PAD_T + (1 - (v - lo) / span) * (d.H - d.PAD_T - d.PAD_B);
+  const pt = (i, v) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+  const last = hist[n].value;
+  const line = hist.map((p, i) => `${i ? "L" : "M"}${pt(i, p.value)}`).join(" ");
+  const upper = [[n, last]].concat(hs.map(h => [n + h.steps, h.high]));
+  const lower = [[n, last]].concat(hs.map(h => [n + h.steps, h.low])).reverse();
+  const fan = upper.map(([i, v], k) => `${k ? "L" : "M"}${pt(i, v)}`).join(" ") + " "
+            + lower.map(([i, v]) => `L${pt(i, v)}`).join(" ") + " Z";
+  const mid = [[n, last]].concat(hs.map(h => [n + h.steps, h.mid])).map(([i, v], k) => `${k ? "L" : "M"}${pt(i, v)}`).join(" ");
+  const grid = [0, 0.33, 0.66, 1].map(f => {
+    const v = lo + f * span, yy = y(v);
+    return `<line x1="${d.PAD_L}" y1="${yy.toFixed(1)}" x2="${d.W - d.PAD_R}" y2="${yy.toFixed(1)}" class="ch-grid"/>
+      <text x="${d.PAD_L - 5}" y="${(yy + 3.5).toFixed(1)}" class="ch-ylabel">${axisNum(v, span)}</text>`;
+  }).join("");
+  const labels = [`<text x="${x(0).toFixed(1)}" y="${d.H - 5}" class="ch-xlabel" text-anchor="start">${esc(hist[0].label)}</text>`,
+    `<text x="${x(n).toFixed(1)}" y="${d.H - 5}" class="ch-xlabel" text-anchor="middle">${esc(hist[n].label)}</text>`,
+    `<text x="${x(total).toFixed(1)}" y="${d.H - 5}" class="ch-xlabel" text-anchor="end">${esc(hs[hs.length - 1].date)}</text>`].join("");
+  const dots = hs.map(h => `<circle cx="${x(n + h.steps).toFixed(1)}" cy="${y(h.mid).toFixed(1)}" r="3" class="fc-dot"/>`).join("");
+  return `<svg viewBox="0 0 ${d.W} ${d.H}" class="price-chart" role="img" aria-label="최근 추이와 앞으로의 예상 범위">
+    ${grid}
+    <path d="${fan}" class="fc-fan"/>
+    <line x1="${x(n).toFixed(1)}" y1="${d.PAD_T}" x2="${x(n).toFixed(1)}" y2="${d.H - d.PAD_B}" class="fc-now"/>
+    <path d="${line}" class="ch-line"/>
+    <path d="${mid}" class="fc-mid"/>
+    ${dots}
+    ${labels}
+  </svg>`;
+}
+function forecastSection(c) {
+  const fc = c.forecast;
+  if (!fc || !fc.horizons || !fc.horizons.length) return "";
+  const cur = c.currency || "";
+  const rows = fc.horizons.map(h => `<tr><td>${esc(h.label)}<div class="os">${esc(h.date)}</div></td>
+      <td>${esc(cur)}${fmtNum(h.mid)}</td><td>${fcRange(h, cur)}</td>
+      <td>${pctText(h.lowPct)} ~ ${pctText(h.highPct)}</td>
+      <td class="fc-dir ${fcCls(h.direction)}">${esc(h.direction)}</td></tr>`).join("");
+  const how = fc.horizons.map(h => h.method === "감쇠 추세"
+    ? `${esc(h.label)}: 감쇠 추세 지수평활(${esc(h.params)}). 과거 ${h.tests}회 시험에서 평균 오차 ±${h.mae}%로 '지금 값 유지'(±${h.naiveMae}%)보다 잘 맞았습니다. 실제값이 범위 안에 든 비율 ${h.coverage}%.${h.tests < 10 ? " 시험 횟수가 적어 참고로만 보세요." : ""}`
+    : `${esc(h.label)}: 지금 값 유지. 과거 ${h.tests}회 시험에서 추세를 반영한 방법(±${h.trendMae}%)이 '지금 값 유지'(±${h.naiveMae}%)보다 낫지 않아 지금 값을 중간값으로 씁니다. 실제값이 범위 안에 든 비율 ${h.coverage}%.${h.tests < 10 ? " 시험 횟수가 적어 참고로만 보세요." : ""}`
+  ).join("<br>");
+  return `<div class="m-section-title">앞으로의 예상 (통계적 예측)</div>
+    <div class="chart-wrap">${forecastChartSvg(c.points, fc)}</div>
+    <table class="sf-table" style="margin-top:8px;">
+      <tr><th>시점</th><th>중간값</th><th>예상 범위</th><th>지금 대비</th><th>방향</th></tr>
+      ${rows}
+    </table>
+    <div class="m-note">${how}<br>예상 범위는 과거 시험에서 실제값의 약 80%가 들어오도록 잡았습니다(지표별 실제 적중률은 위 숫자).
+      방향은 범위 전체가 지금 값보다 위(아래)일 때만 상승(하락) 예상으로 적고, 아니면 보합권입니다.
+      ${esc(fc.note || "")}</div>`;
+}
+
 // ---- detail modal ---------------------------------------------------------------------
 const CARD_BY_ID = {};
 
@@ -1300,6 +1379,7 @@ function openDetail(id) {
       <div class="chart-wrap">${priceChartSvg(pts, chartId)}<div class="ch-tip"></div></div>
       <div class="m-stats">${statWindowsFor(pts).map(w => statBox(w.label, changeOver(pts, w.days))).join("")}</div>
       ${c.trend ? `<div class="m-section-title">경향성 판정</div><div class="m-read">${trendExplain(c.trend)}</div>` : ""}
+      ${forecastSection(c)}
       <div class="m-section-title">추이 해설</div>
       <div class="m-read">${trendSentence(c)}</div>`;
   } else if (c.isScfi) {
@@ -1460,6 +1540,7 @@ function priceCardHtml(c, idx) {
         <span class="pd">${esc(latest.label)}${staleTag(latest.label)}</span>
       </div>
       ${trendLine(c.trend)}
+      ${fcLine(c.forecast, c.currency)}
       <div class="chart-wrap">
         ${priceChartSvg(pts, chartId, CH_CARD)}
         <div class="ch-tip"></div>
@@ -1499,6 +1580,7 @@ if (SCFI) {
         <span class="pd">${esc(SCFI.currentDate)} · 전주 대비</span>
       </div>
       ${trendLine(SCFI.trend)}
+      ${fcLine(SCFI.forecast, "")}
       ${hasChart
         ? `<div class="chart-wrap">${priceChartSvg(pts, chartId, CH_CARD)}<div class="ch-tip"></div></div>`
         : `<div class="prev-row"><span>전주 (${esc(SCFI.lastDate)})</span><span>${SCFI.previous.toLocaleString()}</span></div>`}
@@ -1719,9 +1801,10 @@ function opsReportText() {
     if (r.trend) parts.push(r.trend);
     if (r.position) parts.push(r.position);
     if (r.note) parts.push(r.note);
+    if (r.fc) parts.push(`${r.fc.label} 예상 ${r.currency || ""}${fmtNum(r.fc.low)}~${r.currency || ""}${fmtNum(r.fc.high)}(${r.fc.direction})`);
     lines.push(`- ${r.name}: ${parts.join(", ")}`);
   });
-  lines.push(`※ ${OPS_SUMMARY.method}`);
+  lines.push(`※ ${OPS_SUMMARY.method} 예상 범위는 과거 자료로 시험한 통계적 예측(약 80% 범위)이며 사건·정책 변화는 반영하지 않습니다.`);
   lines.push(`대시보드: ${OPS_SUMMARY.dashboardUrl}`);
   return lines.join("\n");
 }
@@ -1787,6 +1870,8 @@ function opsCsv() {
       <td class="${pctCls(r.shortPct)}">${pctText(r.shortPct)}</td>
       <td class="${pctCls(r.longPct)}">${pctText(r.longPct)}</td>
       <td>${trendChip(r.trend, r.tone)}</td>
+      <td>${r.fc ? `${fcRange(r.fc, r.currency)}<div class="os fc-dir ${fcCls(r.fc.direction)}">${esc(r.fc.direction)}</div>`
+        : (r.value !== null && r.value !== undefined) ? `<span class="os" title="예상은 기록 30개 이상, 시험 시점 10개 이상부터 냅니다">기록 쌓는 중</span>` : "–"}</td>
     </tr>`;
   }).join("");
   box.innerHTML = `<div class="card">
@@ -1798,10 +1883,10 @@ function opsCsv() {
         </div>
       </div>
       <div class="ops-scroll"><table class="ops-table">
-        <tr><th>지표</th><th>현재</th><th>단기 변화<br>(4주·1개월)</th><th>중기 변화<br>(13주·3개월)</th><th>경향</th></tr>
+        <tr><th>지표</th><th>현재</th><th>단기 변화<br>(4주·1개월)</th><th>중기 변화<br>(13주·3개월)</th><th>경향</th><th>단기 예상<br>(4주·1개월 후)</th></tr>
         ${rows}
       </table></div>
-      <div class="ops-method">${esc(OPS_SUMMARY.method || "")} 행을 누르면 해당 지표의 상세 화면이 열립니다.</div>
+      <div class="ops-method">${esc(OPS_SUMMARY.method || "")} 단기 예상은 과거 자료로 시험해 더 잘 맞은 방법(감쇠 추세 지수평활 또는 지금 값 유지)으로 낸 범위이며, 사건·정책 변화는 반영하지 않습니다. 행을 누르면 해당 지표의 상세 화면(예상 근거와 과거 적중률)이 열립니다.</div>
     </div>`;
   box.addEventListener("click", e => {
     if (e.target.closest("#opsCopy")) { opsCopy(e.target.closest("#opsCopy")); return; }
