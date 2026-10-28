@@ -102,10 +102,21 @@
     padding: 32px clamp(16px, 4vw, 48px) 56px;
   }
   .viz-root *, .viz-root *::before, .viz-root *::after { box-sizing: border-box; }
+  /* 화면 폭에 따라 자동으로 바뀌는 배치. 큰 모니터에서는 페이지를 넓게 쓰고, 휴대폰에서는 여백과 머리를 줄인다. */
+  .viz-root { --page-max: 1480px; }
+  @media (min-width: 1800px) { .viz-root { --page-max: 1760px; } }
+  @media (min-width: 2300px) { .viz-root { --page-max: 2160px; } }
+  @media (max-width: 639px) {
+    .viz-root { padding-top: 18px; }
+    .topbar { margin-bottom: 12px !important; }
+    .topbar h1 { font-size: 19px; }
+    .topbar .actions { align-items: flex-start; }
+    .update-btn { padding: 7px 12px; font-size: 12.5px; }
+  }
 
   .topbar {
     display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap;
-    gap: 12px; max-width: 1480px; margin: 0 auto 28px;
+    gap: 12px; max-width: var(--page-max); margin: 0 auto 16px;
   }
   .topbar h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; letter-spacing: -0.01em; }
   .topbar .sub { font-size: 13px; color: var(--ink-muted); }
@@ -127,10 +138,10 @@
   }
   .topbar .actions { display: flex; flex-direction: column; align-items: flex-end; }
 
-  .wrap { max-width: 1480px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  .wrap { max-width: var(--page-max); margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
   /* 구역 바로가기. 페이지가 길어 아래 구역까지 스크롤해야 했다. 위에 붙어 따라온다. */
   .jump-nav {
-    position: sticky; top: 0; z-index: 50; max-width: 1480px; margin: -14px auto 18px;
+    position: sticky; top: 0; z-index: 50; max-width: var(--page-max); margin: -4px auto 14px;
     display: flex; gap: 6px; overflow-x: auto; padding: 8px 0; scrollbar-width: none;
     background: var(--page); border-bottom: 1px solid var(--gridline);
   }
@@ -473,13 +484,93 @@
     border-bottom: 1px solid var(--gridline); line-height: 1.3; }
   .ops-table th:first-child, .ops-table td:first-child { text-align: left; padding-left: 0; }
   .ops-table td { padding: 8px; border-bottom: 1px solid var(--gridline); text-align: right; white-space: nowrap; vertical-align: top; }
-  .ops-table td:first-child { white-space: normal; width: 24%; }
+  .ops-table td:first-child { white-space: normal; width: 30%; }
   .ops-table td.mid { vertical-align: middle; }
   .ops-table td.hu1 { background: var(--up-1); }
   .ops-table td.hu2 { background: var(--up-2); }
   .ops-table td.hd1 { background: var(--down-1); }
   .ops-table td.hd2 { background: var(--down-2); }
-  /* 오늘 달라진 점: 표를 읽기 전에 무엇이 움직였는지 문장으로 먼저 본다. */
+  /* 한눈 요약: 분야별 타일 → 지금 주목할 점 → 지표 표. 화면 폭에 따라 타일 줄 수와 배치가 바뀐다. */
+  .ops-card { padding: 16px 18px 14px; }
+  .ops-title { font-size: 15px; font-weight: 700; margin: 0 0 10px; color: var(--ink-primary); }
+  .kpi-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .kpi-tile {
+    min-width: 0; border: 1px solid var(--border); border-left: 4px solid var(--ink-muted); border-radius: 8px;
+    padding: 10px 12px; background: var(--surface); cursor: pointer; transition: box-shadow .15s ease;
+  }
+  .kpi-tile:hover { box-shadow: 0 0 0 1px var(--accent); }
+  .kpi-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .kpi-tile.up { border-left-color: var(--bad); }
+  .kpi-tile.down { border-left-color: var(--good); }
+  .kpi-tile.mixed { border-left-color: var(--warn); }
+  .kt-title { font-size: 12.5px; font-weight: 650; color: var(--ink-muted); }
+  .kt-word { font-size: 21px; font-weight: 750; line-height: 1.25; margin: 2px 0 4px; color: var(--ink-secondary); }
+  .kpi-tile.up .kt-word { color: var(--bad); }
+  .kpi-tile.down .kt-word { color: var(--good); }
+  .kpi-tile.mixed .kt-word { color: var(--warn); }
+  .kt-lead { font-size: 13px; color: var(--ink-secondary); line-height: 1.45; }
+  .kt-lead b { color: var(--ink-primary); font-variant-numeric: tabular-nums; }
+  .kt-chg { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+  .kt-chg.up { color: var(--bad); }
+  .kt-chg.down { color: var(--good); }
+  .kt-sub { font-size: 12px; color: var(--ink-muted); line-height: 1.45; margin-top: 2px; }
+  @media (max-width: 1099px) { .kpi-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  /* 휴대폰: 타일 두 칸. 보조 설명 줄은 숨겨 첫 화면에 타일이 다 들어오게 한다(내륙운송료는 첫 줄만). */
+  @media (max-width: 639px) {
+    .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .kpi-tile { padding: 8px 10px; }
+    .kt-word { font-size: 18px; }
+    .kt-sub { display: none; }
+    .kt-lead .ou { display: none; }
+  }
+  /* 넓은 화면(1400px 이상)은 표 옆에 '지금 주목할 점'을 두어 한 화면에 들어오게 한다. */
+  .ops-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .ops-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .ops-main { min-width: 0; }
+  @media (min-width: 1400px) {
+    .ops-body { grid-template-columns: minmax(0, 1fr) 340px; align-items: start; }
+    .ops-side { order: 2; }
+    .ops-main { order: 1; }
+  }
+  @media (min-width: 1800px) { .ops-body { grid-template-columns: minmax(0, 1fr) 400px; } }
+  .ops-side .ops-today { margin-bottom: 0; }
+  .hl-tag { display: inline-block; font-size: 12px; font-weight: 700; color: var(--accent); margin-right: 6px; }
+  .ops-legend { font-size: 12.5px; color: var(--ink-muted); line-height: 1.5; }
+  .ops-legend .up { color: var(--bad); }
+  .ops-legend .down { color: var(--good); }
+  .ops-table tr.ops-cat td {
+    font-size: 12.5px; font-weight: 700; color: var(--ink-muted); text-align: left;
+    padding: 12px 0 4px; border-bottom: 1px solid var(--gridline);
+  }
+  .ops-table .on .trend-chip { margin-left: 6px; vertical-align: 1px; }
+  /* 노트북 폭에서는 추이선 칸을 숨겨 숫자 칸 간격을 지킨다. */
+  @media (max-width: 1099px) and (min-width: 820px) { .ops-table .c-spark { display: none; } }
+  /* 좁은 화면에서는 표를 지표별 카드로 바꾼다. 옆으로 밀지 않아도 한 지표가 한 덩어리로 보인다. */
+  @media (max-width: 819px) {
+    .ops-scroll { overflow: visible; }
+    .ops-table, .ops-table tbody { display: block; width: 100%; min-width: 0; }
+    .ops-table tr.ops-hdr { display: none; }
+    .ops-table tr.ops-cat, .ops-table tr.ops-cat td { display: block; }
+    .ops-table tr.ops-row {
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 6px;
+      grid-template-areas: "name name val" "s l y" "spark fc fc";
+      padding: 10px 0; border-bottom: 1px solid var(--gridline);
+    }
+    .ops-table tr.ops-row td { border: none; padding: 0; white-space: normal; text-align: left; width: auto; }
+    .ops-table tr.ops-row td.c-name { grid-area: name; }
+    .ops-table tr.ops-row td.c-val { grid-area: val; text-align: right; }
+    .ops-table tr.ops-row td.c-spark { grid-area: spark; align-self: center; }
+    .ops-table tr.ops-row td.c-s { grid-area: s; }
+    .ops-table tr.ops-row td.c-l { grid-area: l; }
+    .ops-table tr.ops-row td.c-y { grid-area: y; }
+    .ops-table tr.ops-row td.c-s, .ops-table tr.ops-row td.c-l, .ops-table tr.ops-row td.c-y { padding: 4px 6px; border-radius: 6px; font-size: 13px; }
+    .ops-table tr.ops-row td.c-s::before, .ops-table tr.ops-row td.c-l::before, .ops-table tr.ops-row td.c-y::before {
+      content: attr(data-label) " "; font-weight: 400; font-size: 12px; color: var(--ink-muted);
+    }
+    .ops-table tr.ops-row td.c-fc { grid-area: fc; text-align: right; font-size: 13px; }
+    .ops-table .ops-spark { margin-left: 0; }
+  }
+  /* 지금 주목할 점: 표를 읽기 전에 무엇이 움직였는지 문장으로 먼저 본다. */
   .ops-today { background: var(--accent-wash); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
   .ops-today-title { font-size: 13px; font-weight: 700; color: var(--ink-primary); margin-bottom: 4px; }
   .ops-today ul { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.65; color: var(--ink-primary); }
@@ -623,12 +714,12 @@
   .fail-when { color: var(--ink-muted); font-size: 12.5px; }
   .empty-note { font-size: 12.5px; color: var(--ink-muted); font-style: italic; }
 
-  .footnote { max-width: 1480px; margin: 32px auto 0; font-size: 12.5px; color: var(--ink-muted); line-height: 1.7; }
+  .footnote { max-width: var(--page-max); margin: 32px auto 0; font-size: 12.5px; color: var(--ink-muted); line-height: 1.7; }
 
   /* Sits under the source notes and separated from them: the notes are caveats about the data,
      this is authorship, and running them together reads as one more disclaimer. */
   .credit {
-    max-width: 1480px; margin: 18px auto 0; padding-top: 14px;
+    max-width: var(--page-max); margin: 18px auto 0; padding-top: 14px;
     border-top: 1px solid var(--gridline);
     display: flex; align-items: center; gap: 10px;
     font-size: 12.5px; color: var(--ink-muted);
@@ -684,12 +775,10 @@
     <div class="actions">
       <a class="update-btn"
          href="https://github.com/JHKim0603/work-dashboard/actions/workflows/update-dashboard.yml"
-         target="_blank" rel="noopener">
+         target="_blank" rel="noopener"
+         title="GitHub Actions 화면에서 [Run workflow]를 누르면 몇 분 뒤 새 값이 반영됩니다.">
         <span class="ico">🔄</span> 지금 업데이트
       </a>
-      <div class="update-hint">
-        GitHub Actions 화면에서 <b>[Run workflow]</b>를 누르면 몇 분 뒤 새 값이 반영됩니다.
-      </div>
     </div>
   </div>
 
@@ -697,7 +786,6 @@
 
   <div class="wrap">
     <div id="secOps">
-      <div class="section-title">물류 운영 핵심 지표</div>
       <div id="opsSummary"></div>
     </div>
 
@@ -1930,13 +2018,22 @@ document.querySelectorAll("#priceGroups .chart-wrap").forEach(attachChartHover);
 function opsReportText() {
   const when = FETCHED_AT ? FETCHED_AT.slice(0, 16).replace("T", " ") : "";
   const lines = [`[물류팀 운영 참고지표] ${when} 기준`, ""];
+  if ((OPS_SUMMARY.tiles || []).length) {
+    lines.push("■ 분야별 흐름");
+    OPS_SUMMARY.tiles.forEach(t => {
+      const detail = t.lead
+        ? `${t.lead.name} ${t.lead.currency || ""}${fmtNum(t.lead.value)}${t.change && t.change.pct !== null && t.change.pct !== undefined ? `, ${t.change.label} ${pctText(t.change.pct, true)}` : ""}`
+        : (t.lines || []).join(", ");
+      lines.push(`- ${t.title}: ${t.word}${detail ? ` (${detail})` : ""}`);
+    });
+    lines.push("");
+  }
   if ((OPS_SUMMARY.highlights || []).length) {
-    lines.push("■ 오늘 달라진 점");
-    OPS_SUMMARY.highlights.forEach(h => lines.push(`- ${h}`));
+    lines.push("■ 지금 주목할 점");
+    OPS_SUMMARY.highlights.forEach(h => lines.push(typeof h === "string" ? `- ${h}` : `- [${h.tag}] ${h.text}`));
     lines.push("");
   }
   lines.push("■ 지표별 현황");
-  (OPS_SUMMARY.groups || []).forEach(g => lines.push(`${g.label}: ${(g.names || []).join(", ")}`));
   OPS_SUMMARY.rows.forEach(r => {
     const parts = [];
     if (r.value !== null && r.value !== undefined) {
@@ -2034,48 +2131,88 @@ function opsCsv() {
     const lv = Math.abs(v) / thr;
     return lv < 1 ? "" : `${v > 0 ? "hu" : "hd"}${lv >= 2 ? 2 : 1}`;
   };
-  const pctTd = (v, thr) => `<td class="${pctCls(v)} ${tint(v, thr)}">${pctText(v)}</td>`;
-  const rows = OPS_SUMMARY.rows.map(r => {
+  const pctTd = (v, thr, cls, label) =>
+    `<td class="${cls} ${pctCls(v)} ${tint(v, thr)}" data-label="${esc(label)}">${pctText(v)}</td>`;
+  const fcCell = r => r.fc
+    ? `${fcRange(r.fc, r.currency)}<div class="os fc-dir ${fcCls(r.fc.direction)}">${esc(r.fc.direction)}</div>`
+    : (r.value !== null && r.value !== undefined) ? `<span class="os" title="자료가 30건 이상 쌓이면 예상 범위를 표시합니다">자료 수집 중</span>` : "–";
+  // 경향(최근 흐름)은 지표 이름 바로 옆에 둔다. 맨 오른쪽 끝에 있으면 숫자 칸을 다 지나야 결론이 보였다.
+  const rowHtml = r => {
     const val = (r.value !== null && r.value !== undefined)
       ? `${esc(r.currency || "")}${fmtNum(r.value)} <span class="ou">${esc(r.unit || "")}</span>` : "";
-    const sub = r.note || r.position || "";
     const clickable = CARD_BY_ID[r.detail] ? ` data-ops="${esc(r.detail)}"` : "";
-    return `<tr${clickable}>
-      <td><div class="on">${esc(r.name)}</div>${sub ? `<div class="os">${esc(sub)}</div>` : ""}</td>
-      <td>${val}${r.label ? `<div class="os">${esc(r.label)}</div>` : ""}</td>
-      <td class="mid">${spark(r) || `<span class="os">–</span>`}</td>
-      ${pctTd(r.shortPct, r.thrS)}
-      ${pctTd(r.longPct, r.thrL)}
-      ${pctTd(r.yoyPct, r.thrY)}
-      <td>${trendChip(r.trend, r.tone)}</td>
-      <td>${r.fc ? `${fcRange(r.fc, r.currency)}<div class="os fc-dir ${fcCls(r.fc.direction)}">${esc(r.fc.direction)}</div>`
-        : (r.value !== null && r.value !== undefined) ? `<span class="os" title="자료가 30건 이상 쌓이면 예상 범위를 표시합니다">자료 수집 중</span>` : "–"}</td>
+    return `<tr class="ops-row"${clickable}>
+      <td class="c-name"><div class="on">${esc(r.name)}${trendChip(r.trend, r.tone)}</div>${r.position ? `<div class="os">${esc(r.position)}</div>` : ""}</td>
+      <td class="c-val">${val}${r.label ? `<div class="os">${esc(r.label)}</div>` : ""}</td>
+      <td class="c-spark mid">${spark(r)}</td>
+      ${pctTd(r.shortPct, r.thrS, "c-s", r.shortLabel || "4주")}
+      ${pctTd(r.longPct, r.thrL, "c-l", r.longLabel || "13주")}
+      ${pctTd(r.yoyPct, r.thrY, "c-y", "1년")}
+      <td class="c-fc">${fcCell(r)}</td>
     </tr>`;
+  };
+  // 분야별로 묶는다. 내륙운송료는 위 타일이 보여 주므로 표에서 뺀다.
+  const tableRows = OPS_SUMMARY.rows.filter(r => r.id !== "safe-freight");
+  const byId = {};
+  tableRows.forEach(r => { byId[r.id] = r; });
+  const placed = new Set();
+  let bodyRows = "";
+  (OPS_SUMMARY.categories || []).forEach(cat => {
+    const rs = (cat.items || []).filter(i => byId[i]).map(i => { placed.add(i); return byId[i]; });
+    if (rs.length) bodyRows += `<tr class="ops-cat"><td colspan="7">${esc(cat.title)}</td></tr>` + rs.map(rowHtml).join("");
+  });
+  const rest = tableRows.filter(r => !placed.has(r.id));
+  if (rest.length) bodyRows += (placed.size ? `<tr class="ops-cat"><td colspan="7">기타</td></tr>` : "") + rest.map(rowHtml).join("");
+
+  // 분야별 한눈 요약 타일
+  const ARROW = { up: "▲", down: "▼", mixed: "◆", flat: "●" };
+  const tiles = (OPS_SUMMARY.tiles || []).map(t => {
+    const click = CARD_BY_ID[t.detail] ? ` data-ops="${esc(t.detail)}" role="button" tabindex="0"` : "";
+    const body = t.lead
+      ? `<div class="kt-lead">${esc(t.lead.name)} <b>${esc(t.lead.currency || "")}${fmtNum(t.lead.value)}</b>${t.lead.unit ? ` <span class="ou">${esc(t.lead.unit)}</span>` : ""}</div>
+         ${t.change && t.change.pct !== null && t.change.pct !== undefined ? `<div class="kt-chg ${pctCls(t.change.pct)}">${esc(t.change.label)} ${pctText(t.change.pct)}</div>` : ""}
+         ${t.count ? `<div class="kt-sub">${esc(t.count)}</div>` : ""}`
+      : (t.lines || []).map((l, i) => `<div class="${i ? "kt-sub" : "kt-lead"}">${esc(l)}</div>`).join("");
+    return `<div class="kpi-tile ${esc(t.tone || "flat")}"${click}>
+        <div class="kt-title">${esc(t.title)}</div>
+        <div class="kt-word">${ARROW[t.tone] || ""} ${esc(t.word)}</div>
+        ${body}
+      </div>`;
   }).join("");
-  const today = (OPS_SUMMARY.highlights || []).length
-    ? `<div class="ops-today"><div class="ops-today-title">오늘 달라진 점</div>
-        <ul>${OPS_SUMMARY.highlights.map(h => `<li>${esc(h)}</li>`).join("")}</ul></div>` : "";
-  box.innerHTML = `<div class="card">
-      ${today}
-      <div class="ops-head">
-        <div class="ops-groups">${(OPS_SUMMARY.groups || []).map(g =>
-          `<span><span class="og ${esc(g.tone)}">${esc(g.label)}</span>${(g.names || []).map(esc).join(", ")}</span>`).join("")}</div>
-        <div class="ops-actions">
-          <button class="ops-btn" id="opsCopy">📋 보고용 요약 복사</button>
-          <button class="ops-btn" id="opsCsv">📥 CSV 내려받기</button>
+
+  const hl = (OPS_SUMMARY.highlights || []).map(h => typeof h === "string" ? { tag: "", text: h } : h);
+  const side = `<div class="ops-side">
+      ${hl.length ? `<div class="ops-today"><div class="ops-today-title">지금 주목할 점</div>
+        <ul>${hl.map(h => `<li>${h.tag ? `<span class="hl-tag">${esc(h.tag)}</span>` : ""}${esc(h.text)}</li>`).join("")}</ul></div>` : ""}
+      <div class="ops-actions">
+        <button class="ops-btn" id="opsCopy">📋 보고용 요약 복사</button>
+        <button class="ops-btn" id="opsCsv">📥 CSV 내려받기</button>
+      </div>
+    </div>`;
+  box.innerHTML = `<div class="card ops-card">
+      <div class="ops-title">${esc(OPS_SUMMARY.title || "물류 운영 핵심 지표")}</div>
+      ${tiles ? `<div class="kpi-row">${tiles}</div>` : ""}
+      <div class="ops-body">
+        ${side}
+        <div class="ops-main">
+          <div class="ops-legend"><b class="up">빨강</b>은 비용 상승, <b class="down">초록</b>은 비용 하락입니다. 칸 배경이 진할수록 평소보다 크게 움직였습니다. 최근 흐름은 4주와 13주 변화로 판정합니다.</div>
+          <div class="ops-scroll"><table class="ops-table">
+            <tr class="ops-hdr"><th>지표 (최근 흐름)</th><th>현재</th><th class="c-spark">최근 6개월</th><th>단기 변화<br>(4주·1개월)</th><th>중기 변화<br>(13주·3개월)</th><th>1년 대비</th><th>단기 예상<br>(4주·1개월 후)</th></tr>
+            ${bodyRows}
+          </table></div>
+          <div class="ops-method">예상 범위는 과거 자료로 시험해 정확도가 높았던 방법으로 계산하며, 사건과 정책 변화는 반영하지 않습니다. 타일이나 행을 누르면 상세 화면이 열립니다.</div>
         </div>
       </div>
-      <div class="ops-scroll"><table class="ops-table">
-        <tr><th>지표</th><th>현재</th><th>최근 6개월</th><th>단기 변화<br>(4주·1개월)</th><th>중기 변화<br>(13주·3개월)</th><th>1년 대비</th><th>경향</th><th>단기 예상<br>(4주·1개월 후)</th></tr>
-        ${rows}
-      </table></div>
-      <div class="ops-method">${esc(OPS_SUMMARY.method || "")} 변화율 칸의 배경색은 평소 변동폭보다 크게 움직인 경우이며, 진할수록 변동이 큽니다. 예상 범위는 과거 자료로 시험해 정확도가 높았던 방법으로 계산하며, 사건과 정책 변화는 반영하지 않습니다. 행을 누르면 상세 화면이 열립니다.</div>
     </div>`;
   box.addEventListener("click", e => {
     if (e.target.closest("#opsCopy")) { opsCopy(e.target.closest("#opsCopy")); return; }
     if (e.target.closest("#opsCsv")) { opsCsv(); return; }
-    const tr = e.target.closest("tr[data-ops]");
-    if (tr) openDetail(tr.dataset.ops);
+    const hit = e.target.closest("[data-ops]");
+    if (hit) openDetail(hit.dataset.ops);
+  });
+  box.addEventListener("keydown", e => {
+    const t = e.target.closest(".kpi-tile[data-ops]");
+    if (t && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openDetail(t.dataset.ops); }
   });
 })();
 document.querySelectorAll("[data-detail]").forEach(btn =>

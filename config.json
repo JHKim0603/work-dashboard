@@ -236,6 +236,14 @@
   "opsSummary": {
     "title": "물류 운영 핵심 지표",
     "items": ["scfi", "kcci", "kcci-sea", "drybulk", "usdkrw", "D047", "B027", "safe-freight", "brent", "kcl"],
+    "//categories": "요약판 맨 위 분야별 타일과 요약표 묶음입니다. 분야 판정은 들어 있는 지표의 경향(상승·하락)을 세어 정하고, 타일에는 lead 지표의 값과 13주 변화를 보입니다. safe-freight 가 든 분야는 내륙운송료 판정을 보입니다.",
+    "categories": [
+      { "key": "freight", "title": "해상운임", "items": ["scfi", "kcci", "kcci-sea", "drybulk"], "lead": "kcci-sea" },
+      { "key": "fx", "title": "환율", "items": ["usdkrw"], "lead": "usdkrw" },
+      { "key": "fuel", "title": "유가·연료", "items": ["brent", "D047", "B027"], "lead": "brent" },
+      { "key": "inland", "title": "내륙운송료", "items": ["safe-freight"], "lead": "safe-freight" },
+      { "key": "material", "title": "원재료", "items": ["kcl"], "lead": "kcl" }
+    ],
     "shortNames": { "scfi": "SCFI", "kcci": "KCCI 종합", "kcci-sea": "부산발 동남아 운임", "ccfi-sea": "CCFI 동남아",
       "drybulk": "벌크 운임", "usdkrw": "원/달러 환율", "D047": "경유 가격", "B027": "휘발유 가격", "brent": "브렌트유",
       "wti": "WTI", "kcl": "KCl 가격", "naoh": "가성소다", "pp": "PP", "pe": "PE" }
