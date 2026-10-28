@@ -737,7 +737,7 @@ function Get-PinkSheetUrl {
 }
 
 function Get-KclPriceHistory {
-    param($months = 30)
+    param($months = 60)
 
     $tmpXlsx = [System.IO.Path]::GetTempFileName() + ".xlsx"
     try {
@@ -836,7 +836,7 @@ function Get-YahooSeries {
     param($cfg)
 
     try {
-        $uri = "https://query1.finance.yahoo.com/v8/finance/chart/$([uri]::EscapeDataString($cfg.Symbol))?interval=1wk&range=2y"
+        $uri = "https://query1.finance.yahoo.com/v8/finance/chart/$([uri]::EscapeDataString($cfg.Symbol))?interval=1wk&range=5y"
         $resp = Invoke-RestMethod -Uri $uri -Headers $headers
         $result = $resp.chart.result[0]
         $closes = $result.indicators.quote[0].close
@@ -882,7 +882,7 @@ function Get-YahooSeries {
 # CNY/t inclusive of VAT, not a Korean CFR purchase price. Northeast Asian resin moves together
 # closely enough that the trend is the useful part, which is why the card says so on its face.
 function Get-DceResinSeries {
-    param($cfg, $years = 2, $everyNth = 5)
+    param($cfg, $years = 5, $everyNth = 5)
 
     try {
         $uri = "https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_k=/InnerFuturesNewService.getDailyKLine?symbol=$([uri]::EscapeDataString($cfg.Symbol))"
@@ -951,7 +951,7 @@ function Get-DceResinSeries {
 # So this is a category index, not a chlorine price: 기초무기화합물 bundles chlorine, HCl and
 # caustic soda together, and it is published as an index rather than 원/톤. The card says so.
 function Get-EcosSeries {
-    param($cfg, $months = 24)
+    param($cfg, $months = 60)
 
     # The public sample key works and is what runs without a secret; it caps a call at 10 rows,
     # so pages are 10 wide regardless of key rather than branching on which one is in use.
@@ -1287,7 +1287,7 @@ function Get-KcciSeries {
     param($cfgList, [DateTime]$today)
     $codes = @("KCCI", "KUWI", "KUEI", "KNEI", "KMDI", "KMEI", "KAUI", "KLEI", "KLWI", "KSAI", "KWAI", "KCI", "KJI", "KSEI")
     try {
-        $body = "sDay=$($today.AddYears(-2).ToString('yyyy-MM-dd'))&eDay=$($today.ToString('yyyy-MM-dd'))"
+        $body = "sDay=$($today.AddYears(-5).ToString('yyyy-MM-dd'))&eDay=$($today.ToString('yyyy-MM-dd'))"
         $resp = $null
         for ($try = 1; $try -le 2; $try++) {
             try {
@@ -1471,6 +1471,14 @@ function Get-TrendStats {
         percentile = $pctile
         band       = $band
         position   = "$rangeName 중 $band"
+        longPosition = $(
+            $spanAll = ($last.d - $rows[0].d).TotalDays
+            if ($spanAll -ge 900) {
+                $allVals = @($rows | ForEach-Object { $_.v })
+                $pAll = [int][math]::Round(@($allVals | Where-Object { $_ -le $last.v }).Count / $allVals.Count * 100)
+                $yrs = [int][math]::Floor(($spanAll + 30) / 365)
+                if ($pAll -ge 50) { "${yrs}년 중 상위 $([math]::Max(1, 100 - $pAll))%" } else { "${yrs}년 중 하위 $([math]::Max(1, $pAll))%" }
+            } else { "" })
         points     = $rows.Count
     }
 }
@@ -1782,13 +1790,25 @@ function Get-SafeFreightOutlook {
         } else { $null }
         $historyOut = @($rows | ForEach-Object {
             [PSCustomObject]@{ window = $_.q.label; applyLabel = $_.q.applyLabel; avg = $_.avg; verdict = $_.verdict
-                note = $_.note; provisional = $_.provisional; computed = $_.computed }
+                note = $_.note; provisional = $_.provisional; computed = $_.computed; effective = $_.q.effective.ToString("yyyy-MM-dd") }
         })
 
         # 진행 중인 분기 (기본 가정: 남은 날은 마지막 값 유지)
         $cur = Get-QuarterInfo $today
         $wBase = Get-FuelWindowAverage -daily $daily -quarter $cur -today $today -projBase $latest
         $base = Get-FuelVerdict $wBase.avg $baseFuel $threshold
+        # 판정 추이(GDPNow 방식). 그날까지 쌓인 값만 넣은 표로 다시 계산해야 하므로 날마다 표를 늘려 간다.
+        $evolution = @()
+        $partial = @{}
+        for ($d = $cur.start; $d -le $today; $d = $d.AddDays(1)) {
+            $k = $d.ToString("yyyy-MM-dd")
+            if (-not $daily.ContainsKey($k)) { continue }
+            $partial[$k] = $daily[$k]
+            $we = Get-FuelWindowAverage -daily $partial -quarter $cur -today $d -projBase ([double]$daily[$k])
+            if ($null -ne $we.avg) {
+                $evolution += [PSCustomObject]@{ date = $k; avg = $we.avg; diff = [math]::Round($we.avg - $baseFuel, 1) }
+            }
+        }
         $baseImpact = if ($base.verdict -ne "동결") { Get-RouteImpacts $cfg.routes $base.diff $kmPerLiter } else { @() }
 
         # 시나리오: 유류세 인하가 예정일에 끝나면 다음 날부터 경유가 그만큼 오른다고 본다.
@@ -1846,6 +1866,7 @@ function Get-SafeFreightOutlook {
             window      = [PSCustomObject]@{ key = $cur.key; label = $cur.label; applyLabel = $cur.applyLabel
                 months = $wBase.months; actualDays = $wBase.actualDays; projectedDays = $wBase.projectedDays
                 effective = $cur.effective.ToString("yyyy-MM-dd") }
+            evolution   = @($evolution)
             base        = [PSCustomObject]@{ avg = $base.avg; diff = $base.diff; verdict = $base.verdict
                 assumption = "남은 기간은 마지막 값($(Format-Won $latest)원/L)이 유지된다고 가정"; impact = $baseImpact }
             scenario    = $scenario
@@ -2241,6 +2262,24 @@ $sseLanes = @(foreach ($lane in $config.sseLanes) {
 })
 $sseLanes = @($sseLanes | Where-Object { $_ })
 
+# 원/위안 환율. 야후의 CNYKRW=X 는 과거 자료가 없어 원/달러 ÷ 위안/달러로 계산한다(최신값만 쓴다).
+$krwPerCny = $null
+try {
+    $cnyResp = Invoke-RestMethod -Uri "https://query1.finance.yahoo.com/v8/finance/chart/CNY%3DX?interval=1d&range=5d" -Headers $headers
+    $cnyVals = @($cnyResp.chart.result[0].indicators.quote[0].close | Where-Object { $null -ne $_ })
+    $usdkrwCard = @($yahooSeries | Where-Object { $_.id -eq "usdkrw" })[0]
+    if ($cnyVals.Count -and $usdkrwCard -and @($usdkrwCard.points).Count) {
+        $krwPerCny = [math]::Round([double]@($usdkrwCard.points)[-1].value / [double]$cnyVals[-1], 2)
+    }
+} catch { Write-Warning "위안화 환율 조회 실패: $($_.Exception.Message)" }
+if ($krwPerCny) {
+    foreach ($rc in @($resinSeries)) {
+        if ([string]$rc.currency -ne "¥" -or @($rc.points).Count -eq 0) { continue }
+        $rc | Add-Member -NotePropertyName krwPerUnit -NotePropertyValue ([math]::Round([double]@($rc.points)[-1].value * $krwPerCny / 100) * 100) -Force
+        $rc | Add-Member -NotePropertyName krwRate -NotePropertyValue $krwPerCny -Force
+    }
+}
+
 $kcciSeries = @()
 if ($config.kcciSeries -and @($config.kcciSeries).Count -gt 0) {
     Write-Host "Fetching KCCI (부산 출발 컨테이너 운임)..."
@@ -2510,7 +2549,7 @@ function Get-OpsSummaryRow {
     $row = [ordered]@{ id = $id; detail = $id; name = $id; value = $null; currency = ""; unit = ""; label = ""
         shortLabel = ""; shortPct = $null; longLabel = ""; longPct = $null; trend = ""; tone = "flat"; position = ""; note = ""
         fc = $null; yoyPct = $null; thrS = $null; thrL = $null; thrY = $null; band = ""; rangeName = ""; short = ""
-        prevTrend = ""; prevTone = ""; changed = $false }
+        prevTrend = ""; prevTone = ""; changed = $false; longPosition = "" }
     $series = $null
     $t = $null
     $fcSrc = $null
@@ -2553,7 +2592,7 @@ function Get-OpsSummaryRow {
         $row.shortLabel = $t.shortLabel; $row.shortPct = $t.shortPct; $row.longLabel = $t.longLabel; $row.longPct = $t.longPct
         $row.trend = $t.trend; $row.tone = $t.tone; $row.position = $t.position
         $row.yoyPct = $t.yoyPct; $row.thrS = $t.thrShort; $row.thrL = $t.thrLong; $row.thrY = $t.thrYear
-        $row.band = $t.band; $row.rangeName = $t.rangeName
+        $row.band = $t.band; $row.rangeName = $t.rangeName; $row.longPosition = [string]$t.longPosition
         # 1주 전(마지막 점에서 6일 넘게 앞선 자료까지)으로 다시 판정. 월간 계열은 지난달 자료까지가 된다.
         $ptsArr = @($series)
         if ($ptsArr.Count -ge 4) {
@@ -2787,6 +2826,42 @@ foreach ($ev in @($config.scheduleEvents)) {
     }
 }
 $schedule = @($schedule | Sort-Object date)
+
+# 차트 사건 표시(Kiel 방식). config.chartEvents 의 사용자 사건에, 유류세 인하 종료를 국내 유가 차트에 자동으로 더한다.
+# 앞으로 날짜는 상세 화면의 '향후 예상' 차트에, 지난 날짜는 가격 차트에 세로선으로 그린다.
+$chartEvents = New-Object System.Collections.ArrayList
+foreach ($ev in @($config.chartEvents)) {
+    if (-not $ev -or -not $ev.date -or -not $ev.label) { continue }
+    [void]$chartEvents.Add([PSCustomObject]@{ date = [string]$ev.date; label = [string]$ev.label; ids = @($ev.ids | ForEach-Object { [string]$_ }) })
+}
+if ($safeFreight -and $safeFreight.scenario -and $safeFreight.scenario.until) {
+    [void]$chartEvents.Add([PSCustomObject]@{ date = [string]$safeFreight.scenario.until; label = "유류세 인하 종료 예정"; ids = @("D047", "B027") })
+}
+$chartEventsJson = ConvertTo-Json -InputObject @($chartEvents) -Depth 4 -Compress
+if (-not $chartEventsJson -or $chartEventsJson -eq "null") { $chartEventsJson = "[]" }
+
+# 지표별 다음 발표일(GDPNow 의 '다음 갱신' 방식). 규칙은 config.releaseSchedule: weekly:요일번호(일=0), bizday:N(매월 N번째 영업일), text:문구.
+$dowKo = @("일", "월", "화", "수", "목", "금", "토")
+$nextRelease = [ordered]@{}
+if ($config.releaseSchedule) {
+    foreach ($prop in $config.releaseSchedule.PSObject.Properties) {
+        $rule = [string]$prop.Value
+        $txt = ""
+        if ($rule -match '^weekly:([0-6])$') {
+            $nd = Get-NextWeekday $todayKst.AddDays(1) ([DayOfWeek][int]$matches[1])
+            $txt = "다음 발표 $($nd.Month)/$($nd.Day)($($dowKo[[int]$nd.DayOfWeek]))"
+        } elseif ($rule -match '^bizday:(\d+)$') {
+            $nb = Get-NthBusinessDay $todayKst.Year $todayKst.Month ([int]$matches[1])
+            if ($nb -le $todayKst) { $nm = $todayKst.AddMonths(1); $nb = Get-NthBusinessDay $nm.Year $nm.Month ([int]$matches[1]) }
+            $txt = "다음 발표 $($nb.Month)/$($nb.Day)($($dowKo[[int]$nb.DayOfWeek]))"
+        } elseif ($rule -match '^text:(.+)$') {
+            $txt = $matches[1]
+        }
+        if ($txt) { $nextRelease[$prop.Name] = $txt }
+    }
+}
+$nextReleaseJson = ConvertTo-Json -InputObject $nextRelease -Compress
+if (-not $nextReleaseJson -or $nextReleaseJson -eq "null") { $nextReleaseJson = "{}" }
 $scheduleJson = ConvertTo-Json -InputObject @($schedule) -Depth 3 -Compress
 if (-not $scheduleJson -or $scheduleJson -eq "null") { $scheduleJson = "[]" }
 
@@ -2901,7 +2976,7 @@ $opsSummaryJson = ConvertTo-JsonOrNull -InputObject $opsSummary -Depth 6
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
-$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__CARD_GROUPS_JSON__", $cardGroupsJson).Replace("__SCHEDULE_JSON__", $scheduleJson).Replace("__SAFE_FREIGHT_JSON__", $safeFreightJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__OPS_SUMMARY_JSON__", $opsSummaryJson).Replace("__NEWS_OUTAGE__", $(if ($newsOutage) { "true" } else { "false" })).Replace("__FETCHED_AT__", $fetchedAt)
+$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__CARD_GROUPS_JSON__", $cardGroupsJson).Replace("__SCHEDULE_JSON__", $scheduleJson).Replace("__CHART_EVENTS_JSON__", $chartEventsJson).Replace("__NEXT_RELEASE_JSON__", $nextReleaseJson).Replace("__SAFE_FREIGHT_JSON__", $safeFreightJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__OPS_SUMMARY_JSON__", $opsSummaryJson).Replace("__NEWS_OUTAGE__", $(if ($newsOutage) { "true" } else { "false" })).Replace("__FETCHED_AT__", $fetchedAt)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8
@@ -3252,7 +3327,10 @@ $priceRowsHtml = foreach ($c in $priceCards) {
     $latest = $pts[-1]
     $prior = if ($pts.Count -gt 1) { $pts[-2] } else { $null }
     $change = Get-PriceChangeHtml -latestValue $latest.value -priorValue $(if ($prior) { $prior.value } else { $null })
-    $chartHtml = Get-PriceChartHtml -points $pts -accent $change.accent -currency $c.currency
+    $chartPts = @($pts)
+    $lastLd = ConvertTo-LabelDate $pts[-1].label
+    if ($lastLd) { $chartPts = @($pts | Where-Object { $ld = ConvertTo-LabelDate $_.label; -not $ld -or $ld -ge $lastLd.AddDays(-731) }) }
+    $chartHtml = Get-PriceChartHtml -points $chartPts -accent $change.accent -currency $c.currency
     # Reference price line (mail only - see $cardTargets). Above the reference is the costly side,
     # so it takes the same red the up-is-bad badges use.
     $targetHtml = ""
@@ -3273,7 +3351,7 @@ $priceRowsHtml = foreach ($c in $priceCards) {
       <span style="font-size:20px;font-weight:700;color:#0b0b0b;">$($c.currency)$(Format-PriceValue $latest.value)</span>
       <span style="font-size:12px;color:#898781;">$($c.unit)</span>
       <span style="font-size:13px;margin-left:5px;">$($change.html)</span>
-      <span style="font-size:11px;color:#898781;">$($latest.label) 기준</span>
+      <span style="font-size:11px;color:#898781;">$($latest.label) 기준$(if ($c.krwPerUnit) { ", 약 $(([double]$c.krwPerUnit).ToString('N0'))원/톤" })</span>
     </div>
     $targetHtml
     $chartHtml
@@ -3706,6 +3784,19 @@ if ($safeFreight) {
     }
 }
 
+# 흐름 전환(Mintec 의 추세 전환 알림 방식). 지난 메일에 실린 방향과 비교해, 상승 또는 하락으로 새로 바뀐 날에만 올린다.
+# 기록이 없는 첫 메일은 올리지 않는다. 1주 전 판정과 비교하는 페이지 표시와 달리 메일은 '지난 메일'이 기준이라 한 번만 뜬다.
+if ($opsSummary) {
+    foreach ($r in @($opsSummary.rows)) {
+        if (-not $r.tone -or $r.id -eq "safe-freight" -or $r.trend -eq "수집 실패" -or $r.trend -eq "기록 부족") { continue }
+        $tk = "trend-$($r.id)"
+        if ($mailedLabels.ContainsKey($tk) -and $mailedLabels[$tk] -ne [string]$r.tone -and ($r.tone -eq "up" -or $r.tone -eq "down")) {
+            $dirWord = if ($r.tone -eq "up") { "상승" } else { "하락" }
+            [void]$wdHighlights.Add([PSCustomObject]@{ text = "흐름 전환 $($r.short) $dirWord"; priority = 78 })
+        }
+    }
+}
+
 $scfiPrevLabel = Get-BaselineLabel "scfi"
 if ($scfi -and $scfi.changePct -and $scfiPrevLabel -and $scfiPrevLabel -ne [string]$scfi.currentDate `
     -and [math]::Abs($scfi.changePct) -ge (Get-ChangeAlertPct "scfi")) {
@@ -3744,6 +3835,11 @@ foreach ($c in $priceCards) {
 }
 if ($scfi -and $scfi.currentDate) { $nextMailed["scfi"] = [string]$scfi.currentDate }
 if ($sfState) { $nextMailed["safe-freight"] = $sfState }
+if ($opsSummary) {
+    foreach ($r in @($opsSummary.rows)) {
+        if ($r.tone -and $r.id -ne "safe-freight" -and $r.trend -ne "수집 실패" -and $r.trend -ne "기록 부족") { $nextMailed["trend-$($r.id)"] = [string]$r.tone }
+    }
+}
 $nextMailedOrdered = [ordered]@{}
 foreach ($k in ($nextMailed.Keys | Sort-Object)) { $nextMailedOrdered[$k] = $nextMailed[$k] }
 [System.IO.File]::WriteAllText((Join-Path $root "mailed-labels.next.json"), (ConvertTo-Json -InputObject $nextMailedOrdered), $utf8NoBom)

@@ -345,6 +345,31 @@
   }
 
   .chart-wrap { position: relative; }
+  /* 차트 사건 표시(세로 점선) */
+  .ch-ev line { stroke: var(--warn); stroke-width: 1.2; stroke-dasharray: 4 3; }
+  .ch-ev text { font-size: 11px; fill: var(--warn); font-weight: 600; }
+  /* 평년 비교: 과거 범위 띠, 작년(점선), 올해(굵은 선) */
+  .ss-band { fill: var(--ink-muted); opacity: 0.16; }
+  .ss-prev { fill: none; stroke: var(--ink-muted); stroke-width: 1.3; stroke-dasharray: 5 4; }
+  .ss-cur { fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linejoin: round; }
+  .ss-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-muted); margin-top: 4px; }
+  .ss-legend i { display: inline-block; width: 18px; height: 0; vertical-align: middle; margin-right: 5px; border-top: 2px solid var(--accent); }
+  .ss-legend i.prev { border-top: 2px dashed var(--ink-muted); }
+  .ss-legend i.band { height: 9px; border: none; background: var(--ink-muted); opacity: 0.25; }
+  /* 내륙운송료 판정 추이 */
+  .sfe-band { fill: var(--accent-wash); }
+  .sfe-up { stroke: var(--bad); stroke-width: 1.2; stroke-dasharray: 5 4; }
+  .sfe-down { stroke: var(--good); stroke-width: 1.2; stroke-dasharray: 5 4; }
+  .sfe-base { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 2 3; }
+  .sfe-line { fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linejoin: round; }
+  .sfe-lbl { font-size: 11px; font-weight: 600; }
+  .sfe-lbl.up { fill: var(--bad); }
+  .sfe-lbl.down { fill: var(--good); }
+  .sfe-lbl.base { fill: var(--ink-muted); }
+  /* 다음 발표일, 원화 환산 */
+  .next-rel { color: var(--accent); white-space: nowrap; }
+  .price-krw { font-size: 12.5px; color: var(--ink-secondary); margin: -4px 0 8px; font-variant-numeric: tabular-nums; }
+  .price-krw span { color: var(--ink-muted); }
   .price-chart { width: 100%; height: auto; display: block; overflow: visible; touch-action: none; }
   .ch-grid { stroke: var(--gridline); stroke-width: 1; }
   .ch-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
@@ -881,6 +906,9 @@ const LANE_ABOUT = __LANE_ABOUT_JSON__;
 const CARD_SORTS = __CARD_SORTS_JSON__;
 const CARD_GROUPS = __CARD_GROUPS_JSON__;
 const SCHEDULE = __SCHEDULE_JSON__;
+const CHART_EVENTS = __CHART_EVENTS_JSON__;
+const NEXT_RELEASE = __NEXT_RELEASE_JSON__;
+const evsFor = id => (CHART_EVENTS || []).filter(e => !e.ids || !e.ids.length || e.ids.indexOf(id) >= 0);
 const SAFE_FREIGHT = __SAFE_FREIGHT_JSON__;
 const OPS_SUMMARY = __OPS_SUMMARY_JSON__;
 const NEWS_OUTAGE = __NEWS_OUTAGE__;
@@ -1266,7 +1294,23 @@ function axisNum(v, span) {
   return fmtNum(v, span < 10 ? 1 : 0);
 }
 
-function priceChartSvg(points, chartId, d = CH) {
+// 사건 날짜를 점 사이 위치로 바꿔 세로 점선을 그린다. 차트 기간 밖의 사건은 그리지 않는다.
+function eventMarks(points, evs, x, d, idxOffset = 0) {
+  if (!evs || !evs.length || points.length < 2) return "";
+  const ds = points.map(p => parseLabel(p.label));
+  if (!ds[0] || !ds[ds.length - 1]) return "";
+  return evs.map(ev => {
+    const t = parseLabel(ev.date);
+    if (!t || t < ds[0] || t > ds[ds.length - 1]) return "";
+    let i = 0;
+    while (i < ds.length - 2 && ds[i + 1] < t) i++;
+    const fi = i + (t - ds[i]) / ((ds[i + 1] - ds[i]) || 1);
+    const xx = x(fi + idxOffset).toFixed(1);
+    return `<g class="ch-ev"><line x1="${xx}" x2="${xx}" y1="${d.PAD_T}" y2="${d.H - d.PAD_B}"/>${d.compact ? "" : `<text x="${(+xx + 3).toFixed(1)}" y="${d.PAD_T + 10}">${esc(ev.label)}</text>`}<title>${esc(ev.date)} ${esc(ev.label)}</title></g>`;
+  }).join("");
+}
+
+function priceChartSvg(points, chartId, d = CH, evs = null) {
   if (CHART_DATA[chartId]) CHART_DATA[chartId].dims = d;
   const g = chartGeometry(points, d);
   const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${g.x(i).toFixed(1)},${g.y(p.value).toFixed(1)}`).join(" ");
@@ -1292,6 +1336,7 @@ function priceChartSvg(points, chartId, d = CH) {
     ${grid}
     <path d="${area}" class="ch-area"/>
     <path d="${line}" class="ch-line"/>
+    ${eventMarks(points, evs, g.x, d)}
     <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3.5" class="ch-dot"/>
     ${xlabels}
     <line class="ch-cursor" y1="${d.PAD_T}" y2="${d.H - d.PAD_B}" x1="0" x2="0"/>
@@ -1388,7 +1433,7 @@ function fcLine(fc, cur) {
     <span class="fc-dir ${fcCls(h.direction)}">${esc(h.direction)}</span></div>`;
 }
 // 상세 화면용 차트: 최근 기록 + 앞으로의 예상 범위(부채꼴)와 중간값(점선).
-function forecastChartSvg(points, fc) {
+function forecastChartSvg(points, fc, evs = null) {
   const d = CH;
   const keep = fc.unit === "month" ? 24 : fc.unit === "day" ? 90 : 52;
   const hist = points.slice(-Math.min(points.length, keep));
@@ -1416,6 +1461,14 @@ function forecastChartSvg(points, fc) {
     `<text x="${x(n).toFixed(1)}" y="${d.H - 5}" class="ch-xlabel" text-anchor="middle">${esc(hist[n].label)}</text>`,
     `<text x="${x(total).toFixed(1)}" y="${d.H - 5}" class="ch-xlabel" text-anchor="end">${esc(hs[hs.length - 1].date)}</text>`].join("");
   const dots = hs.map(h => `<circle cx="${x(n + h.steps).toFixed(1)}" cy="${y(h.mid).toFixed(1)}" r="3" class="fc-dot"/>`).join("");
+  // 지난 사건은 기록 위에, 앞으로 사건은 예상 구간 위에(마지막 시점과 맨 끝 예상 시점 사이를 날짜로 나눠) 표시한다.
+  const lastD = parseLabel(hist[n].label), endD = parseLabel(hs[hs.length - 1].date);
+  const futureEvs = (evs || []).map(ev => {
+    const t = parseLabel(ev.date);
+    if (!t || !lastD || !endD || t <= lastD || t > endD) return "";
+    const xx = x(n + (t - lastD) / (endD - lastD) * hs[hs.length - 1].steps).toFixed(1);
+    return `<g class="ch-ev"><line x1="${xx}" x2="${xx}" y1="${d.PAD_T}" y2="${d.H - d.PAD_B}"/><text x="${(+xx + 3).toFixed(1)}" y="${d.PAD_T + 10}">${esc(ev.label)}</text><title>${esc(ev.date)} ${esc(ev.label)}</title></g>`;
+  }).join("") + eventMarks(hist, evs, x, d);
   return `<svg viewBox="0 0 ${d.W} ${d.H}" class="price-chart" role="img" aria-label="최근 추이와 앞으로의 예상 범위">
     ${grid}
     <path d="${fan}" class="fc-fan"/>
@@ -1423,6 +1476,7 @@ function forecastChartSvg(points, fc) {
     <path d="${line}" class="ch-line"/>
     <path d="${mid}" class="fc-mid"/>
     ${dots}
+    ${futureEvs}
     ${labels}
   </svg>`;
 }
@@ -1441,7 +1495,7 @@ function forecastSection(c) {
       : `<b>${esc(h.label)}</b>: 현재 값을 중간값으로 썼습니다. 과거 ${h.tests}회 시험에서 추세를 반영한 방법(±${h.trendMae}%)이 현재 값 유지(±${h.naiveMae}%)보다 정확하지 않았습니다. 실제 값이 예상 범위 안에 든 비율은 ${h.coverage}%입니다.${few}`;
   }).join("<br>");
   return `<div class="m-section-title">향후 예상</div>
-    <div class="chart-wrap">${forecastChartSvg(c.points, fc)}</div>
+    <div class="chart-wrap">${forecastChartSvg(c.points, fc, evsFor(c.id))}</div>
     <table class="sf-table" style="margin-top:8px;">
       <tr><th>시점</th><th>중간값</th><th>예상 범위</th><th>현재 대비</th><th>방향</th></tr>
       ${rows}
@@ -1537,6 +1591,91 @@ function trendSentence(c) {
   return `${dir} 현재 값은 차트 기간의 최저 ${money(lo)}와 최고 ${money(hi)} 사이에서 ${band}에 있습니다.`;
 }
 
+// 평년 비교. 같은 시기(주 또는 월)의 과거 해 범위를 띠로, 작년을 점선으로, 올해를 굵은 선으로 그린다.
+// 기록이 2.5년 넘고 지난해가 2개 이상일 때만.
+function seasonalSection(c) {
+  const pts = c.points || [];
+  if (pts.length < 30) return "";
+  const first = parseLabel(pts[0].label), last = parseLabel(pts[pts.length - 1].label);
+  if (!first || !last || (last - first) / 86400000 < 900) return "";
+  const monthly = String(pts[0].label).length === 7;
+  const NB = monthly ? 12 : 53;
+  const bucketOf = dt => monthly ? dt.getMonth() : Math.min(52, Math.floor((dt - new Date(dt.getFullYear(), 0, 1)) / 86400000 / 7));
+  const byYear = {};
+  pts.forEach(p => {
+    const dt = parseLabel(p.label);
+    if (!dt) return;
+    const yv = dt.getFullYear();
+    if (!byYear[yv]) byYear[yv] = Array.from({ length: NB }, () => []);
+    byYear[yv][bucketOf(dt)].push(p.value);
+  });
+  const avg = arr => arr.map(b => b.length ? b.reduce((a, v) => a + v, 0) / b.length : null);
+  const cy = last.getFullYear(), py = cy - 1;
+  const years = Object.keys(byYear).map(Number).sort((a, b) => a - b);
+  const past = years.filter(yv => yv < cy);
+  if (past.length < 2 || !byYear[cy]) return "";
+  const ser = {};
+  years.forEach(yv => { ser[yv] = avg(byYear[yv]); });
+  const lo = [], hi = [];
+  for (let b = 0; b < NB; b++) {
+    const vs = past.map(yv => ser[yv][b]).filter(v => v !== null);
+    lo.push(vs.length >= 2 ? Math.min(...vs) : null);
+    hi.push(vs.length >= 2 ? Math.max(...vs) : null);
+  }
+  const all = [].concat(...years.map(yv => ser[yv].filter(v => v !== null)));
+  const vmin = Math.min(...all), vmax = Math.max(...all), span = (vmax - vmin) || 1;
+  const d = CH;
+  const x = b => d.PAD_L + b / (NB - 1) * (d.W - d.PAD_L - d.PAD_R);
+  const y = v => d.PAD_T + (1 - (v - vmin) / span) * (d.H - d.PAD_T - d.PAD_B);
+  const pathOf = arr => {
+    let out = "", pen = false;
+    arr.forEach((v, b) => {
+      if (v === null) { pen = false; return; }
+      out += `${pen ? "L" : "M"}${x(b).toFixed(1)},${y(v).toFixed(1)} `;
+      pen = true;
+    });
+    return out;
+  };
+  // 띠: 위아래 값이 모두 있는 구간마다 다각형
+  let band = "", seg = [];
+  const flush = () => {
+    if (seg.length > 1) {
+      band += "M" + seg.map(b => `${x(b).toFixed(1)},${y(hi[b]).toFixed(1)}`).join(" L") + " L"
+        + seg.slice().reverse().map(b => `${x(b).toFixed(1)},${y(lo[b]).toFixed(1)}`).join(" L") + " Z ";
+    }
+    seg = [];
+  };
+  for (let b = 0; b < NB; b++) { if (lo[b] !== null && hi[b] !== null) seg.push(b); else flush(); }
+  flush();
+  const grid = [0, 0.33, 0.66, 1].map(f => {
+    const v = vmin + f * span, yy = y(v);
+    return `<line x1="${d.PAD_L}" y1="${yy.toFixed(1)}" x2="${d.W - d.PAD_R}" y2="${yy.toFixed(1)}" class="ch-grid"/>
+      <text x="${d.PAD_L - 5}" y="${(yy + 3.5).toFixed(1)}" class="ch-ylabel">${axisNum(v, span)}</text>`;
+  }).join("");
+  const months = [0, 3, 6, 9, 11].map(m => {
+    const b = monthly ? m : Math.round(m * 52 / 12);
+    return `<text x="${x(b).toFixed(1)}" y="${d.H - 5}" class="ch-xlabel" text-anchor="middle">${m + 1}월</text>`;
+  }).join("");
+  // 지금 값과 같은 시기 과거 범위 비교
+  const bNow = bucketOf(last), vNow = pts[pts.length - 1].value;
+  let verdict = "";
+  if (lo[bNow] !== null && hi[bNow] !== null) {
+    verdict = vNow > hi[bNow] ? "지금 값은 같은 시기 과거 범위보다 <b>높습니다</b>."
+      : vNow < lo[bNow] ? "지금 값은 같은 시기 과거 범위보다 <b>낮습니다</b>." : "지금 값은 같은 시기 과거 범위 <b>안</b>에 있습니다.";
+  }
+  const rangeTxt = `${past[0]}~${past[past.length - 1]}년`;
+  return `<div class="m-section-title">평년 비교 (같은 시기 ${esc(rangeTxt)})</div>
+    <div class="chart-wrap"><svg viewBox="0 0 ${d.W} ${d.H}" class="price-chart" role="img" aria-label="같은 시기 과거 범위와 올해 비교">
+      ${grid}
+      <path d="${band}" class="ss-band"/>
+      ${byYear[py] ? `<path d="${pathOf(ser[py])}" class="ss-prev"/>` : ""}
+      <path d="${pathOf(ser[cy])}" class="ss-cur"/>
+      ${months}
+    </svg></div>
+    <div class="ss-legend"><span><i></i>${cy}년</span>${byYear[py] ? `<span><i class="prev"></i>${py}년</span>` : ""}<span><i class="band"></i>${esc(rangeTxt)} 범위</span></div>
+    ${verdict ? `<div class="m-note" style="margin-top:6px;">${verdict}</div>` : ""}`;
+}
+
 // KCCI 항로별 현황(부산 출발). 종합 카드의 상세 화면에만 붙는다.
 function kcciLaneSection(lanes) {
   if (!lanes || !lanes.length) return "";
@@ -1607,21 +1746,23 @@ function openDetail(id) {
     const initDays = spanDays > 400 ? 366 : 0;
     const shown = sliceDays(pts, initDays);
     CHART_DATA[chartId] = { points: shown, currency: c.currency || "", unit: c.unit || "", decimals: 2 };
-    rangeInit = { chartId, pts };
+    rangeInit = { chartId, pts, evs: evsFor(id) };
     const rangeHtml = ranges.length ? `<div class="range-btns" role="group" aria-label="차트 기간">${ranges.map(r =>
       `<button type="button" data-days="${r.days}" class="${r.days === initDays ? "on" : ""}">${r.label}</button>`).join("")}</div>` : "";
     body += `${subLine(c)}
       <div class="price-now">
         <span class="pv">${esc(c.currency || "")}${fmtNum(last.value)}</span>
         <span class="pu">${esc(c.unit || "")}</span>
-        <span class="pd">${esc(last.label)} 기준 (자료 ${pts.length}건)</span>
+        <span class="pd">${esc(last.label)} 기준 (자료 ${pts.length}건)${NEXT_RELEASE[id] ? `, <span class="next-rel">${esc(NEXT_RELEASE[id])}</span>` : ""}</span>
       </div>
       ${rangeHtml}
-      <div class="chart-wrap" id="wrap-${chartId}">${priceChartSvg(shown, chartId)}<div class="ch-tip"></div></div>
+      ${c.krwPerUnit ? `<div class="price-krw">원화 환산 약 ${fmtNum(c.krwPerUnit)}원/톤 <span>(1위안 ${fmtNum(c.krwRate, 1)}원 기준)</span></div>` : ""}
+      <div class="chart-wrap" id="wrap-${chartId}">${priceChartSvg(shown, chartId, CH, evsFor(id))}<div class="ch-tip"></div></div>
       <div class="m-stats">${statWindowsFor(pts).map(w => statBox(w.label, changeOver(pts, w.days))).join("")}</div>
       ${c.trend ? `<div class="m-section-title">경향 판정</div><div class="m-read">${trendExplain(c.trend)}</div>`
         : `<div class="m-section-title">추이 요약</div><div class="m-read">${trendSentence(c)}</div>`}
       ${forecastSection(c)}
+      ${seasonalSection(c)}
       ${kcciLaneSection(c.kcciLanes)}`;
   } else if (c.isScfi) {
     const up = c.change >= 0;
@@ -1647,6 +1788,11 @@ function openDetail(id) {
         기준은 현재 운임에 반영된 산정 기간의 유가입니다. 동결된 분기는 기준을 바꾸지 않습니다.
         ${c.pending && c.applied ? `<br>현재 운임은 ${esc(c.applied.window)} 평균 ${sfWon(c.applied.fuel)}원 기준입니다.
           ${esc(c.pending.effective)}부터는 ${esc(c.pending.window)} 평균 기준으로 ${esc(c.pending.verdict)}된 운임이 적용될 예정입니다.` : ""}</div>
+      ${c.evolution && c.evolution.length > 1 ? `<div class="m-section-title">산정 기간 평균 추정치 추이 (${esc(c.window.label)})</div>
+        <div class="chart-wrap">${sfEvolutionSvg(c.evolution, c.baseFuel, c.threshold, false)}</div>
+        <div class="m-note" style="margin-top:6px;">${sfMargin(c.base.diff, c.threshold)}.
+          날마다 그날까지의 오피넷 전국평균으로 계산하고, 남은 날은 그날 값이 유지된다고 가정한 산정 기간 평균입니다.
+          띠 안에 있으면 동결, 위 선을 넘으면 인상, 아래 선을 넘으면 인하 판정입니다.</div>` : ""}
       <div class="m-section-title">산정 기간 ${esc(c.window.label)} 월평균 경유가 (오피넷 전국평균)</div>
       ${sfMonthTable(c.window.months, s ? s.current.months : null)}
       <div class="m-section-title">판정</div>
@@ -1703,12 +1849,12 @@ function openDetail(id) {
   document.getElementById("modalBackdrop").classList.add("open");
   document.querySelectorAll("#modalBody .chart-wrap").forEach(attachChartHover);
   if (rangeInit) {
-    const { chartId, pts: all } = rangeInit;
+    const { chartId, pts: all, evs } = rangeInit;
     document.querySelectorAll("#modalBody .range-btns button").forEach(btn => btn.addEventListener("click", () => {
       const sub = sliceDays(all, Number(btn.dataset.days));
       CHART_DATA[chartId].points = sub;
       const wrap = document.getElementById("wrap-" + chartId);
-      wrap.innerHTML = `${priceChartSvg(sub, chartId)}<div class="ch-tip"></div>`;
+      wrap.innerHTML = `${priceChartSvg(sub, chartId, CH, evs)}<div class="ch-tip"></div>`;
       attachChartHover(wrap);
       btn.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === btn));
     }));
@@ -1770,7 +1916,9 @@ function priceCardHtml(c, idx) {
   const prior = pts.length > 1 ? pts[pts.length - 2] : null;
   const decimals = Number.isInteger(latest.value) ? 0 : (String(latest.value).split(".")[1] || "").length;
   const chartId = "ch" + idx;
-  CHART_DATA[chartId] = { points: pts, currency: c.currency || "", unit: c.unit || "", decimals: Math.min(decimals, 2) };
+  // 평년 비교를 위해 5년치를 받지만, 카드 차트는 최근 2년만 그린다(전체는 [상세]의 [전체] 버튼).
+  const cardPts = /^\d{4}$/.test(String(latest.label)) ? pts : sliceDays(pts, 731);  // 연간 계열(전기요금)은 전체
+  CHART_DATA[chartId] = { points: cardPts, currency: c.currency || "", unit: c.unit || "", decimals: Math.min(decimals, 2) };
   CARD_BY_ID[c.id] = c;
 
   const changeHtml = prior ? changeBadgeHtml(prior, latest) : "";
@@ -1788,11 +1936,12 @@ function priceCardHtml(c, idx) {
         <span class="pu">${esc(c.unit || "")}</span>
         ${changeHtml}
       </div>
-      <div class="price-meta">${esc(latest.label)} 기준${basis ? ` (${esc(basis)})` : ""}${staleTag(latest.label)}</div>
+      <div class="price-meta">${esc(latest.label)} 기준${basis ? ` (${esc(basis)})` : ""}${staleTag(latest.label)}${NEXT_RELEASE[c.id] ? `<span class="next-rel">${esc(NEXT_RELEASE[c.id])}</span>` : ""}</div>
+      ${c.krwPerUnit ? `<div class="price-krw">원화 환산 약 ${fmtNum(c.krwPerUnit)}원/톤 <span>(1위안 ${fmtNum(c.krwRate, 1)}원)</span></div>` : ""}
       ${trendLine(c.trend)}
       ${fcLine(c.forecast, c.currency)}
       <div class="chart-wrap">
-        ${priceChartSvg(pts, chartId, CH_CARD)}
+        ${priceChartSvg(cardPts, chartId, CH_CARD, evsFor(c.id))}
         <div class="ch-tip"></div>
       </div>
       <div class="card-src">출처: ${esc(c.source || "")}</div>
@@ -1831,7 +1980,7 @@ if (SCFI) {
           ? `<span class="chg flat">보합</span>`
           : `<span class="chg ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${fmtNum(Math.abs(SCFI.change))} (${up ? "+" : ""}${SCFI.changePct}%)</span>`}
       </div>
-      <div class="price-meta">${esc(SCFI.currentDate)} 기준 (전주 대비)</div>
+      <div class="price-meta">${esc(SCFI.currentDate)} 기준 (전주 대비)${NEXT_RELEASE.scfi ? `<span class="next-rel">${esc(NEXT_RELEASE.scfi)}</span>` : ""}</div>
       ${trendLine(SCFI.trend)}
       ${fcLine(SCFI.forecast, "")}
       ${hasChart
@@ -1878,7 +2027,7 @@ if (SSE_LANES && SSE_LANES.length) {
         <h3>CCFI 항로별 운임지수</h3>
         ${LANE_ABOUT ? `<button class="detail-btn" data-detail="ccfi-lanes">상세</button>` : ""}
       </div>
-      <div class="flag">${esc(anyLane.currentDate)} 기준 (전주 대비)</div>
+      <div class="flag">${esc(anyLane.currentDate)} 기준 (전주 대비)${NEXT_RELEASE["ccfi-lanes"] ? `, <span class="next-rel">${esc(NEXT_RELEASE["ccfi-lanes"])}</span>` : ""}</div>
       ${laneRows}
       <div class="card-src">출처: Shanghai Shipping Exchange (주간 발표${laneWeeks >= 3 && LANE_ABOUT ? ", 항로별 차트는 [상세]" : `, ${laneWeeks}주째 수집 중`})</div>
     </div>`);
@@ -1886,6 +2035,43 @@ if (SSE_LANES && SSE_LANES.length) {
 
 // 안전운임 유가연동 전망. 시계열 카드가 아니라 판정 카드라 따로 조립한다: 다음 고시에서 운임이
 // 동결·인상·인하 중 어느 쪽인지, 유류세 인하가 끝나면 어떻게 되는지, 노선별로 몇 원인지.
+// 산정 기간 평균 추정치가 날마다 어떻게 바뀌어 왔는지(GDPNow 방식). 띠 안이면 동결, 위 선을 넘으면 인상, 아래 선을 넘으면 인하.
+function sfEvolutionSvg(evo, base, thr, compact) {
+  if (!evo || evo.length < 2 || base === null || base === undefined) return "";
+  const d = compact ? { W: 640, H: 96, PAD_L: 46, PAD_R: 96, PAD_T: 8, PAD_B: 18 }
+                    : { W: 560, H: 180, PAD_L: 46, PAD_R: 100, PAD_T: 10, PAD_B: 24 };
+  const vals = evo.map(e => e.avg).concat([base - thr, base + thr]);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const pad = (hi - lo) * 0.08 || 5; lo -= pad; hi += pad;
+  const x = i => d.PAD_L + i / (evo.length - 1) * (d.W - d.PAD_L - d.PAD_R);
+  const y = v => d.PAD_T + (1 - (v - lo) / (hi - lo)) * (d.H - d.PAD_T - d.PAD_B);
+  const xr = d.W - d.PAD_R;
+  const yU = y(base + thr), yD = y(base - thr), yB = y(base);
+  const line = evo.map((e, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(e.avg).toFixed(1)}`).join(" ");
+  const lastE = evo[evo.length - 1];
+  const md = s => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
+  return `<svg viewBox="0 0 ${d.W} ${d.H}" class="price-chart" role="img" aria-label="산정 기간 평균 추정치 추이">
+    <rect x="${d.PAD_L}" y="${yU.toFixed(1)}" width="${(xr - d.PAD_L).toFixed(1)}" height="${(yD - yU).toFixed(1)}" class="sfe-band"/>
+    <line x1="${d.PAD_L}" x2="${xr}" y1="${yU.toFixed(1)}" y2="${yU.toFixed(1)}" class="sfe-up"/>
+    <line x1="${d.PAD_L}" x2="${xr}" y1="${yD.toFixed(1)}" y2="${yD.toFixed(1)}" class="sfe-down"/>
+    <line x1="${d.PAD_L}" x2="${xr}" y1="${yB.toFixed(1)}" y2="${yB.toFixed(1)}" class="sfe-base"/>
+    <text x="${xr + 4}" y="${(yU + 4).toFixed(1)}" class="sfe-lbl up">인상 ${sfWon(base + thr)}</text>
+    <text x="${xr + 4}" y="${(yB + 4).toFixed(1)}" class="sfe-lbl base">기준 ${sfWon(base)}</text>
+    <text x="${xr + 4}" y="${(yD + 4).toFixed(1)}" class="sfe-lbl down">인하 ${sfWon(base - thr)}</text>
+    <path d="${line}" class="sfe-line"/>
+    <circle cx="${x(evo.length - 1).toFixed(1)}" cy="${y(lastE.avg).toFixed(1)}" r="3.5" class="ch-dot"/>
+    <text x="${d.PAD_L}" y="${d.H - 4}" class="ch-xlabel" text-anchor="start">${md(evo[0].date)}</text>
+    <text x="${xr}" y="${d.H - 4}" class="ch-xlabel" text-anchor="end">${md(lastE.date)}</text>
+  </svg>`;
+}
+// 조정 기준까지 남은 폭
+function sfMargin(diff, thr) {
+  if (diff === null || diff === undefined) return "";
+  if (diff >= thr) return `인상 기준을 <b class="up">${sfWon(diff - thr)}원</b> 넘었습니다`;
+  if (diff <= -thr) return `인하 기준보다 <b class="down">${sfWon(-thr - diff)}원</b> 낮습니다`;
+  return `조정 기준까지 인하 <b class="down">${sfWon(diff + thr)}원</b>, 인상 <b class="up">${sfWon(thr - diff)}원</b> 남았습니다`;
+}
+
 function sfWon(v) {
   return (v === null || v === undefined) ? "-" : Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 2 });
 }
@@ -1982,6 +2168,8 @@ if (SAFE_FREIGHT) {
         <div>
           ${pendingLine}
           <div class="sf-line">${baseLine}</div>
+          ${sf.evolution && sf.evolution.length > 1 ? `<div class="sf-line">${sfMargin(sf.base.diff, sf.threshold)}.</div>
+            <div class="chart-wrap" style="margin-top:4px;">${sfEvolutionSvg(sf.evolution, sf.baseFuel, sf.threshold, true)}</div>` : ""}
           ${scenario}
         </div>
         <div>${impact ? sfImpactTable(impact.rows, impact.title, sf.rateFrom) : sfRateTable(sf.routes || [], sf.rateFrom)}</div>
@@ -2192,7 +2380,7 @@ function opsCsv() {
     const changed = r.changed && r.prevTrend
       ? `<span class="chg-flag" title="1주 전 자료로 판정하면 ${esc(r.prevTrend)}였습니다">지난주 ${esc(r.prevTrend)}</span>` : "";
     return `<tr class="ops-row"${clickable}>
-      <td class="c-name"><div class="on">${esc(r.name)}${trendChip(r.trend, r.tone)}${changed}</div>${r.position ? `<div class="os">${esc(r.position)}</div>` : ""}</td>
+      <td class="c-name"><div class="on">${esc(r.name)}${trendChip(r.trend, r.tone)}${changed}</div>${(r.position || r.longPosition) ? `<div class="os">${esc([r.position, r.longPosition].filter(Boolean).join(", "))}</div>` : ""}</td>
       <td class="c-val">${val}${r.label ? `<div class="os">${esc(r.label)}</div>` : ""}</td>
       <td class="c-spark mid">${spark(r)}</td>
       ${pctTd(r.shortPct, r.thrS, "c-s", r.shortLabel || "4주")}
