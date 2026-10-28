@@ -1278,6 +1278,62 @@ function Get-DomesticFuelPrices {
 #   1년(기록이 짧으면 관측 기간) 안에서 지금 값이 몇 번째인지로 위치를 붙인다.
 #
 # 연간 계열(산업용 전기요금)은 정책으로 계단식으로 바뀌어 경향 판정이 맞지 않아 뺀다.
+# --- KCCI (해양진흥공사 컨테이너 운임지수, 부산 출발) ------------------------------------
+# SCFI·CCFI 는 상하이 출발이라 국내 수출 물류비와 거리가 있다. KCCI 는 부산항 출발 13개 항로 지수이고,
+# 해양진흥공사 해운정보 사이트의 시계열 화면이 값을 표로 그려 주므로 인증키 없이 2년치를 받는다.
+# 표의 열 순서: 날짜, KCCI(종합), KUWI, KUEI, KNEI, KMDI, KMEI, KAUI, KLEI, KLWI, KSAI, KWAI, KCI, KJI, KSEI.
+# 매주 월요일 14시 발표. 단위는 사이트 표기대로 종합 pt, 항로 $/FEU.
+function Get-KcciSeries {
+    param($cfgList, [DateTime]$today)
+    $codes = @("KCCI", "KUWI", "KUEI", "KNEI", "KMDI", "KMEI", "KAUI", "KLEI", "KLWI", "KSAI", "KWAI", "KCI", "KJI", "KSEI")
+    try {
+        $body = "sDay=$($today.AddYears(-2).ToString('yyyy-MM-dd'))&eDay=$($today.ToString('yyyy-MM-dd'))"
+        $resp = $null
+        for ($try = 1; $try -le 2; $try++) {
+            try {
+                $resp = Invoke-WebRequest -Uri "https://www.kobc.or.kr/ebz/shippinginfo/timeseries/gridList.do?mId=0304000000" `
+                    -Method Post -Body $body -ContentType "application/x-www-form-urlencoded" `
+                    -Headers $headers -UseBasicParsing -TimeoutSec 60
+                break
+            } catch {
+                if ($try -eq 2) { throw }
+                Start-Sleep -Seconds 3
+            }
+        }
+        $byCode = @{}
+        foreach ($c in $codes) { $byCode[$c] = New-Object System.Collections.ArrayList }
+        foreach ($m in [regex]::Matches($resp.Content, '<tr[^>]*>(.*?)</tr>', 'Singleline')) {
+            $cells = @([regex]::Matches($m.Groups[1].Value, '<td[^>]*>(.*?)</td>', 'Singleline') |
+                ForEach-Object { $_.Groups[1].Value -replace '<[^>]+>|\s+', '' })
+            if ($cells.Count -lt ($codes.Count + 1) -or $cells[0] -notmatch '^\d{4}-\d{2}-\d{2}$') { continue }
+            for ($k = 0; $k -lt $codes.Count; $k++) {
+                $v = $cells[$k + 1] -replace ',', ''
+                if ($v -match '^-?[\d.]+$') {
+                    [void]$byCode[$codes[$k]].Add([PSCustomObject]@{ label = $cells[0]; value = [double]$v })
+                }
+            }
+        }
+        if ($byCode["KCCI"].Count -lt 10) { throw "표 행이 너무 적습니다($($byCode['KCCI'].Count)행)" }
+        @(foreach ($cfg in @($cfgList)) {
+            $pts = @($byCode[[string]$cfg.Code] | Sort-Object label -Unique)
+            if ($pts.Count -lt 3) { Write-Warning "KCCI $($cfg.Code) 자료 부족"; continue }
+            [PSCustomObject]@{
+                id          = $cfg.Id
+                displayName = $cfg.DisplayName
+                unit        = $cfg.Unit
+                currency    = [string]$cfg.Currency
+                note        = $cfg.Note
+                source      = "한국해양진흥공사(KOBC)"
+                points      = $pts
+                newsQuery   = $cfg.NewsQuery
+            }
+        })
+    } catch {
+        Write-Warning "KCCI 조회 실패: $($_.Exception.Message)"
+        @()
+    }
+}
+
 function ConvertTo-LabelDate {
     param($label)
     $s = [string]$label
@@ -1332,6 +1388,7 @@ function Get-TrendStats {
     }
     $chS = & $chg (Find-PointBefore $rows $n $sDays)
     $chL = & $chg (Find-PointBefore $rows $n $lDays)
+    $chY = & $chg (Find-PointBefore $rows $n 365)
 
     $hist = @(for ($i = 1; $i -le $n; $i++) {
         $f = Find-PointBefore $rows $i $sDays
@@ -1373,6 +1430,11 @@ function Get-TrendStats {
         longLabel  = if ($monthly) { "3개월" } else { "13주" }
         longPct    = $chL
         normalMove = [math]::Round($thrS * 2, 1)    # 평소 짧은 창 변동폭(표준편차)
+        yoyPct     = $chY
+        # 판정 기준폭(요약표 칸 색칠에 쓴다). 1년 기준폭은 짧은 창 기준폭 × √(365/짧은 창).
+        thrShort   = [math]::Round($thrS, 2)
+        thrLong    = [math]::Round($thrL, 2)
+        thrYear    = [math]::Round([math]::Max(1.0, $thrS * [math]::Sqrt(365 / $sDays)), 2)
         trend      = $trend
         tone       = $tone
         rangeName  = $rangeName
@@ -2149,6 +2211,12 @@ $sseLanes = @(foreach ($lane in $config.sseLanes) {
 })
 $sseLanes = @($sseLanes | Where-Object { $_ })
 
+$kcciSeries = @()
+if ($config.kcciSeries -and @($config.kcciSeries).Count -gt 0) {
+    Write-Host "Fetching KCCI (부산 출발 컨테이너 운임)..."
+    $kcciSeries = @(Get-KcciSeries $config.kcciSeries $nowKst.Date | Where-Object { $_ })
+}
+
 Write-Host "Fetching domestic fuel prices..."
 $fuel = @(Get-DomesticFuelPrices | Where-Object { $_ })
 
@@ -2233,6 +2301,7 @@ if ($power) { $priceCards += $power }
 # is heading, this is what Korean producers actually realised on the same shelf of chemicals.
 $priceCards += @($ecosSeries)
 $priceCards += @($customsSeries)
+$priceCards += @($kcciSeries)
 if ($kcl) { $priceCards += $kcl }
 # Any Yahoo series in config.json that the explicit picks above do not name. Those picks exist to
 # place a card, not to decide whether it exists - but that is what they did: a series added only
@@ -2258,6 +2327,7 @@ foreach ($y in @($config.yahooSeries))  { $expectedCards[[string]$y.Id] = $y.Dis
 foreach ($d in @($config.dceSeries))    { $expectedCards[[string]$d.Id] = $d.DisplayName }
 foreach ($e in @($config.ecosSeries))   { $expectedCards[[string]$e.Id] = $e.DisplayName }
 foreach ($u in @($config.customsSeries)){ $expectedCards[[string]$u.Id] = $u.DisplayName }
+foreach ($k in @($config.kcciSeries))   { $expectedCards[[string]$k.Id] = $k.DisplayName }
 $expectedCards["kcl"]   = "KCl (염화칼륨)"
 $expectedCards["power"] = "산업용 전기요금"
 # Opinet's two only count as expected when a key exists - without one they are deliberately
@@ -2409,7 +2479,7 @@ function Get-OpsSummaryRow {
     param([string]$id)
     $row = [ordered]@{ id = $id; detail = $id; name = $id; value = $null; currency = ""; unit = ""; label = ""
         shortLabel = ""; shortPct = $null; longLabel = ""; longPct = $null; trend = ""; tone = "flat"; position = ""; note = ""
-        fc = $null }
+        fc = $null; yoyPct = $null; thrS = $null; thrL = $null; thrY = $null; band = ""; rangeName = ""; short = "" }
     $t = $null
     $fcSrc = $null
     if ($id -eq "safe-freight") {
@@ -2450,6 +2520,8 @@ function Get-OpsSummaryRow {
     if ($t) {
         $row.shortLabel = $t.shortLabel; $row.shortPct = $t.shortPct; $row.longLabel = $t.longLabel; $row.longPct = $t.longPct
         $row.trend = $t.trend; $row.tone = $t.tone; $row.position = $t.position
+        $row.yoyPct = $t.yoyPct; $row.thrS = $t.thrShort; $row.thrL = $t.thrLong; $row.thrY = $t.thrYear
+        $row.band = $t.band; $row.rangeName = $t.rangeName
     } else {
         $row.trend = "기록 부족"
     }
@@ -2460,6 +2532,10 @@ function Get-OpsSummaryRow {
 $opsSummary = $null
 if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
     $opsRows = @(@(foreach ($id in @($config.opsSummary.items)) { Get-OpsSummaryRow ([string]$id) }) | Where-Object { $_ })
+    foreach ($r in $opsRows) {
+        $sn = if ($config.opsSummary.shortNames) { $config.opsSummary.shortNames.($r.id) } else { $null }
+        $r.short = if ($sn) { [string]$sn } else { [string]$r.name }
+    }
     # 판정별로 지표 이름을 묶는다(페이지 요약판 머리, 메일, 보고용 글이 함께 쓴다).
     $groups = [ordered]@{ up = @(); down = @(); mixed = @(); flat = @() }
     $groupLabel = @{ up = "상승"; down = "하락"; mixed = "방향 전환"; flat = "보합" }
@@ -2472,16 +2548,132 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
         if ($groups[$k].Count) { [PSCustomObject]@{ tone = $k; label = $groupLabel[$k]; names = @($groups[$k]) } }
     })
     $sentence = (@($opsGroups | ForEach-Object { "$($_.label): $($_.names -join ', ')" }) -join " / ")
+
+    # 받침 유무로 조사를 고른다. 영문·숫자로 끝나면 읽는 소리로 판단한다(KCl → 엘 → 받침 있음).
+    function Get-Josa {
+        param([string]$word, [string]$withFinal, [string]$withoutFinal)
+        $w = ($word -replace '[\s\)\]]+$', '')
+        if (-not $w) { return $withoutFinal }
+        $ch = $w[$w.Length - 1]
+        $code = [int]$ch
+        if ($code -ge 0xAC00 -and $code -le 0xD7A3) {
+            if ((($code - 0xAC00) % 28) -ne 0) { return $withFinal } else { return $withoutFinal }
+        }
+        if ("LMNRlmnr0136783".Contains([string]$ch)) { return $withFinal }
+        $withoutFinal
+    }
+    $opsHighlights = New-Object System.Collections.ArrayList
+    $moves = @(foreach ($r in $opsRows) {
+        if (-not $r.trend -or $r.trend -eq "수집 실패" -or $r.trend -eq "기록 부족" -or $r.id -eq "safe-freight") { continue }
+        $sS = if ($null -ne $r.shortPct -and $r.thrS) { [math]::Abs([double]$r.shortPct) / [double]$r.thrS } else { 0 }
+        $sL = if ($null -ne $r.longPct -and $r.thrL) { [math]::Abs([double]$r.longPct) / [double]$r.thrL } else { 0 }
+        $extreme = ($r.rangeName -eq "1년") -and ($r.band -eq "최고" -or $r.band -eq "최저")
+        $score = [math]::Max($sS, $sL) + $(if ($extreme) { 1 } else { 0 })
+        if ($score -lt 2) { continue }
+        [PSCustomObject]@{ r = $r; score = $score; useShort = ($sS -ge $sL) }
+    })
+    foreach ($m in @($moves | Sort-Object score -Descending | Select-Object -First 3)) {
+        $r = $m.r
+        $pct = if ($m.useShort) { [double]$r.shortPct } else { [double]$r.longPct }
+        $span = if ($m.useShort) { $r.shortLabel } else { $r.longLabel }
+        $verb = if ($pct -ge 0) { "올라" } else { "내려" }
+        $verbEnd = if ($pct -ge 0) { "올랐습니다" } else { "내렸습니다" }
+        $pctTxt = [math]::Abs($pct).ToString("0.0", [Globalization.CultureInfo]::InvariantCulture)
+        $topic = "$($r.short)$(Get-Josa $r.short '은' '는')"
+        $where = if ($r.band -eq "최고" -or $r.band -eq "최저") { "$($r.rangeName) 중 $($r.band)치" }
+                 elseif ($r.band -eq "상단" -or $r.band -eq "하단") { "$($r.rangeName) 중 $($r.band)" } else { "" }
+        if ($where) { [void]$opsHighlights.Add("$topic 최근 ${span}간 $pctTxt% $verb ${where}입니다.") }
+        else { [void]$opsHighlights.Add("$topic 최근 ${span}간 $pctTxt% $verbEnd.") }
+    }
+    if ($opsHighlights.Count -eq 0) { [void]$opsHighlights.Add("평소 변동폭보다 크게 움직인 가격 지표는 없습니다.") }
+    if ($safeFreight) {
+        $sf = $safeFreight
+        if ($sf.pending -and $sf.pending.effective) {
+            $pe = [DateTime]$sf.pending.effective
+            $pdd = ($pe - $nowKst.Date).Days
+            if ($pdd -ge 0 -and $pdd -le 14) {
+                [void]$opsHighlights.Add("$($pe.Month)/$($pe.Day)부터 컨테이너 내륙운송료가 $($sf.pending.verdict)된 운임으로 적용됩니다.")
+            }
+        }
+        if ($sf.base.verdict -ne "동결") {
+            [void]$opsHighlights.Add("$($sf.window.applyLabel) 적용분 내륙운송료는 $($sf.base.verdict) 예상입니다.")
+        } elseif ($sf.scenario -and $sf.scenario.trigger -and $sf.scenario.dDay -le 45) {
+            $u = [DateTime]$sf.scenario.until
+            [void]$opsHighlights.Add("유류세 인하가 $($u.Month)/$($u.Day)에 끝나면 $($sf.scenario.trigger.applyLabel) 적용분 내륙운송료는 $($sf.scenario.trigger.verdict) 예상입니다.")
+        }
+    }
+    if ($typhoon -and @($typhoon.active).Count -gt 0) {
+        $tn = (@($typhoon.active | ForEach-Object { $_.name }) -join ", ")
+        $anyDirect = @($typhoon.active | Where-Object { $_.impact -eq "direct" }).Count -gt 0
+        $zone = if ($anyDirect) { "베트남 인근" } else { "입고 항로" }
+        [void]$opsHighlights.Add("${zone}에 태풍 $tn$(Get-Josa $tn '이' '가') 있습니다. 부자재 입고 일정을 확인하시기 바랍니다.")
+    }
     $opsSummary = [PSCustomObject]@{
         title    = if ($config.opsSummary.title) { $config.opsSummary.title } else { "물류 운영 핵심 지표" }
         rows     = $opsRows
         sentence = $sentence
         groups   = $opsGroups
+        highlights = @($opsHighlights)
         method   = "경향은 4주와 13주(월간 지표는 1개월과 3개월) 변화율을 지표별 평소 변동폭과 비교해 자동으로 판정합니다."
         dashboardUrl = "https://jhkim0603.github.io/work-dashboard/"
     }
     Write-Host "  핵심 지표 요약 $($opsRows.Count)개 · $sentence"
 }
+# 다가오는 일정. 공휴일은 페이지가 따로 받은 목록과 합쳐서 그린다. 여기서는 발표일과 정책 일정만 만든다.
+function Get-NextWeekday {
+    param([DateTime]$from, [DayOfWeek]$dow)
+    $d = $from.Date
+    while ($d.DayOfWeek -ne $dow) { $d = $d.AddDays(1) }
+    $d
+}
+function Get-NthBusinessDay {
+    param([int]$year, [int]$month, [int]$n)
+    $d = [DateTime]::new($year, $month, 1); $k = 0
+    while ($true) {
+        if ($d.DayOfWeek -ne [DayOfWeek]::Saturday -and $d.DayOfWeek -ne [DayOfWeek]::Sunday) { $k++; if ($k -eq $n) { return $d } }
+        $d = $d.AddDays(1)
+    }
+}
+$todayKst = $nowKst.Date
+$schedule = New-Object System.Collections.ArrayList
+function Add-Schedule {
+    param([DateTime]$date, [string]$kind, [string]$title, [string]$note)
+    if ($date -lt $todayKst) { return }
+    [void]$schedule.Add([PSCustomObject]@{ date = $date.ToString("yyyy-MM-dd"); kind = $kind; title = $title; note = $note; dDay = ($date - $todayKst).Days })
+}
+if ($scfi -or $sseLanes.Count -gt 0) {
+    Add-Schedule (Get-NextWeekday $todayKst ([DayOfWeek]::Friday)) "발표" "SCFI·CCFI 운임지수 발표" "매주 금요일"
+}
+if ($kcciSeries.Count -gt 0) {
+    Add-Schedule (Get-NextWeekday $todayKst ([DayOfWeek]::Monday)) "발표" "KCCI 운임지수 발표" "매주 월요일 14시"
+}
+if ($kcl) {
+    $pinkDay = Get-NthBusinessDay $todayKst.Year $todayKst.Month 2
+    if ($pinkDay -lt $todayKst) { $nm = $todayKst.AddMonths(1); $pinkDay = Get-NthBusinessDay $nm.Year $nm.Month 2 }
+    Add-Schedule $pinkDay "발표" "World Bank 월간 원자재 가격 발표(KCl)" "매월 둘째 영업일"
+}
+if ($safeFreight) {
+    $sf = $safeFreight
+    if ($sf.pending -and $sf.pending.effective) {
+        Add-Schedule ([DateTime]$sf.pending.effective) "정책" "내륙운송료 $($sf.pending.verdict) 운임 시행" "안전운임 유가연동"
+    }
+    if ($sf.scenario -and $sf.scenario.until) {
+        Add-Schedule ([DateTime]$sf.scenario.until) "정책" "유류세 인하 종료 예정" "경유 +$(Format-Won $sf.scenario.won)원 예상"
+    }
+    $wEnd = ([DateTime]$sf.window.effective).AddMonths(-1).AddDays(-1)
+    Add-Schedule $wEnd "정책" "내륙운송료 $($sf.window.label) 유가 산정 기간 종료" "$($sf.window.applyLabel) 적용분 $($sf.base.verdict) 예상"
+}
+foreach ($ev in @($config.scheduleEvents)) {
+    if (-not $ev -or -not $ev.date -or -not $ev.title) { continue }
+    $evd = [DateTime]::MinValue
+    if ([DateTime]::TryParseExact([string]$ev.date, "yyyy-MM-dd", [Globalization.CultureInfo]::InvariantCulture, 'None', [ref]$evd)) {
+        Add-Schedule $evd $(if ($ev.kind) { [string]$ev.kind } else { "일정" }) ([string]$ev.title) ([string]$ev.note)
+    }
+}
+$schedule = @($schedule | Sort-Object date)
+$scheduleJson = ConvertTo-Json -InputObject @($schedule) -Depth 3 -Compress
+if (-not $scheduleJson -or $scheduleJson -eq "null") { $scheduleJson = "[]" }
+
 $scfiSort = Get-CardSort "scfi"
 $laneSort = Get-CardSort "ccfi-lanes"
 $sfSort = Get-CardSort "safe-freight"
@@ -2593,7 +2785,7 @@ $opsSummaryJson = ConvertTo-JsonOrNull -InputObject $opsSummary -Depth 6
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
-$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__CARD_GROUPS_JSON__", $cardGroupsJson).Replace("__SAFE_FREIGHT_JSON__", $safeFreightJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__OPS_SUMMARY_JSON__", $opsSummaryJson).Replace("__NEWS_OUTAGE__", $(if ($newsOutage) { "true" } else { "false" })).Replace("__FETCHED_AT__", $fetchedAt)
+$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__CARD_GROUPS_JSON__", $cardGroupsJson).Replace("__SCHEDULE_JSON__", $scheduleJson).Replace("__SAFE_FREIGHT_JSON__", $safeFreightJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__OPS_SUMMARY_JSON__", $opsSummaryJson).Replace("__NEWS_OUTAGE__", $(if ($newsOutage) { "true" } else { "false" })).Replace("__FETCHED_AT__", $fetchedAt)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8
@@ -2673,8 +2865,9 @@ $weatherRowsHtml = foreach ($w in $weather) {
 # material, which the page lists; the mail is for what touches this month's shipments.
 $foreignSoon = @($foreignHolidays | Where-Object { $_.dDay -le 30 })
 
+$policySoon = @($schedule | Where-Object { $_.kind -ne "발표" -and $_.dDay -le 14 })
 $holidayHtml = ""
-if ($holiday -or $foreignSoon.Count -gt 0) {
+if ($holiday -or $foreignSoon.Count -gt 0 -or $policySoon.Count -gt 0) {
     $krHtml = ""
     if ($holiday) {
         $names = ($holiday.holidayNames | Select-Object -Unique) -join ", "
@@ -2689,6 +2882,11 @@ if ($holiday -or $foreignSoon.Count -gt 0) {
         "<div style='font-size:12px;color:#3d3b37;margin-top:4px;'><b>$($f.country) $($f.name)</b> $($f.startDate.Substring(5)) ~ $($f.endDate.Substring(5)) ($($f.days)일, $dText) <span style='color:#898781;'>$($f.impact)</span></div>"
     }
     $fHtml = if ($fRows) { "<div style='margin-top:9px;padding-top:8px;border-top:1px solid #cfe0f5;font-size:11px;font-weight:700;color:#6e6c66;'>베트남·중국 휴무 (30일 이내)</div>$($fRows -join '')" } else { "" }
+    $pRows = foreach ($e in $policySoon) {
+        $ed = [DateTime]$e.date
+        "<div style='font-size:12px;color:#3d3b37;margin-top:4px;'><b>$($ed.Month)/$($ed.Day)</b> $($e.title) (D-$($e.dDay))</div>"
+    }
+    if ($pRows) { $fHtml += "<div style='margin-top:9px;padding-top:8px;border-top:1px solid #cfe0f5;font-size:11px;font-weight:700;color:#6e6c66;'>다가오는 일정 (14일 이내)</div>$($pRows -join '')" }
     $holidayHtml = @"
 <div style="margin:16px 0;padding:12px 14px;background:#eef4fc;border:1px solid #cfe0f5;border-radius:8px;">
 $krHtml
@@ -2838,7 +3036,9 @@ function Get-BarChartHtml {
     # alone were 45KB of an 85KB mail - 83% of the 102KB Gmail clips at, so one more card would
     # have truncated the news off the bottom. Two years across 16 buckets is coarser per bar but
     # the shape survives, and the dashboard still carries the full-resolution chart.
-    param($values, $accent = "#2a78d6", $maxBars = 16, $height = 44)
+    # 막대 12개(2026-10-28, 16개에서 줄임). KCCI 카드 두 장이 더해져 메일이 Gmail 잘림 기준(102KB)에
+    # 가까워졌다. 막대 하나가 약 250B 라 카드 17장에서 13KB 남짓 줄고, 2년 계열이면 막대 하나가 두 달이다.
+    param($values, $accent = "#2a78d6", $maxBars = 12, $height = 44)
 
     $vals = @($values | Where-Object { $null -ne $_ } | ForEach-Object { [double]$_ })
     if ($vals.Count -lt 2) { return "" }
@@ -3179,6 +3379,17 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
         $sg = if ($d -gt 0) { "+" } else { "" }
         "$sg$($d.ToString('N1'))%"
     }
+    # 평소 변동폭보다 크게 움직인 칸만 배경을 칠한다(오르면 빨강, 내리면 초록, 2배 이상이면 진하게).
+    function Get-PctCell {
+        param($v, $thr)
+        $bg = ""
+        if ($null -ne $v -and $thr) {
+            $lv = [math]::Abs([double]$v) / [double]$thr
+            if ($lv -ge 2) { $bg = if ([double]$v -gt 0) { " bgcolor=#f6caca" } else { " bgcolor=#c9e8c9" } }
+            elseif ($lv -ge 1) { $bg = if ([double]$v -gt 0) { " bgcolor=#fbe6e6" } else { " bgcolor=#e6f4e6" } }
+        }
+        "<td align=right nowrap$bg>$(Get-PctText $v)</td>"
+    }
     $opsRowHtml = foreach ($r in $opsSummary.rows) {
         $val = if ($null -ne $r.value) { "$($r.currency)$(Format-PriceValue $r.value)" } else { "" }
         $tc = $toneColor[[string]$r.tone]
@@ -3188,17 +3399,19 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
         # nowrap 속성으로 넘겨 행당 크기를 절반 아래로 줄였다(메일이 Gmail 잘림 기준 102KB 에 가깝다).
         $subHtml = if ($sub) { "<br><font size=1 color=#898781>$(Get-HtmlText $sub)</font>" } else { "" }
         $fcHtml = if ($r.fc) { "<br><font size=1 color=#52514e>$($r.fc.label) $($r.currency)$(Format-PriceValue $r.fc.low)~$(Format-PriceValue $r.fc.high)</font>" } else { "" }
-        "<tr><td><b>$($r.name)</b>$subHtml</td><td align=right nowrap>$val</td><td align=right nowrap>$(Get-PctText $r.shortPct)</td><td align=right nowrap>$(Get-PctText $r.longPct)</td><td align=right nowrap><b><font color=$tc>$($r.trend)</font></b>$fcHtml</td></tr>"
+        "<tr><td><b>$($r.name)</b>$subHtml</td><td align=right nowrap>$val</td>$(Get-PctCell $r.shortPct $r.thrS)$(Get-PctCell $r.longPct $r.thrL)$(Get-PctCell $r.yoyPct $r.thrY)<td align=right nowrap><b><font color=$tc>$($r.trend)</font></b>$fcHtml</td></tr>"
     }
     $opsHtml = @"
 <div style="margin:16px 0;padding:13px 15px;background:#ffffff;border:1px solid #e1e0d9;border-radius:8px;">
+  <div style="font-size:12px;font-weight:700;color:#0b0b0b;">오늘 달라진 점</div>
+  <div style="font-size:12.5px;color:#0b0b0b;margin:4px 0 10px;line-height:1.6;">$((@($opsSummary.highlights | ForEach-Object { "· $_" })) -join '<br>')</div>
   <div style="font-size:12px;font-weight:700;color:#0b0b0b;">$($opsSummary.title)</div>
   <div style="font-size:12px;color:#52514e;margin-top:4px;line-height:1.6;">$((@($opsSummary.groups | ForEach-Object { "<b><font color=$($toneColor[$_.tone])>$($_.label)</font></b> $($_.names -join ', ')" })) -join '<br>')</div>
   <table width="100%" cellpadding=4 cellspacing=0 style="margin-top:6px;font-size:12.5px;color:#0b0b0b;">
-    <tr style="font-size:10.5px;color:#898781;"><td>지표</td><td align=right>현재</td><td align=right>단기</td><td align=right>중기</td><td align=right>경향</td></tr>
+    <tr style="font-size:10.5px;color:#898781;"><td>지표</td><td align=right>현재</td><td align=right>단기</td><td align=right>중기</td><td align=right>1년</td><td align=right>경향</td></tr>
     $($opsRowHtml -join "")
   </table>
-  <div style="font-size:10.5px;color:#898781;margin-top:8px;">단기는 4주, 중기는 13주입니다(월간 지표는 1개월, 3개월). $($opsSummary.method) 경향 아래 숫자는 4주(1개월) 후 예상 범위이며 사건과 정책 변화는 반영하지 않습니다.</div>
+  <div style="font-size:10.5px;color:#898781;margin-top:8px;">단기는 4주, 중기는 13주입니다(월간 지표는 1개월, 3개월). 배경색은 평소 변동폭보다 크게 움직인 칸입니다. $($opsSummary.method) 경향 아래 숫자는 4주(1개월) 후 예상 범위이며 사건과 정책 변화는 반영하지 않습니다.</div>
 </div>
 "@
 }

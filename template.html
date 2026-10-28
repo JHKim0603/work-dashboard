@@ -44,6 +44,8 @@
     /* The alert card's border. A separate token from --bad because a full-strength red outline
        around a whole card reads as a form error, not as weather. */
     --bad-edge:        rgba(179,34,31,0.28);
+    --up-1: rgba(179,34,31,0.09); --up-2: rgba(179,34,31,0.20);
+    --down-1: rgba(0,99,0,0.08); --down-2: rgba(0,99,0,0.18);
   }
   @media (prefers-color-scheme: dark) {
     .viz-root {
@@ -64,6 +66,8 @@
       --warn-wash:       rgba(232,163,61,0.16);
       --bad-wash:        rgba(240,133,133,0.16);
       --bad-edge:        rgba(240,133,133,0.38);
+      --up-1: rgba(240,133,133,0.13); --up-2: rgba(240,133,133,0.28);
+      --down-1: rgba(46,196,46,0.11); --down-2: rgba(46,196,46,0.24);
     }
   }
   :root[data-theme="dark"] .viz-root {
@@ -74,6 +78,8 @@
     --accent: #4a93e9; --accent-wash: rgba(74,147,233,0.14);
     --good: #2ec42e; --bad: #f08585;
     --warn: #e8a33d; --warn-wash: rgba(232,163,61,0.16); --bad-wash: rgba(240,133,133,0.16); --bad-edge: rgba(240,133,133,0.38);
+    --up-1: rgba(240,133,133,0.13); --up-2: rgba(240,133,133,0.28);
+    --down-1: rgba(46,196,46,0.11); --down-2: rgba(46,196,46,0.24);
   }
   :root[data-theme="light"] .viz-root {
     color-scheme: light;
@@ -83,6 +89,8 @@
     --accent: #2a78d6; --accent-wash: rgba(42,120,214,0.08);
     --good: #006300; --bad: #b3221f;
     --warn: #8f5200; --warn-wash: rgba(177,124,0,0.14); --bad-wash: rgba(179,34,31,0.12); --bad-edge: rgba(179,34,31,0.28);
+    --up-1: rgba(179,34,31,0.09); --up-2: rgba(179,34,31,0.20);
+    --down-1: rgba(0,99,0,0.08); --down-2: rgba(0,99,0,0.18);
   }
 
   .viz-root {
@@ -120,6 +128,20 @@
   .topbar .actions { display: flex; flex-direction: column; align-items: flex-end; }
 
   .wrap { max-width: 1480px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  /* 구역 바로가기. 페이지가 길어 아래 구역까지 스크롤해야 했다. 위에 붙어 따라온다. */
+  .jump-nav {
+    position: sticky; top: 0; z-index: 50; max-width: 1480px; margin: -14px auto 18px;
+    display: flex; gap: 6px; overflow-x: auto; padding: 8px 0; scrollbar-width: none;
+    background: var(--page); border-bottom: 1px solid var(--gridline);
+  }
+  .jump-nav::-webkit-scrollbar { display: none; }
+  .jump-nav a {
+    flex: none; font-size: 13px; color: var(--ink-secondary); text-decoration: none; white-space: nowrap;
+    padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-raised);
+  }
+  .jump-nav a:hover { color: var(--accent); border-color: var(--accent); }
+  .jump-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .wrap > [id], .price-groups > [id] { scroll-margin-top: 64px; }
 
   /* 날씨 / 공휴일 / 태풍 sit side by side on wide screens, stack on narrow ones.
      The grid stretches all three columns to the tallest, but that only reaches the cards
@@ -446,13 +468,21 @@
     background: transparent; color: var(--ink-secondary); cursor: pointer; white-space: nowrap; }
   .ops-btn:hover { color: var(--ink-primary); border-color: var(--accent); }
   .ops-scroll { overflow-x: auto; margin-top: 10px; }
-  .ops-table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; min-width: 760px; }
+  .ops-table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; min-width: 840px; }
   .ops-table th { font-size: 12px; color: var(--ink-muted); font-weight: 600; text-align: right; padding: 6px 8px;
     border-bottom: 1px solid var(--gridline); line-height: 1.3; }
   .ops-table th:first-child, .ops-table td:first-child { text-align: left; padding-left: 0; }
   .ops-table td { padding: 8px; border-bottom: 1px solid var(--gridline); text-align: right; white-space: nowrap; vertical-align: top; }
   .ops-table td:first-child { white-space: normal; width: 24%; }
   .ops-table td.mid { vertical-align: middle; }
+  .ops-table td.hu1 { background: var(--up-1); }
+  .ops-table td.hu2 { background: var(--up-2); }
+  .ops-table td.hd1 { background: var(--down-1); }
+  .ops-table td.hd2 { background: var(--down-2); }
+  /* 오늘 달라진 점: 표를 읽기 전에 무엇이 움직였는지 문장으로 먼저 본다. */
+  .ops-today { background: var(--accent-wash); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
+  .ops-today-title { font-size: 13px; font-weight: 700; color: var(--ink-primary); margin-bottom: 4px; }
+  .ops-today ul { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.65; color: var(--ink-primary); }
   .ops-table tr[data-ops] { cursor: pointer; }
   .ops-table tr[data-ops]:hover td { background: var(--accent-wash); }
   .ops-table .on { font-weight: 650; color: var(--ink-primary); }
@@ -545,6 +575,16 @@
   .upcoming-list .up-row .uc { font-size: 12px; font-weight: 700; color: var(--ink-muted); margin-right: 5px; }
   .upcoming-list .up-row .ud.soon { color: var(--bad); font-weight: 600; }
   .upcoming-list .up-row .dd { font-weight: 700; margin-left: 6px; }
+  .upcoming-list .up-row .uc.k-policy { color: var(--warn); }
+  .upcoming-list .up-row .uc.k-release { color: var(--accent); }
+  .upcoming-list .up-row .uc.k-holiday { color: var(--bad); }
+  /* 상세 화면 차트 기간 버튼 */
+  .range-btns { display: flex; gap: 4px; margin: 4px 0 6px; }
+  .range-btns button {
+    font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border); background: transparent; color: var(--ink-secondary);
+  }
+  .range-btns button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
   .news-item { font-size: 13px; padding: 7px 0; border-top: 1px solid var(--gridline); }
   .news-item:first-child { border-top: none; }
@@ -623,7 +663,7 @@
       padding: 0; background: #fff;
       -webkit-print-color-adjust: exact; print-color-adjust: exact;
     }
-    .update-btn, .update-hint, .detail-btn, .modal-backdrop { display: none !important; }
+    .update-btn, .update-hint, .detail-btn, .modal-backdrop, .jump-nav, .range-btns { display: none !important; }
     .top-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .card, .holiday-card, .typhoon-card, .lane-row, .week-day {
       break-inside: avoid; page-break-inside: avoid;
@@ -653,20 +693,22 @@
     </div>
   </div>
 
+  <nav class="jump-nav" id="jumpNav" aria-label="구역 바로가기"></nav>
+
   <div class="wrap">
-    <div>
+    <div id="secOps">
       <div class="section-title">물류 운영 핵심 지표</div>
       <div id="opsSummary"></div>
     </div>
 
-    <div class="top-row">
+    <div class="top-row" id="secTop">
       <div>
         <div class="section-title">날씨</div>
         <div id="weatherGrid"></div>
       </div>
 
       <div>
-        <div class="section-title">공휴일·연휴</div>
+        <div class="section-title">일정·공휴일</div>
         <div id="holidaySection"></div>
       </div>
 
@@ -678,7 +720,7 @@
 
     <div class="price-groups" id="priceGroups"></div>
 
-    <div>
+    <div id="secNews">
       <div class="section-title">수급 뉴스</div>
       <div class="grid" id="materialsGrid"></div>
     </div>
@@ -726,6 +768,7 @@ const SSE_LANES = __SSE_LANES_JSON__;
 const LANE_ABOUT = __LANE_ABOUT_JSON__;
 const CARD_SORTS = __CARD_SORTS_JSON__;
 const CARD_GROUPS = __CARD_GROUPS_JSON__;
+const SCHEDULE = __SCHEDULE_JSON__;
 const SAFE_FREIGHT = __SAFE_FREIGHT_JSON__;
 const OPS_SUMMARY = __OPS_SUMMARY_JSON__;
 const NEWS_OUTAGE = __NEWS_OUTAGE__;
@@ -913,36 +956,33 @@ if (!HOLIDAY) {
   // date means for a shipping plan, and the list gave only numbers.
   const DOW = "일월화수목금토";
   const fmt = d => `${d.slice(5).replace("-", "/")}(${DOW[new Date(d + "T00:00:00Z").getUTCDay()]})`;
-  // Sized to fill the card rather than to a round number: the top row stretches all three cards
-  // to the tallest, so 8 rows left the bottom third of this one empty.
-  // Nine now that the Vietnam/China list shares the card; the rest are counted below it.
-  const SHOW = 6;
-  const shown = grouped.slice(0, SHOW);
-  const upcoming = shown.map(g => {
-    const range = g.start === g.end ? fmt(g.start) : `${fmt(g.start)}~${fmt(g.end)}`;
-    const year = g.start.slice(0, 4);
-    return `<div class="up-row"><span class="un">${esc(g.name)}</span><span class="ud">${year}. ${esc(range)}</span></div>`;
+  // 다가오는 일정(120일). 공휴일만 따로, 해외 연휴만 따로 보던 것을 지표 발표일·정책 일정과 함께
+  // 날짜순 한 목록으로 묶는다. 물류 일정을 잡을 때 "언제 무엇이 바뀌는지"를 한곳에서 보기 위해서다.
+  const HORIZON = 120;
+  const todayUtc = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
+  const dOf = d => Math.round((new Date(d + "T00:00:00Z") - todayUtc) / 86400000);
+  const KIND_CLS = { "정책": "k-policy", "발표": "k-release", "공휴일": "k-holiday" };
+  const items = [];
+  (SCHEDULE || []).forEach(e => items.push({ date: e.date, end: e.date, kind: e.kind, title: e.title, note: e.note || "" }));
+  grouped.forEach(g => items.push({ date: g.start, end: g.end, kind: "공휴일", title: g.name, note: "" }));
+  // 해외 연휴는 사흘 이상이거나 한 달 안의 것만(단일 기념일이 뗏·춘절을 밀어내지 않도록).
+  (FOREIGN_HOLIDAYS || []).filter(f => f.days >= 3 || f.dDay <= 30).forEach(f => items.push({
+    date: f.startDate, end: f.endDate, kind: f.country, title: `${f.name}${f.days > 1 ? ` ${f.days}일` : ""}`,
+    note: `${f.impact || ""}${f.nameEn ? ` (${f.nameEn})` : ""}`, ongoing: f.dDay <= 0 }));
+  const inWindow = items.filter(x => dOf(x.end) >= 0 && dOf(x.date) <= HORIZON)
+    .sort((a, b) => a.date.localeCompare(b.date)).slice(0, 14);
+  const upcoming = inWindow.map(x => {
+    const dd = dOf(x.date);
+    const range = x.date === x.end ? fmt(x.date) : `${fmt(x.date)}~${fmt(x.end)}`;
+    const when = (x.ongoing || dd < 0) ? "진행 중" : dd === 0 ? "오늘" : `D-${dd}`;
+    return `<div class="up-row"${x.note ? ` title="${esc(x.note)}"` : ""}><span class="un"><span class="uc ${KIND_CLS[x.kind] || ""}">${esc(x.kind)}</span>${esc(x.title)}</span><span class="ud${dd <= 7 ? " soon" : ""}">${esc(range)}<span class="dd">${when}</span></span></div>`;
   }).join("");
-  // Name the last year covered rather than just a count, so it is clear the list runs past
-  // the current year even though it stops short of the full two-year horizon.
-  const hiddenCount = grouped.length - shown.length;
-  const lastYear = grouped.length ? grouped[grouped.length - 1].start.slice(0, 4) : "";
-  const moreNote = hiddenCount > 0
-    ? `<div class="upcoming-more">이후 ${lastYear}년까지 ${hiddenCount}건</div>`
+  // 120일 밖의 국내 공휴일은 건수만 적는다.
+  const later = grouped.filter(g => dOf(g.start) > HORIZON);
+  const moreNote = later.length
+    ? `<div class="upcoming-more">이후 공휴일 ${later.length}건 (${later[later.length - 1].start.slice(0, 4)}년까지)</div>`
     : "";
-
-  // Vietnam/China blocks, where 부자재 ships from and freight transships - a week of 뗏 or 국경절
-  // stops loading there while Korea works. Names and dates only; the country tag leads.
-  // Single days beyond a month out are dropped first: taking the next five by date let 문화의 날
-  // and two 신정 push 뗏 and 춘절 - the weeks that actually stop shipments - off the list.
-  const foreign = (FOREIGN_HOLIDAYS || []).filter(f => f.days >= 3 || f.dDay <= 30).slice(0, 5);
-  const foreignHtml = foreign.length ? `
-      <div class="upcoming-label">베트남·중국 연휴 (선적 영향)</div>
-      <div class="upcoming-list">${foreign.map(f => {
-        const range = f.startDate === f.endDate ? fmt(f.startDate) : `${fmt(f.startDate)}~${fmt(f.endDate)}`;
-        const when = f.dDay <= 0 ? "진행 중" : `D-${f.dDay}`;
-        return `<div class="up-row" title="${esc(f.impact || "")} (${esc(f.nameEn || "")})"><span class="un"><span class="uc">${esc(f.country)}</span>${esc(f.name)}${f.days > 1 ? ` ${f.days}일` : ""}</span><span class="ud${f.dDay <= 10 ? " soon" : ""}">${esc(range)}<span class="dd">${when}</span></span></div>`;
-      }).join("")}</div>` : "";
+  const foreignHtml = "";
 
   const rangeText = `${fmt(HOLIDAY.startDate)}~${fmt(HOLIDAY.endDate)}`;
   holidaySection.innerHTML = `
@@ -952,8 +992,8 @@ if (!HOLIDAY) {
         <span class="hol-name">${esc(names)}</span>
       </div>
       <div class="hol-range">${HOLIDAY.startDate.slice(0, 4)}. ${esc(rangeText)}, <span class="hol-len">${HOLIDAY.days}일 연휴</span></div>
-      <div class="upcoming-label">다가오는 공휴일</div>
-      <div class="upcoming-list">${upcoming}</div>
+      <div class="upcoming-label">다가오는 일정 (${HORIZON}일)</div>
+      <div class="upcoming-list">${upcoming || `<div class="empty-note">예정된 일정이 없습니다.</div>`}</div>
       ${moreNote}
       ${foreignHtml}
     </div>`;
@@ -1385,6 +1425,15 @@ function trendSentence(c) {
   return `${dir} 현재 값은 차트 기간의 최저 ${money(lo)}와 최고 ${money(hi)} 사이에서 ${band}에 있습니다.`;
 }
 
+// 마지막 시점에서 days 일 안의 점만. 3개 미만이면 전체를 쓴다. days 가 0 이면 전체.
+function sliceDays(pts, days) {
+  if (!days || !pts.length) return pts;
+  const last = parseLabel(pts[pts.length - 1].label);
+  if (!last) return pts;
+  const sub = pts.filter(p => { const d = parseLabel(p.label); return d && (last - d) / 86400000 <= days; });
+  return sub.length >= 3 ? sub : pts;
+}
+
 function subLine(c) {
   const parts = [];
   if (c.note) parts.push(esc(c.note));
@@ -1409,17 +1458,31 @@ function openDetail(id) {
       <div class="m-about">${esc(c.about)}</div>`;
   }
 
+  let rangeInit = null;
   if (pts.length) {
     const chartId = "modal-" + id;
-    CHART_DATA[chartId] = { points: pts, currency: c.currency || "", unit: c.unit || "", decimals: 2 };
     const last = pts[pts.length - 1];
+    // 기간 버튼. 2년치를 한 번에 그리면 최근 한두 달 흐름이 눌려 보여서, 긴 계열은 1년으로 시작한다.
+    const d0 = parseLabel(pts[0].label), d1 = parseLabel(last.label);
+    const spanDays = (d0 && d1) ? (d1 - d0) / 86400000 : 0;
+    const ranges = [];
+    if (spanDays > 120) ranges.push({ label: "3개월", days: 92 });
+    if (spanDays > 400) ranges.push({ label: "1년", days: 366 });
+    if (ranges.length) ranges.push({ label: "전체", days: 0 });
+    const initDays = spanDays > 400 ? 366 : 0;
+    const shown = sliceDays(pts, initDays);
+    CHART_DATA[chartId] = { points: shown, currency: c.currency || "", unit: c.unit || "", decimals: 2 };
+    rangeInit = { chartId, pts };
+    const rangeHtml = ranges.length ? `<div class="range-btns" role="group" aria-label="차트 기간">${ranges.map(r =>
+      `<button type="button" data-days="${r.days}" class="${r.days === initDays ? "on" : ""}">${r.label}</button>`).join("")}</div>` : "";
     body += `${subLine(c)}
       <div class="price-now">
         <span class="pv">${esc(c.currency || "")}${fmtNum(last.value)}</span>
         <span class="pu">${esc(c.unit || "")}</span>
         <span class="pd">${esc(last.label)} 기준 (자료 ${pts.length}건)</span>
       </div>
-      <div class="chart-wrap">${priceChartSvg(pts, chartId)}<div class="ch-tip"></div></div>
+      ${rangeHtml}
+      <div class="chart-wrap" id="wrap-${chartId}">${priceChartSvg(shown, chartId)}<div class="ch-tip"></div></div>
       <div class="m-stats">${statWindowsFor(pts).map(w => statBox(w.label, changeOver(pts, w.days))).join("")}</div>
       ${c.trend ? `<div class="m-section-title">경향 판정</div><div class="m-read">${trendExplain(c.trend)}</div>`
         : `<div class="m-section-title">추이 요약</div><div class="m-read">${trendSentence(c)}</div>`}
@@ -1503,6 +1566,17 @@ function openDetail(id) {
   document.getElementById("modalBody").innerHTML = body;
   document.getElementById("modalBackdrop").classList.add("open");
   document.querySelectorAll("#modalBody .chart-wrap").forEach(attachChartHover);
+  if (rangeInit) {
+    const { chartId, pts: all } = rangeInit;
+    document.querySelectorAll("#modalBody .range-btns button").forEach(btn => btn.addEventListener("click", () => {
+      const sub = sliceDays(all, Number(btn.dataset.days));
+      CHART_DATA[chartId].points = sub;
+      const wrap = document.getElementById("wrap-" + chartId);
+      wrap.innerHTML = `${priceChartSvg(sub, chartId)}<div class="ch-tip"></div>`;
+      attachChartHover(wrap);
+      btn.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === btn));
+    }));
+  }
   document.getElementById("modalClose").focus();
 }
 
@@ -1832,7 +1906,7 @@ if (!HAS_KCL) {
   const titleOf = gi => (CARD_GROUPS && CARD_GROUPS[gi] && CARD_GROUPS[gi].title)
     || ((CARD_GROUPS && CARD_GROUPS.length) ? "기타 지표" : "원자재·물류 가격");
   priceGroupsEl.innerHTML = groups.map(g => `
-    <div>
+    <div id="grp-${g.gi}">
       <div class="section-title">${esc(titleOf(g.gi))}</div>
       <div class="grid">${g.cards.map(c => c.html).join("")}</div>
     </div>`).join("");
@@ -1840,12 +1914,29 @@ if (!HAS_KCL) {
 
 document.querySelectorAll("#priceGroups .chart-wrap").forEach(attachChartHover);
 
+(function renderJumpNav() {
+  const nav = document.getElementById("jumpNav");
+  if (!nav) return;
+  const links = [["secOps", "핵심 지표"], ["secTop", "날씨·일정·태풍"]];
+  document.querySelectorAll("#priceGroups > [id]").forEach(g => {
+    const t = g.querySelector(".section-title");
+    if (t) links.push([g.id, t.textContent.trim()]);
+  });
+  links.push(["secNews", "수급 뉴스"]);
+  nav.innerHTML = links.map(([id, label]) => `<a href="#${id}">${esc(label)}</a>`).join("");
+})();
+
 // ---- 물류 운영 핵심 지표 요약판 ----------------------------------------------------------
 function opsReportText() {
   const when = FETCHED_AT ? FETCHED_AT.slice(0, 16).replace("T", " ") : "";
-  const lines = [`[물류팀 운영 참고지표] ${when} 기준`];
+  const lines = [`[물류팀 운영 참고지표] ${when} 기준`, ""];
+  if ((OPS_SUMMARY.highlights || []).length) {
+    lines.push("■ 오늘 달라진 점");
+    OPS_SUMMARY.highlights.forEach(h => lines.push(`- ${h}`));
+    lines.push("");
+  }
+  lines.push("■ 지표별 현황");
   (OPS_SUMMARY.groups || []).forEach(g => lines.push(`${g.label}: ${(g.names || []).join(", ")}`));
-  lines.push("");
   OPS_SUMMARY.rows.forEach(r => {
     const parts = [];
     if (r.value !== null && r.value !== undefined) {
@@ -1855,6 +1946,7 @@ function opsReportText() {
     }
     if (r.shortPct !== null && r.shortPct !== undefined) parts.push(`${r.shortLabel} ${pctText(r.shortPct, true)}`);
     if (r.longPct !== null && r.longPct !== undefined) parts.push(`${r.longLabel} ${pctText(r.longPct, true)}`);
+    if (r.yoyPct !== null && r.yoyPct !== undefined) parts.push(`1년 ${pctText(r.yoyPct, true)}`);
     if (r.trend) parts.push(r.trend);
     if (r.position) parts.push(r.position);
     if (r.note) parts.push(r.note);
@@ -1936,6 +2028,13 @@ function opsCsv() {
     const d = use.map((p, i) => `${i ? "L" : "M"}${(i / (use.length - 1) * W).toFixed(1)},${(2 + (1 - (p.value - lo) / span) * (H - 4)).toFixed(1)}`).join(" ");
     return `<svg class="ops-spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d}" class="${esc(r.tone || "flat")}"/></svg>`;
   };
+  // 평소 변동폭(판정 기준폭)보다 크게 움직인 칸만 칠한다. 2배 이상이면 진하게.
+  const tint = (v, thr) => {
+    if (v === null || v === undefined || !thr) return "";
+    const lv = Math.abs(v) / thr;
+    return lv < 1 ? "" : `${v > 0 ? "hu" : "hd"}${lv >= 2 ? 2 : 1}`;
+  };
+  const pctTd = (v, thr) => `<td class="${pctCls(v)} ${tint(v, thr)}">${pctText(v)}</td>`;
   const rows = OPS_SUMMARY.rows.map(r => {
     const val = (r.value !== null && r.value !== undefined)
       ? `${esc(r.currency || "")}${fmtNum(r.value)} <span class="ou">${esc(r.unit || "")}</span>` : "";
@@ -1945,14 +2044,19 @@ function opsCsv() {
       <td><div class="on">${esc(r.name)}</div>${sub ? `<div class="os">${esc(sub)}</div>` : ""}</td>
       <td>${val}${r.label ? `<div class="os">${esc(r.label)}</div>` : ""}</td>
       <td class="mid">${spark(r) || `<span class="os">–</span>`}</td>
-      <td class="${pctCls(r.shortPct)}">${pctText(r.shortPct)}</td>
-      <td class="${pctCls(r.longPct)}">${pctText(r.longPct)}</td>
+      ${pctTd(r.shortPct, r.thrS)}
+      ${pctTd(r.longPct, r.thrL)}
+      ${pctTd(r.yoyPct, r.thrY)}
       <td>${trendChip(r.trend, r.tone)}</td>
       <td>${r.fc ? `${fcRange(r.fc, r.currency)}<div class="os fc-dir ${fcCls(r.fc.direction)}">${esc(r.fc.direction)}</div>`
         : (r.value !== null && r.value !== undefined) ? `<span class="os" title="자료가 30건 이상 쌓이면 예상 범위를 표시합니다">자료 수집 중</span>` : "–"}</td>
     </tr>`;
   }).join("");
+  const today = (OPS_SUMMARY.highlights || []).length
+    ? `<div class="ops-today"><div class="ops-today-title">오늘 달라진 점</div>
+        <ul>${OPS_SUMMARY.highlights.map(h => `<li>${esc(h)}</li>`).join("")}</ul></div>` : "";
   box.innerHTML = `<div class="card">
+      ${today}
       <div class="ops-head">
         <div class="ops-groups">${(OPS_SUMMARY.groups || []).map(g =>
           `<span><span class="og ${esc(g.tone)}">${esc(g.label)}</span>${(g.names || []).map(esc).join(", ")}</span>`).join("")}</div>
@@ -1962,10 +2066,10 @@ function opsCsv() {
         </div>
       </div>
       <div class="ops-scroll"><table class="ops-table">
-        <tr><th>지표</th><th>현재</th><th>최근 6개월</th><th>단기 변화<br>(4주·1개월)</th><th>중기 변화<br>(13주·3개월)</th><th>경향</th><th>단기 예상<br>(4주·1개월 후)</th></tr>
+        <tr><th>지표</th><th>현재</th><th>최근 6개월</th><th>단기 변화<br>(4주·1개월)</th><th>중기 변화<br>(13주·3개월)</th><th>1년 대비</th><th>경향</th><th>단기 예상<br>(4주·1개월 후)</th></tr>
         ${rows}
       </table></div>
-      <div class="ops-method">${esc(OPS_SUMMARY.method || "")} 예상 범위는 과거 자료로 시험해 정확도가 높았던 방법으로 계산하며, 사건과 정책 변화는 반영하지 않습니다. 행을 누르면 상세 화면이 열립니다.</div>
+      <div class="ops-method">${esc(OPS_SUMMARY.method || "")} 변화율 칸의 배경색은 평소 변동폭보다 크게 움직인 경우이며, 진할수록 변동이 큽니다. 예상 범위는 과거 자료로 시험해 정확도가 높았던 방법으로 계산하며, 사건과 정책 변화는 반영하지 않습니다. 행을 누르면 상세 화면이 열립니다.</div>
     </div>`;
   box.addEventListener("click", e => {
     if (e.target.closest("#opsCopy")) { opsCopy(e.target.closest("#opsCopy")); return; }
