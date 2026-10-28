@@ -106,7 +106,7 @@
   .viz-root { --page-max: 1480px; }
   @media (min-width: 1800px) { .viz-root { --page-max: 1760px; } }
   @media (min-width: 2300px) { .viz-root { --page-max: 2160px; } }
-  @media (max-width: 639px) {
+  @media screen and (max-width: 639px) {
     .viz-root { padding-top: 18px; }
     .topbar { margin-bottom: 12px !important; }
     .topbar h1 { font-size: 19px; }
@@ -514,9 +514,9 @@
   .kt-chg.up { color: var(--bad); }
   .kt-chg.down { color: var(--good); }
   .kt-sub { font-size: 12px; color: var(--ink-muted); line-height: 1.45; margin-top: 2px; }
-  @media (max-width: 1099px) { .kpi-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media screen and (max-width: 1099px) { .kpi-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   /* 휴대폰: 타일 두 칸. 보조 설명 줄은 숨겨 첫 화면에 타일이 다 들어오게 한다(내륙운송료는 첫 줄만). */
-  @media (max-width: 639px) {
+  @media screen and (max-width: 639px) {
     .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
     .kpi-tile { padding: 8px 10px; }
     .kt-word { font-size: 18px; }
@@ -543,10 +543,17 @@
     padding: 12px 0 4px; border-bottom: 1px solid var(--gridline);
   }
   .ops-table .on .trend-chip { margin-left: 6px; vertical-align: 1px; }
+  /* 이번 주 흐름이 바뀐 지표: 칩 옆에 지난주 판정을 작게 적는다. */
+  .chg-flag { display: inline-block; font-size: 11.5px; font-weight: 600; color: var(--accent); margin-left: 6px; white-space: nowrap; }
+  .ops-table tr[data-ops]:focus-visible td { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* KCCI 항로별 표(상세 화면) */
+  .lane-table td.lane-grp { font-size: 12px; font-weight: 700; color: var(--ink-muted); padding-top: 10px; text-align: left; }
+  .lane-table .lane-spark { display: block; margin-left: auto; overflow: visible; }
+  .lane-table .lane-spark path { fill: none; stroke: var(--accent); stroke-width: 1.4; }
   /* 노트북 폭에서는 추이선 칸을 숨겨 숫자 칸 간격을 지킨다. */
-  @media (max-width: 1099px) and (min-width: 820px) { .ops-table .c-spark { display: none; } }
+  @media screen and (max-width: 1099px) and (min-width: 820px) { .ops-table .c-spark { display: none; } }
   /* 좁은 화면에서는 표를 지표별 카드로 바꾼다. 옆으로 밀지 않아도 한 지표가 한 덩어리로 보인다. */
-  @media (max-width: 819px) {
+  @media screen and (max-width: 819px) {
     .ops-scroll { overflow: visible; }
     .ops-table, .ops-table tbody { display: block; width: 100%; min-width: 0; }
     .ops-table tr.ops-hdr { display: none; }
@@ -761,6 +768,23 @@
     }
     .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .footnote, .credit { break-inside: avoid; }
+    .ops-actions, .ops-method { display: none !important; }
+    .kpi-row { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
+    .kpi-tile { padding: 6px 8px; break-inside: avoid; }
+    .kt-word { font-size: 15px; }
+    .kt-title, .kt-lead, .kt-chg, .kt-sub { font-size: 10px; }
+    .ops-today { padding: 6px 10px; }
+    .ops-today ul { font-size: 11px; line-height: 1.5; }
+    .ops-legend { font-size: 10px; }
+    .ops-table { min-width: 0; font-size: 11px; }
+    .ops-table th { font-size: 10px; padding: 3px 4px; }
+    .ops-table td { padding: 4px; }
+    .ops-table .c-spark { display: none; }
+    .ops-table tr.ops-cat td { padding: 6px 0 2px; font-size: 10.5px; }
+    .ops-table .os, .ops-table .ou { font-size: 9.5px; }
+    .trend-chip { font-size: 9.5px; padding: 0 5px; }
+    #secOps { break-after: page; }
+    .week-day .wd-label { font-size: 9px; }
     a { text-decoration: none; color: inherit; }
   }
 </style>
@@ -1513,6 +1537,29 @@ function trendSentence(c) {
   return `${dir} 현재 값은 차트 기간의 최저 ${money(lo)}와 최고 ${money(hi)} 사이에서 ${band}에 있습니다.`;
 }
 
+// KCCI 항로별 현황(부산 출발). 종합 카드의 상세 화면에만 붙는다.
+function kcciLaneSection(lanes) {
+  if (!lanes || !lanes.length) return "";
+  const spark = vals => {
+    if (!vals || vals.length < 3) return "";
+    const lo = Math.min(...vals), hi = Math.max(...vals), span = (hi - lo) || 1, W = 90, H = 22;
+    const d = vals.map((v, i) => `${i ? "L" : "M"}${(i / (vals.length - 1) * W).toFixed(1)},${(2 + (1 - (v - lo) / span) * (H - 4)).toFixed(1)}`).join(" ");
+    return `<svg class="lane-spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d}"/></svg>`;
+  };
+  const cell = v => `<td class="${pctCls(v)}">${pctText(v)}</td>`;
+  let grp = "", rows = "";
+  lanes.forEach(l => {
+    if (l.group !== grp) { grp = l.group; rows += `<tr><td colspan="6" class="lane-grp">${esc(grp)}</td></tr>`; }
+    rows += `<tr><td>${esc(l.name)}</td><td>$${fmtNum(l.current)}</td>${cell(l.weekPct)}${cell(l.q13Pct)}${cell(l.yoyPct)}<td>${spark(l.points)}</td></tr>`;
+  });
+  return `<div class="m-section-title">항로별 운임 (부산 출발, 40피트 1개 $, ${esc(lanes[0].label)} 기준)</div>
+    <table class="sf-table lane-table">
+      <tr><th>항로</th><th>현재</th><th>전주 대비</th><th>13주</th><th>1년</th><th>최근 1년</th></tr>
+      ${rows}
+    </table>
+    <div class="m-note">빨강은 운임 상승, 초록은 운임 하락입니다. 근해(중국·일본·동남아)는 운임 수준이 낮아 같은 금액 변화도 비율로는 크게 나타납니다.</div>`;
+}
+
 // 마지막 시점에서 days 일 안의 점만. 3개 미만이면 전체를 쓴다. days 가 0 이면 전체.
 function sliceDays(pts, days) {
   if (!days || !pts.length) return pts;
@@ -1574,7 +1621,8 @@ function openDetail(id) {
       <div class="m-stats">${statWindowsFor(pts).map(w => statBox(w.label, changeOver(pts, w.days))).join("")}</div>
       ${c.trend ? `<div class="m-section-title">경향 판정</div><div class="m-read">${trendExplain(c.trend)}</div>`
         : `<div class="m-section-title">추이 요약</div><div class="m-read">${trendSentence(c)}</div>`}
-      ${forecastSection(c)}`;
+      ${forecastSection(c)}
+      ${kcciLaneSection(c.kcciLanes)}`;
   } else if (c.isScfi) {
     const up = c.change >= 0;
     body += `${subLine(c)}
@@ -2140,9 +2188,11 @@ function opsCsv() {
   const rowHtml = r => {
     const val = (r.value !== null && r.value !== undefined)
       ? `${esc(r.currency || "")}${fmtNum(r.value)} <span class="ou">${esc(r.unit || "")}</span>` : "";
-    const clickable = CARD_BY_ID[r.detail] ? ` data-ops="${esc(r.detail)}"` : "";
+    const clickable = CARD_BY_ID[r.detail] ? ` data-ops="${esc(r.detail)}" tabindex="0"` : "";
+    const changed = r.changed && r.prevTrend
+      ? `<span class="chg-flag" title="1주 전 자료로 판정하면 ${esc(r.prevTrend)}였습니다">지난주 ${esc(r.prevTrend)}</span>` : "";
     return `<tr class="ops-row"${clickable}>
-      <td class="c-name"><div class="on">${esc(r.name)}${trendChip(r.trend, r.tone)}</div>${r.position ? `<div class="os">${esc(r.position)}</div>` : ""}</td>
+      <td class="c-name"><div class="on">${esc(r.name)}${trendChip(r.trend, r.tone)}${changed}</div>${r.position ? `<div class="os">${esc(r.position)}</div>` : ""}</td>
       <td class="c-val">${val}${r.label ? `<div class="os">${esc(r.label)}</div>` : ""}</td>
       <td class="c-spark mid">${spark(r)}</td>
       ${pctTd(r.shortPct, r.thrS, "c-s", r.shortLabel || "4주")}
@@ -2195,7 +2245,7 @@ function opsCsv() {
       <div class="ops-body">
         ${side}
         <div class="ops-main">
-          <div class="ops-legend"><b class="up">빨강</b>은 비용 상승, <b class="down">초록</b>은 비용 하락입니다. 칸 배경이 진할수록 평소보다 크게 움직였습니다. 최근 흐름은 4주와 13주 변화로 판정합니다.</div>
+          <div class="ops-legend"><b class="up">빨강</b>은 비용 상승, <b class="down">초록</b>은 비용 하락입니다. 칸 배경이 진할수록 평소보다 크게 움직였습니다. 최근 흐름은 4주와 13주 변화로 판정하며, 지난주와 방향이 달라진 지표에는 <span class="chg-flag" style="margin-left:0;">지난주 판정</span>을 함께 적습니다.</div>
           <div class="ops-scroll"><table class="ops-table">
             <tr class="ops-hdr"><th>지표 (최근 흐름)</th><th>현재</th><th class="c-spark">최근 6개월</th><th>단기 변화<br>(4주·1개월)</th><th>중기 변화<br>(13주·3개월)</th><th>1년 대비</th><th>단기 예상<br>(4주·1개월 후)</th></tr>
             ${bodyRows}
@@ -2211,7 +2261,7 @@ function opsCsv() {
     if (hit) openDetail(hit.dataset.ops);
   });
   box.addEventListener("keydown", e => {
-    const t = e.target.closest(".kpi-tile[data-ops]");
+    const t = e.target.closest("[data-ops]");
     if (t && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openDetail(t.dataset.ops); }
   });
 })();

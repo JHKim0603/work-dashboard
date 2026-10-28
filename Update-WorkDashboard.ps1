@@ -1314,6 +1314,35 @@ function Get-KcciSeries {
             }
         }
         if ($byCode["KCCI"].Count -lt 10) { throw "표 행이 너무 적습니다($($byCode['KCCI'].Count)행)" }
+        $laneInfo = @(
+            @{ c = "KUWI"; n = "미주 서안"; g = "원양 주요" }, @{ c = "KUEI"; n = "미주 동안"; g = "원양 주요" },
+            @{ c = "KNEI"; n = "북유럽"; g = "원양 주요" }, @{ c = "KMDI"; n = "지중해"; g = "원양 주요" },
+            @{ c = "KMEI"; n = "중동"; g = "원양 기타" }, @{ c = "KAUI"; n = "호주"; g = "원양 기타" },
+            @{ c = "KLEI"; n = "남미 동안"; g = "원양 기타" }, @{ c = "KLWI"; n = "남미 서안"; g = "원양 기타" },
+            @{ c = "KSAI"; n = "남아프리카"; g = "원양 기타" }, @{ c = "KWAI"; n = "서아프리카"; g = "원양 기타" },
+            @{ c = "KCI"; n = "중국"; g = "근해(아시아)" }, @{ c = "KJI"; n = "일본"; g = "근해(아시아)" },
+            @{ c = "KSEI"; n = "동남아"; g = "근해(아시아)" }
+        )
+        $kcciLanes = @(foreach ($li in $laneInfo) {
+            $pts = @($byCode[$li.c] | Sort-Object label -Unique)
+            if ($pts.Count -lt 2) { continue }
+            $rows = @($pts | ForEach-Object { [PSCustomObject]@{ d = (ConvertTo-LabelDate $_.label); v = $_.value } })
+            $n = $rows.Count - 1
+            $pctOf = {
+                param($from)
+                if ($null -eq $from -or $from.v -eq 0) { return $null }
+                [math]::Round(($rows[$n].v - $from.v) / [math]::Abs($from.v) * 100, 1)
+            }
+            [PSCustomObject]@{
+                code = $li.c; name = $li.n; group = $li.g
+                current = $rows[$n].v; previous = $rows[$n - 1].v; label = $pts[-1].label
+                weekPct = & $pctOf $rows[$n - 1]
+                q13Pct = & $pctOf (Find-PointBefore $rows $n 91)
+                yoyPct = & $pctOf (Find-PointBefore $rows $n 365)
+                # 상세 화면 추이선용으로 최근 1년만 싣는다(페이지 용량).
+                points = @($pts | Where-Object { (ConvertTo-LabelDate $_.label) -ge $rows[$n].d.AddDays(-366) } | ForEach-Object { $_.value })
+            }
+        })
         @(foreach ($cfg in @($cfgList)) {
             $pts = @($byCode[[string]$cfg.Code] | Sort-Object label -Unique)
             if ($pts.Count -lt 3) { Write-Warning "KCCI $($cfg.Code) 자료 부족"; continue }
@@ -1326,6 +1355,7 @@ function Get-KcciSeries {
                 source      = "한국해양진흥공사(KOBC)"
                 points      = $pts
                 newsQuery   = $cfg.NewsQuery
+                kcciLanes   = $(if ([string]$cfg.Code -eq "KCCI") { $kcciLanes } else { $null })
             }
         })
     } catch {
@@ -2479,7 +2509,9 @@ function Get-OpsSummaryRow {
     param([string]$id)
     $row = [ordered]@{ id = $id; detail = $id; name = $id; value = $null; currency = ""; unit = ""; label = ""
         shortLabel = ""; shortPct = $null; longLabel = ""; longPct = $null; trend = ""; tone = "flat"; position = ""; note = ""
-        fc = $null; yoyPct = $null; thrS = $null; thrL = $null; thrY = $null; band = ""; rangeName = ""; short = "" }
+        fc = $null; yoyPct = $null; thrS = $null; thrL = $null; thrY = $null; band = ""; rangeName = ""; short = ""
+        prevTrend = ""; prevTone = ""; changed = $false }
+    $series = $null
     $t = $null
     $fcSrc = $null
     if ($id -eq "safe-freight") {
@@ -2499,12 +2531,12 @@ function Get-OpsSummaryRow {
     if ($id -eq "scfi") {
         if (-not $scfi) { return $null }
         $row.name = "SCFI 컨테이너 운임"; $row.value = $scfi.current; $row.unit = "pt"; $row.label = $scfi.currentDate
-        $t = $scfi.trend; $fcSrc = $scfi.forecast
+        $t = $scfi.trend; $fcSrc = $scfi.forecast; $series = $scfi.points
     } elseif ($id -like "ccfi-*") {
         $l = @($sseLanes | Where-Object { $_.id -eq $id })[0]
         if (-not $l) { return $null }
         $row.name = "CCFI $($l.displayName)"; $row.value = $l.current; $row.unit = "pt"; $row.label = $l.currentDate
-        $row.detail = "ccfi-lanes"; $t = $l.trend
+        $row.detail = "ccfi-lanes"; $t = $l.trend; $series = $l.points
     } else {
         $c = @($priceCards | Where-Object { [string]$_.id -eq $id })[0]
         if (-not $c) { return $null }
@@ -2515,13 +2547,27 @@ function Get-OpsSummaryRow {
         }
         $pts = @($c.points)
         $row.value = $pts[-1].value; $row.currency = [string]$c.currency; $row.unit = [string]$c.unit; $row.label = $pts[-1].label
-        $t = $c.trend; $fcSrc = $c.forecast
+        $t = $c.trend; $fcSrc = $c.forecast; $series = $pts
     }
     if ($t) {
         $row.shortLabel = $t.shortLabel; $row.shortPct = $t.shortPct; $row.longLabel = $t.longLabel; $row.longPct = $t.longPct
         $row.trend = $t.trend; $row.tone = $t.tone; $row.position = $t.position
         $row.yoyPct = $t.yoyPct; $row.thrS = $t.thrShort; $row.thrL = $t.thrLong; $row.thrY = $t.thrYear
         $row.band = $t.band; $row.rangeName = $t.rangeName
+        # 1주 전(마지막 점에서 6일 넘게 앞선 자료까지)으로 다시 판정. 월간 계열은 지난달 자료까지가 된다.
+        $ptsArr = @($series)
+        if ($ptsArr.Count -ge 4) {
+            $lastD = ConvertTo-LabelDate $ptsArr[-1].label
+            if ($lastD) {
+                $cut = $lastD.AddDays(-6)
+                $prevPts = @($ptsArr | Where-Object { $dd = ConvertTo-LabelDate $_.label; $dd -and $dd -le $cut })
+                $pt = if ($prevPts.Count -ge 3) { Get-TrendStats $prevPts } else { $null }
+                if ($pt) {
+                    $row.prevTrend = $pt.trend; $row.prevTone = $pt.tone
+                    $row.changed = ($pt.tone -ne $t.tone)
+                }
+            }
+        }
     } else {
         $row.trend = "기록 부족"
     }
@@ -2592,6 +2638,11 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
         $tag = if ($catOf.ContainsKey([string]$r.id)) { $catOf[[string]$r.id] } else { "지표" }
         if ($where) { Add-Highlight $tag "$topic 최근 ${span}간 $pctTxt% $verb ${where}입니다." }
         else { Add-Highlight $tag "$topic 최근 ${span}간 $pctTxt% $verbEnd." }
+    }
+    $movedIds = @($moves | Sort-Object score -Descending | Select-Object -First 3 | ForEach-Object { [string]$_.r.id })
+    foreach ($r in @($opsRows | Where-Object { $_.changed -and $movedIds -notcontains [string]$_.id } | Select-Object -First 1)) {
+        $tag = if ($catOf.ContainsKey([string]$r.id)) { $catOf[[string]$r.id] } else { "지표" }
+        Add-Highlight $tag "$($r.short)의 최근 흐름이 지난주 $($r.prevTrend)에서 $($r.trend)$(Get-Josa $r.trend '으로' '로') 바뀌었습니다."
     }
     if ($opsHighlights.Count -eq 0) { Add-Highlight "지표" "평소 변동폭보다 크게 움직인 가격 지표는 없습니다." }
     if ($safeFreight) {
@@ -3467,7 +3518,8 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
         # nowrap 속성으로 넘겨 행당 크기를 절반 아래로 줄였다(메일이 Gmail 잘림 기준 102KB 에 가깝다).
         $subHtml = if ($sub) { "<br><font size=1 color=#898781>$(Get-HtmlText $sub)</font>" } else { "" }
         $fcHtml = if ($r.fc) { "<br><font size=1 color=#52514e>$($r.fc.label) $($r.currency)$(Format-PriceValue $r.fc.low)~$(Format-PriceValue $r.fc.high)</font>" } else { "" }
-        $opsRowMap[[string]$r.id] = "<tr><td><b>$($r.name)</b> <b><font size=1 color=$tc>$($r.trend)</font></b>$subHtml</td><td align=right nowrap>$val</td>$(Get-PctCell $r.shortPct $r.thrS)$(Get-PctCell $r.longPct $r.thrL)$(Get-PctCell $r.yoyPct $r.thrY)<td align=right nowrap>$($fcHtml -replace '^<br>', '')</td></tr>"
+        $chgMark = if ($r.changed) { " <font size=1 color=#2a78d6>(지난주 $($r.prevTrend))</font>" } else { "" }
+        $opsRowMap[[string]$r.id] = "<tr><td><b>$($r.name)</b> <b><font size=1 color=$tc>$($r.trend)</font></b>$chgMark$subHtml</td><td align=right nowrap>$val</td>$(Get-PctCell $r.shortPct $r.thrS)$(Get-PctCell $r.longPct $r.thrL)$(Get-PctCell $r.yoyPct $r.thrY)<td align=right nowrap>$($fcHtml -replace '^<br>', '')</td></tr>"
     }
     $placed = @{}
     $opsRowHtml = @(foreach ($cat in @($opsSummary.categories)) {
