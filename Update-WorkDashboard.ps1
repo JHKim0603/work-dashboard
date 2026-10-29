@@ -1902,19 +1902,28 @@ function Format-Won {
 # Chosen to avoid false positives on this dashboard's actual subjects: "슬롯" is left out
 # because 선복 슬롯 is ordinary shipping vocabulary and the 해상운임 card would lose real
 # headlines to it; "슬롯머신" carries the meaning without the collision.
+#
+# The entries are regular expressions since 2026-10-29. Plain substrings were blocking real news
+# that day: "포커" matched the outlet 포커스온경제 on a 국제유가 headline, and "베팅" matched KB
+# Think's 환율 전망 ("거세질 역외 베팅"). 베팅/배팅 are gone; words that sit inside ordinary words
+# carry a lookaround instead (포커(?!스), (?<!포)토토, (?<!분)야동, 머니상(?!승)). The same day a
+# Calgary Roughnecks casino page with no keyword in its title was live on the page - that is
+# what the source list is for. Each blocked title is logged so a wrong block shows up in the run.
 function Test-SpamHeadline {
     param([string]$title, [string]$source)
 
     $haystack = "$title $source"
     foreach ($word in $spamKeywords) {
-        if ($haystack -like "*$word*") {
+        if ($haystack -match $word) {
             $script:spamBlocked++
+            Write-Host "    (스팸 차단 '$word': $source | $title)"
             return $true
         }
     }
     foreach ($bad in $spamSources) {
-        if ($source -and $source -like "*$bad*") {
+        if ($source -and $source -match $bad) {
             $script:spamBlocked++
+            Write-Host "    (스팸 차단 '$bad': $source | $title)"
             return $true
         }
     }

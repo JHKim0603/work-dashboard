@@ -557,6 +557,19 @@ South China Sea crossing test for 항로. The radii are in `Get-TyphoonWatch` in
 Edit `config.json` → `materials`. Each entry's `NewsQueries` array is a list of Google News
 search terms; results across all queries are de-duplicated and capped at 8 headlines per card.
 
+### 스팸 기사 거르기 (`newsBlocklist`)
+
+업무 메일로 가는 요약이라 도박 광고 글은 `config.json` → `newsBlocklist` 의 단어(`keywords`)와 출처(`sources`)로
+거릅니다. 둘 다 **정규식**이고 대소문자를 가리지 않습니다(2026-10-29부터). 걸러낸 제목은 실행 기록에
+`(스팸 차단 '단어': 출처 | 제목)` 으로 남습니다.
+
+- 그날 단순 포함 검사가 정상 기사를 막고 있었습니다. '포커'가 출처 포커스온경제의 국제유가 기사를, '베팅'이 KB Think
+  환율 전망('거세질 역외 베팅')을 막았습니다. 그래서 '베팅'과 '배팅'은 빼고, 다른 낱말 안에 들어가는 단어는 앞뒤 글자를 보고
+  맞춥니다: `포커(?!스)`, `(?<!포)토토`('포토토크'), `(?<!분)야동`('분야동향'), `머니상(?!승)`('머니상승').
+- 같은 날 제목에 단어가 없는 Calgary Roughnecks 카지노 글이 라이브 페이지에 올라 있었습니다. 출처 목록에
+  `Calgary Roughnecks`, `icaremn\.com` 을 더했고, 그날 실행에서 15건이 걸렸습니다(모두 이 두 출처).
+- 같은 방식이 stockdashboard 에도 있습니다(목록은 그쪽 스크립트 안).
+
 ## Notes
 
 - Requires only Windows PowerShell 5.1 — no Python/Node/npm.
