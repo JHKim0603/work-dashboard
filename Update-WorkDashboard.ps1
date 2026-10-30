@@ -1495,6 +1495,7 @@ function Get-TrendStats {
 #      '지금 값 유지'보다 평균 오차가 3% 이상 작을 때만 추세 방법을 쓰고, 아니면 '지금 값 유지'를 쓴다.
 #   3) 예상 범위: 뒤쪽 절반 시험에서 실제로 난 오차의 10~90% 구간(80% 범위). 정규분포를 가정하지 않는다.
 #   방향은 80% 범위가 지금 값을 벗어날 때만 '상승 예상'·'하락 예상'이라 하고, 아니면 '보합권'이다.
+#   범위 폭이 현재 값의 30%를 넘는 보합권은 '예측 어려움'으로 바꾼다.
 #
 # 로그값으로 계산해 오르내림을 비율로 다룬다. 사건·정책(유류세, 관세, 전쟁 등)은 반영하지 않는다.
 function Get-ForecastPath {
@@ -1595,6 +1596,9 @@ function Get-Forecast {
         $low = [math]::Exp($f - $hw)
         $high = [math]::Exp($f + $hw)
         $dir = if ($low -gt $last.v) { "상승 예상" } elseif ($high -lt $last.v) { "하락 예상" } else { "보합권" }
+        # 범위 폭이 현재 값의 30%를 넘으면(2026-10-30 KCCI 종합 4주 뒤 −20%~+26%) 방향을 말할 수 없는데 '보합권'이라 하면
+        # 좁은 범위와 같은 무게로 읽힌다. 화면(template.html 의 FC_WIDE_PCT)도 같은 기준으로 흐리게 적는다.
+        if ($dir -eq "보합권" -and (($high - $low) / $last.v) * 100 -gt 30) { $dir = "예측 어려움" }
         $when = switch ($unit) {
             "day"   { $last.d.AddDays($h).ToString("yyyy-MM-dd") }
             "week"  { $last.d.AddDays(7 * $h).ToString("yyyy-MM-dd") }
@@ -1647,13 +1651,13 @@ function Get-Forecast {
 # 다른 원가(인건비·감가상각 등)는 유가 고시에서 바뀌지 않기 때문이다. 계수(kmPerLiter)는 11월 개정의 실제 변동폭
 # 두 개(178km 구간 −6,900원, 400km 구간 −15,400원, 산정 유가 −141.68원)를 함께 맞춘 값이라 config 에 두었다(3.675).
 function Format-MonthSpan {
-    # 읽기 쉬운 표기: "26년 7~9월", 해를 넘기면 "26년 11월~27년 1월". 2026-10-30 에 업무 표 표기("26년 07월~09월")에서
-    # 바꿨다(산정 이력이 읽기 어렵다는 의견). 메일 제목 상태 비교는 window.key(2026-Q4)를 쓰므로 표기와 무관하다.
+    # 읽기 쉬운 표기: "2026년 7~9월", 해를 넘기면 "2026년 11월~2027년 1월". 2026-10-30 에 업무 표 표기("26년 07월~09월")에서
+    # 바꿨고, 같은 날 두 자리 연도('27년 2~4월')가 숫자 범위로 읽혀 헷갈린다는 점검 결과로 네 자리로 바꿨다.
+    # 메일 제목 상태 비교는 window.key(2026-Q4)를 쓰므로 표기와 무관하다.
     param([DateTime]$first)
     $last = $first.AddMonths(2)
-    $yy = "{0:00}" -f ($first.Year % 100)
-    if ($last.Year -eq $first.Year) { return "${yy}년 $($first.Month)~$($last.Month)월" }
-    "${yy}년 $($first.Month)월~$('{0:00}' -f ($last.Year % 100))년 $($last.Month)월"
+    if ($last.Year -eq $first.Year) { return "$($first.Year)년 $($first.Month)~$($last.Month)월" }
+    "$($first.Year)년 $($first.Month)월~$($last.Year)년 $($last.Month)월"
 }
 
 function Get-QuarterInfo {
@@ -1916,6 +1920,13 @@ function Format-Won {
 # what the source list is for. Each blocked title is logged so a wrong block shows up in the run.
 function Test-SpamHeadline {
     param([string]$title, [string]$source)
+    # 언론사 페이지의 빈 틀 글자가 제목 자리에 그대로 오는 일이 있다(2026-10-30 알파벳 'META_TITLE_QUOTE').
+    # 대문자·숫자를 밑줄로 이은 한 단어나 빈 제목은 기사 제목이 아니므로 스팸처럼 거른다.
+    if ([string]::IsNullOrWhiteSpace($title) -or $title.Trim() -cmatch '^[A-Z0-9]+(_[A-Z0-9]+)+$') {
+        $script:spamBlocked++
+        Write-Host "    (제목 아님 차단: $source | $title)"
+        return $true
+    }
 
     $haystack = "$title $source"
     foreach ($word in $spamKeywords) {
@@ -2792,9 +2803,10 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
                 $pe = [DateTime]$sf.pending.effective
                 if ($pe -ge $nowKst.Date) { $lines += "$($pe.Month)/$($pe.Day)부터 $($sf.pending.verdict) 운임 적용" }
             }
-            $lines += "다음 조정 $($sf.window.applyLabel) 적용분"
+            # 타일은 폭이 좁아 한 줄이 길면 '적용분'이 '적용/분'으로 갈렸다. 판정(동결 예상)은 큰 글자에 있으니 여기는 짧게.
+            $lines += "다음 조정: $($sf.window.applyLabel)분"
             if ($sf.scenario -and $sf.scenario.trigger) {
-                $lines += "유류세 인하 종료 시 $($sf.scenario.trigger.applyLabel) $($sf.scenario.trigger.verdict)"
+                $lines += "유류세 인하가 끝나면 $($sf.scenario.trigger.applyLabel)분 $($sf.scenario.trigger.verdict)"
             }
             [PSCustomObject]@{ key = [string]$cat.key; title = [string]$cat.title; tone = $tone; word = "$($sf.base.verdict) 예상"
                 detail = "safe-freight"; lead = $null; change = $null; count = ""; lines = @($lines) }
@@ -3696,14 +3708,14 @@ $highlightHtml = ""
 if ($highlights.Count -gt 0) {
     $rows = foreach ($h in $highlights) {
         $chip = if ($h.reason) {
-            "<span style='display:inline-block;font-size:10px;font-weight:700;background:#b3221f;color:#ffffff;padding:1px 7px;border-radius:4px;margin-right:6px;'>$($h.reason)</span>"
+            "<span style='display:inline-block;font-size:10px;font-weight:700;background:#2b2a27;color:#ffffff;padding:1px 7px;border-radius:4px;margin-right:6px;'>$($h.reason)</span>"
         } else { "" }
         $meta = Get-HtmlText ((@($h.source, $h.date) | Where-Object { $_ }) -join ", ")
         "<div style='margin-top:8px;'>$chip<a href='$(Get-HtmlText $h.link)' style='font-size:13px;font-weight:700;color:#0b0b0b;text-decoration:none;'>$(Get-HtmlText $h.title)</a><div style='font-size:11px;color:#898781;margin-top:2px;'>$meta</div></div>"
     }
     $highlightHtml = @"
 <div style="margin:16px 0;padding:13px 15px;background:#fdeeee;border:1px solid #f3caca;border-radius:8px;">
-  <div style="font-size:12px;font-weight:700;color:#b3221f;">오늘 눈여겨볼 기사 $($highlights.Count)건</div>
+  <div style="font-size:12px;font-weight:700;color:#2b2a27;">오늘 눈여겨볼 기사 $($highlights.Count)건</div>
   $($rows -join "")
   <div style="font-size:10.5px;color:#898781;margin-top:9px;">중요도는 기사 제목의 단어로 자동 분류한 결과입니다. 참고용으로 보시기 바랍니다.</div>
 </div>
@@ -3722,10 +3734,10 @@ $materialsHtml = foreach ($m in $materials) {
         # recognisable here. Inline styles only - mail clients drop stylesheets.
         if ($n.flag) {
             $chip = if ($n.reason) {
-                "<span style='display:inline-block;font-size:10px;font-weight:700;background:#b3221f;color:#ffffff;padding:1px 7px;border-radius:4px;'>$($n.reason)</span><br>"
+                "<span style='display:inline-block;font-size:10px;font-weight:700;background:#2b2a27;color:#ffffff;padding:1px 7px;border-radius:4px;'>$($n.reason)</span><br>"
             } else { "" }
             @"
-<div style="margin-top:9px;border-left:3px solid #b3221f;padding-left:9px;">
+<div style="margin-top:9px;border-left:3px solid #52514e;padding-left:9px;">
       $chip<a href="$nLink" style="font-size:12.5px;color:#0b0b0b;font-weight:700;text-decoration:none;line-height:1.45;">$nTitle</a>
       $metaHtml
     </div>
