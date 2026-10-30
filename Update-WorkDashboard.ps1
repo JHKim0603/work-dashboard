@@ -2929,6 +2929,80 @@ if ($config.releaseSchedule) {
 }
 $nextReleaseJson = ConvertTo-Json -InputObject $nextRelease -Compress
 if (-not $nextReleaseJson -or $nextReleaseJson -eq "null") { $nextReleaseJson = "{}" }
+# 오늘의 브리핑(요약판 맨 위, 메일 맨 위, 보고용 요약 복사). 증권 앱의 AI 요약처럼 오늘 상황을 항목별로 한두 문장씩
+# 정리한다. AI 를 부르지 않고 이 스크립트가 계산한 값으로 문장을 만든다(같은 데이터면 늘 같은 문장, 숫자가 틀릴 일이 없다).
+# 항목: 흐름(분야 타일), 내륙운송료, 환율, 일정(7일 안, 태풍). 한 문장에 한 내용.
+if ($opsSummary) {
+    $brief = New-Object System.Collections.ArrayList
+    function Add-Brief { param([string]$label, [string]$text) if ($text) { [void]$brief.Add([PSCustomObject]@{ label = $label; text = $text }) } }
+    function Join-Ko {
+        # "A", "A와 B", "A, B와 C"
+        param([string[]]$items)
+        if ($items.Count -le 1) { return ($items -join "") }
+        $head = if ($items.Count -gt 2) { ($items[0..($items.Count - 2)] -join ", ") } else { $items[0] }
+        "$head$(Get-Josa $items[-2] '과' '와') $($items[-1])"
+    }
+    $tl = @($opsSummary.tiles | Where-Object { $_.detail -ne "safe-freight" })
+    $ups = @($tl | Where-Object { $_.tone -eq "up" } | ForEach-Object { [string]$_.title })
+    $downs = @($tl | Where-Object { $_.tone -eq "down" } | ForEach-Object { [string]$_.title })
+    $mixed = @($tl | Where-Object { $_.tone -eq "mixed" } | ForEach-Object { [string]$_.title })
+    $flow = @()
+    if ($ups.Count) { $flow += "$(Join-Ko $ups)$(Get-Josa $ups[-1] '은' '는') 오르는 흐름" }
+    if ($downs.Count) { $flow += "$(Join-Ko $downs)$(Get-Josa $downs[-1] '은' '는') 내리는 흐름" }
+    if ($mixed.Count) { $flow += "$(Join-Ko $mixed)$(Get-Josa $mixed[-1] '은' '는') 방향이 엇갈리는 흐름" }
+    if ($flow.Count) {
+        $ft = ($flow -join "이고, ") + "입니다."
+        if ($ups.Count -gt $downs.Count) { $ft += " 비용이 오르는 분야가 더 많습니다." }
+        elseif ($downs.Count -gt $ups.Count) { $ft += " 비용이 내리는 분야가 더 많습니다." }
+        Add-Brief "흐름" $ft
+    }
+    if ($safeFreight) {
+        $sf = $safeFreight
+        $sfT = @()
+        if ($sf.pending -and $sf.pending.effective) {
+            $pe = [DateTime]$sf.pending.effective
+            if ($pe -ge $todayKst) { $sfT += "$($pe.Month)/$($pe.Day)부터 $($sf.pending.verdict)된 운임이 적용됩니다." }
+        }
+        $sfT += "다음 조정($($sf.window.applyLabel) 적용분)은 $($sf.base.verdict) 예상입니다."
+        if ($sf.scenario -and $sf.scenario.trigger) {
+            $u = [DateTime]$sf.scenario.until
+            $sfT += "유류세 인하가 $($u.Month)/$($u.Day)에 끝나면 $($sf.scenario.trigger.applyLabel) 적용분은 $($sf.scenario.trigger.verdict) 예상입니다."
+        }
+        Add-Brief "내륙운송료" ($sfT -join " ")
+    }
+    if ($fxCalc) {
+        $usd = @($fxCalc.currencies | Where-Object { $_.code -eq "USD" })[0]
+        $cny = @($fxCalc.currencies | Where-Object { $_.code -eq "CNY" })[0]
+        if ($usd -and @($usd.refs).Count) {
+            $u0 = [double]$usd.refs[0].rate
+            $u1 = @($usd.refs | Where-Object { $_.label -eq "1주 전" })[0]
+            $fxT = if ($u1) {
+                $fp = ($u0 / [double]$u1.rate - 1) * 100
+                $fw = if ([math]::Abs($fp) -lt 0.05) { "보합입니다." } elseif ($fp -gt 0) { "$([math]::Abs($fp).ToString('0.0'))% 올랐습니다." } else { "$([math]::Abs($fp).ToString('0.0'))% 내렸습니다." }
+                # 위 '흐름'은 13주 판정이라 1주 변화와 방향이 다르면 두 기간을 밝혀 적는다(같은 상자에서 반대로 읽히지 않게).
+                $fxRow = @($opsSummary.rows | Where-Object { $_.id -eq "usdkrw" })[0]
+                $opp = $fxRow -and $fxRow.trend -and (($fxRow.tone -eq "down" -and $fp -ge 0.05) -or ($fxRow.tone -eq "up" -and $fp -le -0.05))
+                if ($opp) { "원/달러 환율은 $($u0.ToString('N2'))원입니다. 흐름은 $($fxRow.trend)이지만 최근 1주는 $fw" }
+                else { "원/달러 환율은 $($u0.ToString('N2'))원으로 1주 전보다 $fw" }
+            } else { "원/달러 환율은 $($u0.ToString('N2'))원입니다." }
+            if ($cny -and @($cny.refs).Count) { $fxT += " 원/위안 환율은 $(([double]$cny.refs[0].rate).ToString('N2'))원입니다." }
+            Add-Brief "환율" $fxT
+        }
+    }
+    # 내륙운송료 날짜는 바로 위 항목에 있으므로 일정에서는 뺀다.
+    $soon = @($schedule | Where-Object { $_.dDay -le 7 -and [string]$_.title -notmatch '내륙운송료' } | Sort-Object date | Select-Object -First 3)
+    $schT = @()
+    if ($soon.Count) {
+        $schT += "7일 안 일정은 $((@($soon | ForEach-Object { $d = [DateTime]$_.date; "$($d.Month)/$($d.Day)($($dowKo[[int]$d.DayOfWeek])) $($_.title)" })) -join ', ')입니다."
+    }
+    if ($typhoon -and @($typhoon.active).Count -gt 0) {
+        $tn = (@($typhoon.active | ForEach-Object { $_.name }) -join ", ")
+        $schT += "입고 항로에 태풍 $tn$(Get-Josa $tn '이' '가') 있습니다."
+    }
+    Add-Brief "일정" ($schT -join " ")
+    $opsSummary | Add-Member -NotePropertyName brief -NotePropertyValue @($brief) -Force
+}
+
 $scheduleJson = ConvertTo-Json -InputObject @($schedule) -Depth 3 -Compress
 if (-not $scheduleJson -or $scheduleJson -eq "null") { $scheduleJson = "[]" }
 
@@ -3717,9 +3791,14 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
         "<td valign=top width=20% style='border-left:3px solid $c;background:#fafaf8;'><font size=1 color=#6e6c66>$($t.title)</font><br><b><font color=$c>$arrow$($t.word)</font></b><br><font size=1 color=#3d3b37>$body</font></td>"
     })
     $tileHtml = if ($tileCells.Count) { "<table width=100% cellpadding=6 cellspacing=4 style='margin:0 -4px 6px;font-size:13px;'><tr>$($tileCells -join '')</tr></table>" } else { "" }
+    $briefRows = @(@($opsSummary.brief) | Where-Object { $_ } | ForEach-Object {
+        "<tr><td valign=top nowrap style='padding:3px 10px 3px 0;font-size:12px;font-weight:700;color:#2a78d6;'>$([System.Net.WebUtility]::HtmlEncode([string]$_.label))</td><td style='padding:3px 0;font-size:12.5px;color:#0b0b0b;line-height:1.6;'>$([System.Net.WebUtility]::HtmlEncode([string]$_.text))</td></tr>"
+    })
+    $briefMailHtml = if ($briefRows.Count) { "<div style='margin:0 0 10px;padding:10px 12px;background:#eef4fc;border-radius:6px;'><div style='font-size:12px;font-weight:700;color:#0b0b0b;margin-bottom:4px;'>오늘의 브리핑</div><table cellpadding=0 cellspacing=0 style='border-collapse:collapse;'>$($briefRows -join '')</table></div>" } else { "" }
     $opsHtml = @"
 <div style="margin:16px 0;padding:13px 15px;background:#ffffff;border:1px solid #e1e0d9;border-radius:8px;">
   <div style="font-size:12px;font-weight:700;color:#0b0b0b;margin-bottom:4px;">$($opsSummary.title)</div>
+  $briefMailHtml
   $tileHtml
   <div style="font-size:12px;font-weight:700;color:#0b0b0b;">지금 주목할 점</div>
   <div style="font-size:12.5px;color:#0b0b0b;margin:4px 0 10px;line-height:1.6;">$($mailHlLines -join '<br>')</div>

@@ -608,6 +608,21 @@
   }
   /* 지금 주목할 점: 표를 읽기 전에 무엇이 움직였는지 문장으로 먼저 본다. */
   .ops-today { background: var(--accent-wash); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
+  /* 오늘의 브리핑(요약판 맨 위), 접는 설명 */
+  .ops-brief { background: var(--accent-wash); border-radius: 8px; padding: 10px 14px; margin: 0 0 12px; }
+  .ops-brief-title { font-size: 13px; font-weight: 700; color: var(--ink-primary); margin-bottom: 6px; }
+  .ops-brief dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 14px; row-gap: 4px; margin: 0; }
+  .ops-brief dt { font-size: 13px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+  .ops-brief dd { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink-primary); }
+  @media screen and (max-width: 640px) {
+    .ops-brief dl { grid-template-columns: 1fr; row-gap: 0; }
+    .ops-brief dd { margin-bottom: 6px; }
+  }
+  .ops-more, .hl-more { margin-top: 4px; }
+  .ops-more summary, .hl-more summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--accent); width: fit-content; }
+  .ops-more summary:focus-visible, .hl-more summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ops-more p { margin: 6px 0 0; }
+  .hl-more ul { margin-top: 2px; }
   /* 지금 주목할 점: 관련 기사 한 줄 */
   .hl-news { font-size: 12.5px; line-height: 1.5; color: var(--ink-muted); margin: 0 0 4px; }
   .hl-news a { color: var(--ink-secondary); text-decoration: underline; text-decoration-color: var(--gridline); text-underline-offset: 2px; }
@@ -2437,6 +2452,12 @@ wireFxCalc();
 function opsReportText() {
   const when = FETCHED_AT ? FETCHED_AT.slice(0, 16).replace("T", " ") : "";
   const lines = [`[물류팀 운영 참고지표] ${when} 기준`, ""];
+  const brief = (OPS_SUMMARY.brief || []).filter(b => b && b.text);
+  if (brief.length) {
+    lines.push("■ 오늘의 브리핑");
+    brief.forEach(b => lines.push(`- ${b.label}: ${b.text}`));
+    lines.push("");
+  }
   if ((OPS_SUMMARY.tiles || []).length) {
     lines.push("■ 분야별 흐름");
     OPS_SUMMARY.tiles.forEach(t => {
@@ -2610,26 +2631,36 @@ function hlNewsHtml(h) {
   }).join("");
 
   const hl = (OPS_SUMMARY.highlights || []).map(h => typeof h === "string" ? { tag: "", text: h } : h);
+  // 지금 주목할 점은 5건까지 먼저 보이고 나머지는 접어 둔다.
+  const HL_SHOW = 5;
+  const hlItem = h => `<li>${h.tag ? `<span class="hl-tag">${esc(h.tag)}</span>` : ""}${esc(h.text)}${hlNewsHtml(h)}</li>`;
   const side = `<div class="ops-side">
       ${hl.length ? `<div class="ops-today"><div class="ops-today-title">지금 주목할 점</div>
-        <ul>${hl.map(h => `<li>${h.tag ? `<span class="hl-tag">${esc(h.tag)}</span>` : ""}${esc(h.text)}${hlNewsHtml(h)}</li>`).join("")}</ul></div>` : ""}
+        <ul>${hl.slice(0, HL_SHOW).map(hlItem).join("")}</ul>
+        ${hl.length > HL_SHOW ? `<details class="hl-more"><summary>나머지 ${hl.length - HL_SHOW}건 더 보기</summary><ul>${hl.slice(HL_SHOW).map(hlItem).join("")}</ul></details>` : ""}</div>` : ""}
       <div class="ops-actions">
         <button class="ops-btn" id="opsCopy">📋 보고용 요약 복사</button>
         <button class="ops-btn" id="opsCsv">📥 CSV 내려받기</button>
       </div>
     </div>`;
+  // 오늘의 브리핑: 생성 스크립트가 분야 흐름, 내륙운송료, 환율, 일정을 문장으로 만든다.
+  const brief = (OPS_SUMMARY.brief || []).filter(b => b && b.text);
+  const briefHtml = brief.length ? `<div class="ops-brief"><div class="ops-brief-title">오늘의 브리핑</div><dl>${brief.map(b =>
+    `<dt>${esc(b.label)}</dt><dd>${esc(b.text)}</dd>`).join("")}</dl></div>` : "";
   box.innerHTML = `<div class="card ops-card">
       <div class="ops-title">${esc(OPS_SUMMARY.title || "물류 운영 핵심 지표")}</div>
+      ${briefHtml}
       ${tiles ? `<div class="kpi-row">${tiles}</div>` : ""}
       <div class="ops-body">
         ${side}
         <div class="ops-main">
-          <div class="ops-legend"><b class="up">빨강</b>은 비용 상승, <b class="down">초록</b>은 비용 하락입니다. 칸 배경이 진할수록 평소보다 크게 움직였습니다. 최근 흐름은 4주와 13주 변화로 판정하며, 지난주와 방향이 달라진 지표에는 <span class="chg-flag" style="margin-left:0;">지난주 판정</span>을 함께 적습니다.</div>
+          <div class="ops-legend"><b class="up">빨강</b>은 비용 상승, <b class="down">초록</b>은 비용 하락입니다. 칸 배경이 진할수록 평소보다 크게 움직였습니다.
+            <details class="ops-more"><summary>표 읽는 법</summary><p>최근 흐름은 4주와 13주 변화로 판정하며, 지난주와 방향이 달라진 지표에는 <span class="chg-flag" style="margin-left:0;">지난주 판정</span>을 함께 적습니다.
+              예상 범위는 과거 자료로 시험해 정확도가 높았던 방법으로 계산하며, 사건과 정책 변화는 반영하지 않습니다. 타일이나 행을 누르면 상세 화면이 열립니다.</p></details></div>
           <div class="ops-scroll"><table class="ops-table">
             <tr class="ops-hdr"><th>지표 (최근 흐름)</th><th>현재</th><th class="c-spark">최근 6개월</th><th>단기 변화<br>(4주·1개월)</th><th>중기 변화<br>(13주·3개월)</th><th>1년 대비</th><th>단기 예상<br>(4주·1개월 후)</th></tr>
             ${bodyRows}
           </table></div>
-          <div class="ops-method">예상 범위는 과거 자료로 시험해 정확도가 높았던 방법으로 계산하며, 사건과 정책 변화는 반영하지 않습니다. 타일이나 행을 누르면 상세 화면이 열립니다.</div>
         </div>
       </div>
     </div>`;
