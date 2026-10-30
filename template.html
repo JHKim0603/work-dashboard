@@ -2566,8 +2566,99 @@ function opsReportText() {
   return lines.join("\n");
 }
 
-function opsCopy(btn) {
-  const text = opsReportText();
+// 주간 보고용 요약. 같은 내용을 여러 번 쓰지 않게 '한 줄 요약 → 분야별 한 줄 → 다가오는 일정'만 담는다.
+// 분야 줄에는 지금 값과 전주 대비(월간 지표는 전월 대비)를 적고, 1년 최고·최저나 흐름이 바뀐 지표는 그 줄 안에 표시한다.
+function weeklyReportText() {
+  const d = FETCHED_AT ? new Date(FETCHED_AT) : new Date();
+  const DOW = "일월화수목금토";
+  const lines = [`[물류 참고지표 주간 요약] ${d.getMonth() + 1}/${d.getDate()}(${DOW[d.getDay()]}) 기준`, ""];
+  const flow = ((OPS_SUMMARY.brief || []).find(b => b && b.label === "흐름") || {}).text;
+  if (flow) lines.push("■ 요약", flow, "");
+  const rowsById = {};
+  (OPS_SUMMARY.rows || []).forEach(r => { rowsById[r.id] = r; });
+  const tileByKey = {};
+  (OPS_SUMMARY.tiles || []).forEach(t => { tileByKey[t.key] = t; });
+  const seriesOf = id => {
+    if (id === "scfi") return (SCFI && SCFI.points) || [];
+    const lane = (SSE_LANES || []).find(l => l.id === id);
+    if (lane) return lane.points || [];
+    const c = (PRICES || []).find(p => p.id === id);
+    return (c && c.points) || [];
+  };
+  // 전주(월간은 전월) 대비: 마지막 값보다 6일 이상(월간은 25일 이상) 앞선 가장 최근 값과 비교한다. 주간 자료는 마지막 날짜가
+  // 주중 아무 날일 수 있어 '정확히 7일 전'을 찾으면 비는 경우가 있다. 너무 오래된 값(주간 15일, 월간 45일 넘게)은 쓰지 않는다.
+  const prevChange = (pts, monthly) => {
+    const lastD = parseLabel(String(pts[pts.length - 1].label));
+    if (!lastD) return null;
+    const minGap = (monthly ? 25 : 6) * 86400000, maxGap = (monthly ? 45 : 15) * 86400000;
+    for (let i = pts.length - 2; i >= 0; i--) {
+      const di = parseLabel(String(pts[i].label));
+      if (!di) continue;
+      const gap = lastD - di;
+      if (gap < minGap) continue;
+      if (gap > maxGap || !pts[i].value) return null;
+      return (pts[pts.length - 1].value / pts[i].value - 1) * 100;
+    }
+    return null;
+  };
+  // '로/으로': 받침이 있으면 '으로'(ㄹ 받침은 '로')
+  const josaRo = w => {
+    const c = String(w).trim().slice(-1).charCodeAt(0) - 0xAC00;
+    if (c < 0 || c > 11171) return "로";
+    const jong = c % 28;
+    return jong && jong !== 8 ? "으로" : "로";
+  };
+  // 단위: 통화 기호와 겹치는 앞부분(위안/톤의 '위안', USD)은 뺀다.
+  const unitOf = r => {
+    const u = String(r.unit || "");
+    if (!u || u === "pt" || u === "USD") return "";
+    if (r.currency && /^(위안|USD|달러)\//.test(u)) return u.replace(/^[^/]+/, "");
+    return u;
+  };
+  lines.push("■ 분야별 (지금 값, 전주 대비)");
+  (OPS_SUMMARY.categories || []).forEach(cat => {
+    const items = cat.items || [];
+    if (items.indexOf("safe-freight") >= 0) {
+      const sf = SAFE_FREIGHT;
+      if (!sf || !sf.base) return;
+      const parts = [];
+      if (sf.pending && sf.applied && sf.pending.effective) parts.push(`${sfMd(sf.pending.effective)}부터 ${sf.pending.verdict}된 운임 적용`);
+      parts.push(`다음 조정(${sfSpan(sf.window.applyLabel)}) ${sf.base.verdict} 예상(기준 대비 ${sfSigned(sf.base.diff)}원)`);
+      if (sf.scenario && sf.scenario.trigger) parts.push(`유류세 인하 종료 시 ${sfSpan(sf.scenario.trigger.applyLabel)} ${sf.scenario.trigger.verdict} 예상`);
+      lines.push(`- ${cat.title}: ${parts.join(", ")}`);
+      return;
+    }
+    const rows = items.map(id => rowsById[id]).filter(r => r && r.value !== null && r.value !== undefined);
+    if (!rows.length) return;
+    rows.sort((a, b) => (b.id === cat.lead ? 1 : 0) - (a.id === cat.lead ? 1 : 0));
+    const parts = rows.map(r => {
+      const pts = seriesOf(r.id);
+      const monthly = pts.length > 0 && String(pts[pts.length - 1].label).length === 7;
+      const ch = pts.length > 1 ? prevChange(pts, monthly) : null;
+      const notes = [];
+      if (ch !== null) notes.push(`${monthly ? "전월" : "전주"} ${pctText(ch, true)}`);
+      if (r.rangeName === "1년" && (r.band === "최고" || r.band === "최저")) notes.push(`1년 중 ${r.band}`);
+      if (r.changed && r.prevTrend) notes.push(`흐름이 ${r.prevTrend}에서 ${r.trend}${josaRo(r.trend)} 바뀜`);
+      return `${r.short || r.name} ${r.currency || ""}${fmtNum(r.value)}${unitOf(r)}${notes.length ? `(${notes.join(", ")})` : ""}`;
+    });
+    const t = tileByKey[cat.key];
+    lines.push(`- ${cat.title}${t ? " " + t.word : ""}: ${parts.join(", ")}`);
+  });
+  // 다가오는 일정: 매주 반복되는 지수 발표는 빼고 정책 일정만 한 달 안에서.
+  const sched = (SCHEDULE || []).filter(x => x.kind !== "발표" && x.dDay >= 0 && x.dDay <= 31);
+  if (sched.length) {
+    lines.push("", "■ 다가오는 일정");
+    sched.forEach(x => {
+      const dt = new Date(x.date + "T00:00:00");
+      lines.push(`- ${dt.getMonth() + 1}/${dt.getDate()}(${DOW[dt.getDay()]}) ${x.title}${x.note && x.kind === "정책" && /예상/.test(x.note) ? `(${x.note})` : ""}`);
+    });
+  }
+  lines.push("", `흐름은 4주와 13주 변화를 지표별 평소 변동폭과 비교한 자동 판정입니다. 대시보드: ${OPS_SUMMARY.dashboardUrl}`);
+  return lines.join("\n");
+}
+
+function opsCopy(btn, textFn) {
+  const text = (textFn || opsReportText)();
   const done = ok => {
     const old = btn.textContent;
     btn.textContent = ok ? "✔ 복사했습니다" : "복사하지 못했습니다";
@@ -2709,7 +2800,8 @@ function hlNewsHtml(h) {
         <ul>${hl.slice(0, HL_SHOW).map(hlItem).join("")}</ul>
         ${hl.length > HL_SHOW ? `<details class="hl-more"><summary>나머지 ${hl.length - HL_SHOW}건 더 보기</summary><ul>${hl.slice(HL_SHOW).map(hlItem).join("")}</ul></details>` : ""}</div>` : ""}
       <div class="ops-actions">
-        <button class="ops-btn" id="opsCopy">📋 보고용 요약 복사</button>
+        <button class="ops-btn" id="opsWeekly" title="한 줄 요약, 분야별 한 줄, 다가오는 일정만 담은 짧은 보고용 글">📋 주간 보고 복사</button>
+        <button class="ops-btn" id="opsCopy" title="브리핑, 주목할 점, 지표별 현황까지 모두 담은 글">📄 전체 지표 복사</button>
         <button class="ops-btn" id="opsCsv">📥 CSV 내려받기</button>
       </div>
     </div>`;
@@ -2735,7 +2827,8 @@ function hlNewsHtml(h) {
       </div>
     </div>`;
   box.addEventListener("click", e => {
-    if (e.target.closest("#opsCopy")) { opsCopy(e.target.closest("#opsCopy")); return; }
+    if (e.target.closest("#opsWeekly")) { opsCopy(e.target.closest("#opsWeekly"), weeklyReportText); return; }
+    if (e.target.closest("#opsCopy")) { opsCopy(e.target.closest("#opsCopy"), opsReportText); return; }
     if (e.target.closest("#opsCsv")) { opsCsv(); return; }
     const hit = e.target.closest("[data-ops]");
     if (hit) openDetail(hit.dataset.ops);
