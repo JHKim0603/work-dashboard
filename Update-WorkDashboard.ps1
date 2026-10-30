@@ -3510,6 +3510,11 @@ $priceRowsHtml = foreach ($c in $priceCards) {
         $tSign = if ($dev -ge 0) { "+" } else { "" }
         $targetHtml = "<div style='font-size:12px;margin-top:4px;color:#52514e;'>$tLabel $($c.currency)$(Format-PriceValue $ref) 대비 <b style='color:$tColor;'>$tSign$($dev.ToString('N1'))%</b></div>"
     }
+    if ($mailCompact -contains [string]$c.id) {
+        # 한 줄 카드: 이름, 값, 단위, 등락, 기준일과 출처만(그래프·기준가 없음). 일반 카드의 절반 이하 용량이다.
+        [PSCustomObject]@{ sort = $c.sort; html = "<tr><td style='padding:8px 16px;border-bottom:1px solid #e1e0d9;font-size:12.5px;color:#0b0b0b;'><b>$($c.displayName)</b> $($c.currency)$(Format-PriceValue $latest.value) <font color=#898781>$($c.unit)</font> $($change.html) <font size=1 color=#898781>$($latest.label), $($c.source)</font></td></tr>" }
+        continue
+    }
     [PSCustomObject]@{ sort = $c.sort; html = @"
 <tr>
   <td style="padding:14px 16px;border-bottom:1px solid #e1e0d9;">
@@ -3668,12 +3673,12 @@ if ($missingCards.Count -gt 0) {
 # and the 수급 뉴스 section sits below weather and a dozen price cards - a headline worth acting
 # on should not depend on scrolling that far. Nothing is duplicated away: these still appear in
 # their own card below.
-# 메일의 지금 주목할 점. 관련 기사는 3줄까지만 붙인다(긴 뉴스 주소가 줄마다 수백 바이트라 90KB 경고선에 가깝다).
+# 메일의 지금 주목할 점. 관련 기사는 2줄까지만 붙인다(긴 뉴스 주소가 줄마다 수백 바이트라 90KB 경고선에 가깝다).
 $mailHlNews = 0
 $mailHlLines = @(if ($opsSummary) {
     foreach ($h in @($opsSummary.highlights)) {
         $line = "· <font color=#6e6c66>[$($h.tag)]</font> $($h.text)"
-        if ($h.news -and $mailHlNews -lt 3) {
+        if ($h.news -and $mailHlNews -lt 2) {
             $mailHlNews++
             $nd = [string]$h.news.date
             $ndTxt = if ($nd -match '^\d{4}-(\d{2})-(\d{2})$') { "$([int]$matches[1])/$([int]$matches[2])" } else { "" }
