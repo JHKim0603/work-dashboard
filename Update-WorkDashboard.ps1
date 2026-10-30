@@ -1643,9 +1643,9 @@ function Get-Forecast {
 # 판정을 미리 계산할 수 있다. 이 블록이 그 계산이다. 실제 고시와 어긋날 수 있는 지점은 카드에
 # 그대로 적는다 - 기준 유가가 추정이면 '추정', 남은 날짜를 채운 가정이 무엇인지까지.
 #
-# 운임 변동액은 연료 몫만 움직인다고 보고 왕복거리 ÷ 연비 × 유가 변동으로 근사한다. 고시 운임의
-# 다른 원가(인건비·감가상각 등)는 유가 고시에서 바뀌지 않기 때문이다. 연비(kmPerLiter)는 11월
-# 개정의 실제 변동폭으로 맞춘 추정치라 config 에 두었다.
+# 운임 변동액은 연료 몫만 움직인다고 보고 운임표 구간거리(편도 km) ÷ 계수 × 유가 변동으로 근사한다. 고시 운임의
+# 다른 원가(인건비·감가상각 등)는 유가 고시에서 바뀌지 않기 때문이다. 계수(kmPerLiter)는 11월 개정의 실제 변동폭
+# 두 개(178km 구간 −6,900원, 400km 구간 −15,400원, 산정 유가 −141.68원)를 함께 맞춘 값이라 config 에 두었다(3.675).
 function Format-MonthSpan {
     # 업무 표(평균유가 산정 기준)와 같은 표기: "26년 07월~09월", 해를 넘기면 "26년 11월~27년 01월"
     param([DateTime]$first)
@@ -1697,7 +1697,8 @@ function Get-FuelWindowAverage {
         $actualDays += $act; $projDays += $proj
         $months += [PSCustomObject]@{
             label         = "$($mStart.Month)월"
-            avg           = if ($n -gt 0) { [math]::Round($sum / $n, 1) } else { $null }
+            # 소수 둘째 자리까지(고시 금액 1,994.68 처럼). 첫째 자리로 자르면 경계(±50원)에서 판정이 뒤집힐 수 있다.
+            avg           = if ($n -gt 0) { [math]::Round($sum / $n, 2) } else { $null }
             actualDays    = $act
             projectedDays = $proj
             days          = ($mEnd - $mStart).Days + 1
@@ -1706,7 +1707,7 @@ function Get-FuelWindowAverage {
     $valid = @($months | Where-Object { $null -ne $_.avg })
     [PSCustomObject]@{
         months        = $months
-        avg           = if ($valid.Count -eq 3) { [math]::Round((($valid | Measure-Object -Property avg -Sum).Sum) / 3, 1) } else { $null }
+        avg           = if ($valid.Count -eq 3) { [math]::Round((($valid | Measure-Object -Property avg -Sum).Sum) / 3, 2) } else { $null }
         actualDays    = $actualDays
         projectedDays = $projDays
         pastDays      = $pastDays
@@ -1715,7 +1716,7 @@ function Get-FuelWindowAverage {
 
 function Get-FuelVerdict {
     param($avg, [double]$baseFuel, [double]$threshold)
-    $diff = [math]::Round([double]$avg - $baseFuel, 1)
+    $diff = [math]::Round([double]$avg - $baseFuel, 2)
     $verdict = if ($diff -ge $threshold) { "인상" } elseif ($diff -le -$threshold) { "인하" } else { "동결" }
     [PSCustomObject]@{ avg = [double]$avg; base = $baseFuel; diff = $diff; verdict = $verdict }
 }
@@ -1806,7 +1807,7 @@ function Get-SafeFreightOutlook {
             $partial[$k] = $daily[$k]
             $we = Get-FuelWindowAverage -daily $partial -quarter $cur -today $d -projBase ([double]$daily[$k])
             if ($null -ne $we.avg) {
-                $evolution += [PSCustomObject]@{ date = $k; avg = $we.avg; diff = [math]::Round($we.avg - $baseFuel, 1) }
+                $evolution += [PSCustomObject]@{ date = $k; avg = $we.avg; diff = [math]::Round($we.avg - $baseFuel, 2) }
             }
         }
         $baseImpact = if ($base.verdict -ne "동결") { Get-RouteImpacts $cfg.routes $base.diff $kmPerLiter } else { @() }
@@ -1818,7 +1819,9 @@ function Get-SafeFreightOutlook {
         if ($tc -and $tc.until -and $tc.dieselWon) {
             $until = [DateTime]::ParseExact([string]$tc.until, "yyyy-MM-dd", [Globalization.CultureInfo]::InvariantCulture)
             if ($until -ge $today) {
-                $won = [double]$tc.dieselWon
+                # dieselWon 은 세금 인하액(경유 145원)이다. 판매가격에는 부가세 10%가 더 붙으므로 addVat 이면 1.1배가 오른다고 본다.
+                $taxWon = [double]$tc.dieselWon
+                $won = if ($tc.addVat) { [math]::Round($taxWon * 1.1, 1) } else { $taxWon }
                 $sCur = Get-FuelWindowAverage -daily $daily -quarter $cur -today $today -projBase $latest -stepAfter $until -stepWon $won
                 $sv = Get-FuelVerdict $sCur.avg $baseFuel $threshold
                 $nxt = Get-QuarterInfo $cur.start.AddMonths(3)
@@ -1839,6 +1842,7 @@ function Get-SafeFreightOutlook {
                     until     = $until.ToString("yyyy-MM-dd")
                     dDay      = ($until - $today).Days
                     won       = $won
+                    taxWon    = $taxWon
                     current   = [PSCustomObject]@{ window = $cur.label; applyLabel = $cur.applyLabel; avg = $sv.avg; diff = $sv.diff; verdict = $sv.verdict
                         effective = $cur.effective.ToString("yyyy-MM-dd"); months = $sCur.months }
                     next      = [PSCustomObject]@{ window = $nxt.label; applyLabel = $nxt.applyLabel; avg = $svNext.avg; diff = $svNext.diff; verdict = $svNext.verdict
@@ -3482,6 +3486,8 @@ function Get-PriceChartHtml {
 # separately below, at the position config.cardOrder gives them. Concatenating the three groups
 # instead is what left the mail showing 운임 first while the page had already moved it into the
 # logistics group - the same two-lists-drift the page-side sort was meant to end.
+# 메일에서 그래프 없이 한 줄로만 싣는 카드(config.mailCompactCards). 월 1회 갱신 보조 카드로 메일 용량을 아낀다.
+$mailCompact = @($config.mailCompactCards | ForEach-Object { [string]$_ })
 $priceRowsHtml = foreach ($c in $priceCards) {
     $pts = @($c.points)
     if ($pts.Count -eq 0) { continue }
@@ -3491,7 +3497,7 @@ $priceRowsHtml = foreach ($c in $priceCards) {
     $chartPts = @($pts)
     $lastLd = ConvertTo-LabelDate $pts[-1].label
     if ($lastLd) { $chartPts = @($pts | Where-Object { $ld = ConvertTo-LabelDate $_.label; -not $ld -or $ld -ge $lastLd.AddDays(-731) }) }
-    $chartHtml = Get-PriceChartHtml -points $chartPts -accent $change.accent -currency $c.currency
+    $chartHtml = if ($mailCompact -contains [string]$c.id) { "" } else { Get-PriceChartHtml -points $chartPts -accent $change.accent -currency $c.currency }
     # Reference price line (mail only - see $cardTargets). Above the reference is the costly side,
     # so it takes the same red the up-is-bad badges use.
     $targetHtml = ""
@@ -3624,7 +3630,7 @@ if ($safeFreight) {
     <div style="font-size:12.5px;color:#0b0b0b;margin-top:5px;">$baseLine</div>
     $scHtml
     $impactHtml
-    <div style="font-size:11px;color:#898781;margin-top:7px;">기준 운임: $($sf.rateBasis). 운임 변동은 왕복거리 ÷ 연비 $($sf.kmPerLiter)km/L × 유가 변동으로 계산한 근사치입니다.</div>
+    <div style="font-size:11px;color:#898781;margin-top:7px;">기준 운임: $($sf.rateBasis). 운임 변동은 운임표 구간거리(편도 km) ÷ $($sf.kmPerLiter) × 유가 변동으로 계산한 근사치입니다(11/1 실제 인하폭에 맞춘 계수).</div>
   </td>
 </tr>
 "@
@@ -3781,6 +3787,9 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
         if ($catRows.Count) { "<tr><td colspan=6 style='padding-top:9px;'><font size=1 color=#898781><b>$($cat.title)</b></font></td></tr>"; $catRows }
     })
     $opsRowHtml += @(foreach ($k in $opsRowMap.Keys) { if (-not $placed.ContainsKey($k)) { $opsRowMap[$k] } })
+    # 타일이 5개까지는 한 줄, 6개부터는 세 개씩 두 줄(메일 폭 600px 에 여섯 칸은 글자가 꺾인다).
+    $tilePerRow = if (@($opsSummary.tiles).Count -le 5) { [math]::Max(1, @($opsSummary.tiles).Count) } else { 3 }
+    $tileW = [math]::Floor(100 / $tilePerRow)
     $tileCells = @(foreach ($t in @($opsSummary.tiles)) {
         $c = $toneColor[[string]$t.tone]; if (-not $c) { $c = "#6e6c66" }
         $arrow = switch ($t.tone) { "up" { "▲ " } "down" { "▼ " } default { "" } }
@@ -3788,9 +3797,10 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
             $chg = if ($t.change -and $null -ne $t.change.pct) { "<br>$($t.change.label) $(Get-PctText $t.change.pct)" } else { "" }
             "$($t.lead.name)<br><b>$($t.lead.currency)$(Format-PriceValue $t.lead.value)</b>$chg"
         } else { [string](@($t.lines) | Select-Object -First 1) }
-        "<td valign=top width=20% style='border-left:3px solid $c;background:#fafaf8;'><font size=1 color=#6e6c66>$($t.title)</font><br><b><font color=$c>$arrow$($t.word)</font></b><br><font size=1 color=#3d3b37>$body</font></td>"
+        "<td valign=top width=$tileW% style='border-left:3px solid $c;background:#fafaf8;'><font size=1 color=#6e6c66>$($t.title)</font><br><b><font color=$c>$arrow$($t.word)</font></b><br><font size=1 color=#3d3b37>$body</font></td>"
     })
-    $tileHtml = if ($tileCells.Count) { "<table width=100% cellpadding=6 cellspacing=4 style='margin:0 -4px 6px;font-size:13px;'><tr>$($tileCells -join '')</tr></table>" } else { "" }
+    $tileRowsHtml = @(for ($ti = 0; $ti -lt $tileCells.Count; $ti += $tilePerRow) { "<tr>$(($tileCells[$ti..([math]::Min($tileCells.Count, $ti + $tilePerRow) - 1)]) -join '')</tr>" }) -join ""
+    $tileHtml = if ($tileCells.Count) { "<table width=100% cellpadding=6 cellspacing=4 style='margin:0 -4px 6px;font-size:13px;'>$tileRowsHtml</table>" } else { "" }
     $briefRows = @(@($opsSummary.brief) | Where-Object { $_ } | ForEach-Object {
         "<tr><td valign=top nowrap style='padding:3px 10px 3px 0;font-size:12px;font-weight:700;color:#2a78d6;'>$([System.Net.WebUtility]::HtmlEncode([string]$_.label))</td><td style='padding:3px 0;font-size:12.5px;color:#0b0b0b;line-height:1.6;'>$([System.Net.WebUtility]::HtmlEncode([string]$_.text))</td></tr>"
     })

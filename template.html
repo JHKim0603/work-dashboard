@@ -522,7 +522,7 @@
   /* 한눈 요약: 분야별 타일 → 지금 주목할 점 → 지표 표. 화면 폭에 따라 타일 줄 수와 배치가 바뀐다. */
   .ops-card { padding: 16px 18px 14px; }
   .ops-title { font-size: 15px; font-weight: 700; margin: 0 0 10px; color: var(--ink-primary); }
-  .kpi-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .kpi-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
   .kpi-tile {
     min-width: 0; border: 1px solid var(--border); border-left: 4px solid var(--ink-muted); border-radius: 8px;
     padding: 10px 12px; background: var(--surface); cursor: pointer; transition: box-shadow .15s ease;
@@ -873,7 +873,7 @@
     .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .footnote, .credit { break-inside: avoid; }
     .ops-actions, .ops-method { display: none !important; }
-    .kpi-row { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
+    .kpi-row { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
     .kpi-tile { padding: 6px 8px; break-inside: avoid; }
     .kt-word { font-size: 15px; }
     .kt-title, .kt-lead, .kt-chg, .kt-sub { font-size: 10px; }
@@ -1883,7 +1883,7 @@ function openDetail(id) {
       <div class="m-section-title">판정</div>
       <div class="m-read">${esc(c.base.assumption)}하면 산정 기간 평균은 <b>${sfWon(c.base.avg)}원</b>입니다.
         기준 대비 <b>${sfSigned(c.base.diff)}원</b>이므로 ${esc(c.window.applyLabel)} 적용분은 <b>${esc(c.base.verdict)}</b> 예상입니다.
-        ${s ? `<br><br><b>${esc(s.label)}</b>: 다음 날부터 경유 가격이 ${sfWon(s.won)}원 오른다고 가정했습니다.
+        ${s ? `<br><br><b>${esc(s.label)}</b>: 다음 날부터 경유 가격이 ${sfWon(s.won)}원${s.taxWon && s.taxWon !== s.won ? `(유류세 ${sfWon(s.taxWon)}원과 부가세)` : ""} 오른다고 가정했습니다.
           산정 ${esc(s.current.window)} 평균은 ${sfWon(s.current.avg)}원(${sfSigned(s.current.diff)}원, ${esc(s.current.verdict)})입니다.
           산정 ${esc(s.next.window)} 평균은 ${sfWon(s.next.avg)}원(기준 ${sfWon(s.next.base)}원 대비 ${sfSigned(s.next.diff)}원, ${esc(s.next.verdict)})입니다.` : ""}</div>
       ${c.base.verdict !== "동결" ? sfImpactTable(c.base.impact, `${c.window.applyLabel} 적용 예상 운임 (기본 가정, 20FT 왕복, 원)`, c.rateFrom) : ""}
@@ -1893,8 +1893,10 @@ function openDetail(id) {
         오르거나 내리면 운임을 다시 고시합니다. 조정된 운임은 산정 기간이 끝난 뒤 두 달째부터 3개월간 적용됩니다.<br>
         산정 기간 평균은 월평균 3개의 단순평균입니다. 월평균은 매일 받은 오피넷 전국평균으로 계산하므로
         오피넷 월간 평균과 1원 안팎 차이가 날 수 있습니다(26년 9월: 이 페이지 1,843.6원, 오피넷 1,844원).
-        최종 평균유가는 안전운임위원회가 부가세를 제외한 판매가격과 유가보조금을 고려해 정합니다.<br>
-        운임 변동액은 왕복거리 ÷ 연비 ${sfWon(c.kmPerLiter)}km/L × 유가 변동으로 계산한 근사치입니다.
+        26년 4~6월 고시 금액 1,994.68원도 경유 평균 판매가격으로 발표되었고, 이 페이지도 같은 판매가격으로 계산합니다.
+        최종 금액은 안전운임위원회가 심의해 정하므로 이 계산과 조금 다를 수 있습니다.<br>
+        운임 변동액은 운임표 구간거리(편도 km) ÷ ${sfWon(c.kmPerLiter)} × 유가 변동으로 계산한 근사치입니다.
+        이 계수는 11/1 실제 인하폭(178km 구간 −6,900원, 400km 구간 −15,400원)에 맞춘 값입니다.
         인건비와 물가를 반영하는 연간 운임 재산정은 포함하지 않았습니다.</div>`;
   } else if (c.lanes && c.lanes.length) {
     body += `${subLine(c)}
@@ -2183,8 +2185,8 @@ function wireSfWhatIf(c) {
   const pUp = Math.ceil(cur + (thr - c.base.diff) / k), pDown = Math.floor(cur + (-thr - c.base.diff) / k);
   function upd() {
     const P = Number(range.value);
-    const avg = Math.round((c.base.avg + k * (P - cur)) * 10) / 10;
-    const diff = Math.round((avg - c.baseFuel) * 10) / 10;
+    const avg = Math.round((c.base.avg + k * (P - cur)) * 100) / 100;
+    const diff = Math.round((avg - c.baseFuel) * 100) / 100;
     const verdict = diff >= thr ? "인상" : diff <= -thr ? "인하" : "동결";
     document.getElementById("sfwVal").textContent = sfWon(P) + "원/L";
     const rows = verdict === "동결" ? [] : (c.routes || []).map(r => {
@@ -2285,7 +2287,7 @@ if (SAFE_FREIGHT) {
          <b class="${sfCls(t.verdict)}">${esc(t.applyLabel)} 적용분 ${esc(t.verdict)}</b> 예상입니다.`
       : `산정 ${esc(s.current.window)}과 ${esc(s.next.window)} 모두 조정 기준(±${sf.threshold}원) 미만입니다.`;
     scenario = `<div class="sf-sub">유류세 인하 종료 시 (${esc(sfMd(s.until))} 종료 예정, D-${s.dDay})</div>
-      <div class="sf-line" style="margin-top:2px;">경유 가격이 ${sfWon(s.won)}원 오른다고 가정하면 ${result}</div>`;
+      <div class="sf-line" style="margin-top:2px;">경유 가격이 ${sfWon(s.won)}원${s.taxWon && s.taxWon !== s.won ? `(유류세 ${sfWon(s.taxWon)}원과 부가세)` : ""} 오른다고 가정하면 ${result}</div>`;
     if (!impact && t) {
       impact = { rows: t.impact, title: `유류세 인하 종료 시 ${t.applyLabel} 적용 예상 운임 (20FT 왕복, 원)` };
     }
@@ -2312,7 +2314,7 @@ if (SAFE_FREIGHT) {
         </div>
         <div>${impact ? sfImpactTable(impact.rows, impact.title, sf.rateFrom) : sfRateTable(sf.routes || [], sf.rateFrom)}</div>
       </div>
-      <div class="card-src">운임 변동은 왕복거리 ÷ 연비 ${sfWon(sf.kmPerLiter)}km/L × 유가 변동으로 계산한 근사치입니다. 경유 ${esc(sf.latest.label)} 기준입니다.</div>
+      <div class="card-src">운임 변동은 운임표 구간거리(편도 km) ÷ ${sfWon(sf.kmPerLiter)} × 유가 변동으로 계산한 근사치입니다(11/1 실제 인하폭에 맞춘 계수). 경유 ${esc(sf.latest.label)} 기준입니다.</div>
     </div>`);
 }
 
