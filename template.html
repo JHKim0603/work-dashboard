@@ -46,6 +46,7 @@
     --bad-edge:        rgba(179,34,31,0.28);
     --up-1: rgba(179,34,31,0.09); --up-2: rgba(179,34,31,0.20);
     --down-1: rgba(0,99,0,0.08); --down-2: rgba(0,99,0,0.18);
+    --cmp-1: #2a78d6; --cmp-2: #eb6834; --cmp-3: #6250d6; --cmp-4: #eda100; --cmp-5: #e87ba4;
   }
   @media (prefers-color-scheme: dark) {
     .viz-root {
@@ -68,6 +69,7 @@
       --bad-edge:        rgba(240,133,133,0.38);
       --up-1: rgba(240,133,133,0.13); --up-2: rgba(240,133,133,0.28);
       --down-1: rgba(46,196,46,0.11); --down-2: rgba(46,196,46,0.24);
+    --cmp-1: #3987e5; --cmp-2: #d95926; --cmp-3: #9085e9; --cmp-4: #c98500; --cmp-5: #d55181;
     }
   }
   :root[data-theme="dark"] .viz-root {
@@ -80,6 +82,7 @@
     --warn: #e8a33d; --warn-wash: rgba(232,163,61,0.16); --bad-wash: rgba(240,133,133,0.16); --bad-edge: rgba(240,133,133,0.38);
     --up-1: rgba(240,133,133,0.13); --up-2: rgba(240,133,133,0.28);
     --down-1: rgba(46,196,46,0.11); --down-2: rgba(46,196,46,0.24);
+    --cmp-1: #3987e5; --cmp-2: #d95926; --cmp-3: #9085e9; --cmp-4: #c98500; --cmp-5: #d55181;
   }
   :root[data-theme="light"] .viz-root {
     color-scheme: light;
@@ -91,6 +94,7 @@
     --warn: #8f5200; --warn-wash: rgba(177,124,0,0.14); --bad-wash: rgba(179,34,31,0.12); --bad-edge: rgba(179,34,31,0.28);
     --up-1: rgba(179,34,31,0.09); --up-2: rgba(179,34,31,0.20);
     --down-1: rgba(0,99,0,0.08); --down-2: rgba(0,99,0,0.18);
+    --cmp-1: #2a78d6; --cmp-2: #eb6834; --cmp-3: #6250d6; --cmp-4: #eda100; --cmp-5: #e87ba4;
   }
 
   .viz-root {
@@ -306,7 +310,7 @@
   .clim-seg.route   { background: var(--warn); }
   .clim-seg.arrival { background: var(--accent); }
   .clim-col.now .clim-stack { outline: 1px solid var(--ink-muted); outline-offset: 1px; }
-  .clim-m { font-size: 10px; color: var(--ink-muted); margin-top: 3px; }
+  .clim-m { font-size: 12px; color: var(--ink-muted); margin-top: 3px; }
   .clim-col.now .clim-m { color: var(--ink-primary); font-weight: 700; }
   .clim-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 7px; }
   .clim-key { font-size: 12px; color: var(--ink-secondary); display: inline-flex; align-items: center; gap: 4px; }
@@ -604,6 +608,66 @@
   }
   /* 지금 주목할 점: 표를 읽기 전에 무엇이 움직였는지 문장으로 먼저 본다. */
   .ops-today { background: var(--accent-wash); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
+  /* 지금 주목할 점: 관련 기사 한 줄 */
+  .hl-news { font-size: 12.5px; line-height: 1.5; color: var(--ink-muted); margin: 0 0 4px; }
+  .hl-news a { color: var(--ink-secondary); text-decoration: underline; text-decoration-color: var(--gridline); text-underline-offset: 2px; }
+  .hl-news a:hover { color: var(--accent); }
+  .hl-src { margin-left: 4px; }
+  /* 경유가를 바꿔 보기(안전운임) */
+  .sfw { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  .sfw-lbl { font-size: 13px; color: var(--ink-secondary); }
+  .sfw-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+  .sfw-row input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .sfw-row output { min-width: 96px; text-align: right; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sfw-scale { display: flex; justify-content: space-between; gap: 6px; font-size: 12px; color: var(--ink-muted); }
+  .sfw-out { margin-top: 6px; }
+  .sfw-open { margin-top: 10px; }
+  /* 원화로 바꿔 보기 */
+  .fxc-in { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 2px 0 4px; }
+  .fxc-amt {
+    width: 150px; font: inherit; font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; text-align: right;
+    color: var(--ink-primary); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
+  }
+  .fxc-amt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .fxc-ccy { margin: 0; }
+  .fxc-d { color: var(--ink-muted); font-size: 12px; margin-left: 5px; }
+  #fxCalc .sf-table td, #fxCalc .sf-table th { white-space: nowrap; }
+  /* 함께 보기(같은 출발점 비교) */
+  .cmp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .cmp-head h3 { margin: 0; }
+  .cmp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .cmp-chip {
+    display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 13px; color: var(--ink-secondary);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 4px 10px; cursor: pointer;
+  }
+  .cmp-chip.on { color: var(--ink-primary); border-color: var(--ink-muted); font-weight: 600; }
+  .cmp-chip:hover { border-color: var(--accent); }
+  .cmp-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .cmp-key { display: inline-block; flex: none; width: 16px; }
+  .cmp-key.line { height: 3px; border-radius: 2px; }
+  .cmp-key.off { width: 10px; height: 10px; border: 1.5px solid var(--ink-muted); border-radius: 50%; }
+  .cmp-v { font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .cmp-v.up { color: var(--bad); }
+  .cmp-v.down { color: var(--good); }
+  .cmp-msg { font-size: 12.5px; color: var(--warn); margin: 2px 0 6px; }
+  .cmp-plot { position: relative; margin-top: 8px; }
+  .cmp-plot svg { display: block; width: 100%; overflow: visible; touch-action: pan-y; }
+  .cmp-plot svg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .cmp-grid { stroke: var(--gridline); stroke-width: 1; }
+  .cmp-zero { stroke: var(--ink-muted); stroke-width: 1; }
+  .cmp-axis { font-size: 12px; fill: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .cmp-end { font-size: 12px; fill: var(--ink-primary); font-variant-numeric: tabular-nums; }
+  .cmp-hair { stroke: var(--ink-muted); stroke-width: 1; }
+  .cmp-tip {
+    position: absolute; top: 6px; pointer-events: none; z-index: 2; white-space: nowrap;
+    background: var(--surface-raised); border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px;
+    font-size: 12.5px; color: var(--ink-primary); box-shadow: 0 4px 14px rgba(0,0,0,.12);
+  }
+  .cmp-tip .tt-d { font-size: 12px; color: var(--ink-muted); margin-bottom: 2px; }
+  .cmp-tip .tt-r { display: flex; align-items: center; gap: 6px; line-height: 1.6; }
+  .cmp-tip .tt-r b { min-width: 58px; text-align: right; font-variant-numeric: tabular-nums; }
+  .cmp-tip .tt-r .nm { color: var(--ink-secondary); }
+  .cmp-empty { font-size: 13px; color: var(--ink-muted); padding: 30px 0; text-align: center; }
   .ops-today-title { font-size: 13px; font-weight: 700; color: var(--ink-primary); margin-bottom: 4px; }
   .ops-today ul { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.65; color: var(--ink-primary); }
   .ops-table tr[data-ops] { cursor: pointer; }
@@ -857,6 +921,11 @@
 
     <div class="price-groups" id="priceGroups"></div>
 
+    <div id="secCompare" hidden>
+      <div class="section-title">함께 보기</div>
+      <div class="card" id="cmpBox"></div>
+    </div>
+
     <div id="secNews">
       <div class="section-title">수급 뉴스</div>
       <div class="grid" id="materialsGrid"></div>
@@ -911,6 +980,7 @@ const NEXT_RELEASE = __NEXT_RELEASE_JSON__;
 const evsFor = id => (CHART_EVENTS || []).filter(e => !e.ids || !e.ids.length || e.ids.indexOf(id) >= 0);
 const SAFE_FREIGHT = __SAFE_FREIGHT_JSON__;
 const OPS_SUMMARY = __OPS_SUMMARY_JSON__;
+const FX_CALC = __FX_CALC_JSON__;
 const NEWS_OUTAGE = __NEWS_OUTAGE__;
 const HAS_FUEL_KEY = __HAS_FUEL_KEY__;
 const HAS_KCL = __HAS_KCL__;
@@ -1803,6 +1873,7 @@ function openDetail(id) {
           산정 ${esc(s.next.window)} 평균은 ${sfWon(s.next.avg)}원(기준 ${sfWon(s.next.base)}원 대비 ${sfSigned(s.next.diff)}원, ${esc(s.next.verdict)})입니다.` : ""}</div>
       ${c.base.verdict !== "동결" ? sfImpactTable(c.base.impact, `${c.window.applyLabel} 적용 예상 운임 (기본 가정, 20FT 왕복, 원)`, c.rateFrom) : ""}
       ${s && s.trigger ? sfImpactTable(s.trigger.impact, `${s.trigger.applyLabel} 적용 예상 운임 (유류세 인하 종료 시, 20FT 왕복, 원)`, c.rateFrom) : ""}
+      ${sfWhatIfHtml(c)}
       <div class="m-note">판정 기준: 평균유가 산정 기간(3개월)의 경유 평균이 현재 운임에 반영된 유가보다 ${c.threshold}원 이상
         오르거나 내리면 운임을 다시 고시합니다. 조정된 운임은 산정 기간이 끝난 뒤 두 달째부터 3개월간 적용됩니다.<br>
         산정 기간 평균은 월평균 3개의 단순평균입니다. 월평균은 매일 받은 오피넷 전국평균으로 계산하므로
@@ -1847,6 +1918,7 @@ function openDetail(id) {
 
   document.getElementById("modalBody").innerHTML = body;
   document.getElementById("modalBackdrop").classList.add("open");
+  if (c.isSafeFreight) wireSfWhatIf(c);
   document.querySelectorAll("#modalBody .chart-wrap").forEach(attachChartHover);
   if (rangeInit) {
     const { chartId, pts: all, evs } = rangeInit;
@@ -2064,6 +2136,56 @@ function sfEvolutionSvg(evo, base, thr, compact) {
     <text x="${xr}" y="${d.H - 4}" class="ch-xlabel" text-anchor="end">${md(lastE.date)}</text>
   </svg>`;
 }
+// 경유가를 바꿔 보기. 남은 날의 경유가를 움직이면 산정 기간 평균과 판정이 바로 바뀐다. 월평균은 실측한 날과 남은 날의
+// 평균이라 남은 날 가격 P 에 대해 일차식이다: 평균(P) = 기본 가정 평균 + Σ(그달 남은 일수 ÷ 그달 일수) ÷ 3 × (P − 최근 가격).
+function sfWhatIfSlope(c) {
+  const ms = (c && c.window && c.window.months) || [];
+  if (ms.length !== 3 || !c.latest || !c.base || c.base.avg === null || c.base.avg === undefined) return 0;
+  return ms.reduce((a, m) => {
+    const n = (m.actualDays || 0) + (m.projectedDays || 0);
+    return a + (n && m.projectedDays ? m.projectedDays / n : 0);
+  }, 0) / 3;
+}
+function sfWhatIfHtml(c) {
+  if (!sfWhatIfSlope(c)) return "";
+  const cur = c.latest.value;
+  const lo = Math.floor((cur - 300) / 10) * 10, hi = Math.ceil((cur + 300) / 10) * 10;
+  return `<div class="m-section-title">경유가를 바꿔 보기</div>
+    <div class="sfw">
+      <label class="sfw-lbl" for="sfwRange">남은 ${c.window.projectedDays}일의 평균 경유가를 정해 보세요.</label>
+      <div class="sfw-row"><input type="range" id="sfwRange" min="${lo}" max="${hi}" step="10" value="${Math.round(cur / 10) * 10}">
+        <output id="sfwVal" for="sfwRange"></output></div>
+      <div class="sfw-scale"><span>${sfWon(lo)}원</span><span>최근 ${sfWon(cur)}원</span><span>${sfWon(hi)}원</span></div>
+      <div class="sfw-out" id="sfwOut" aria-live="polite"></div>
+    </div>`;
+}
+function wireSfWhatIf(c) {
+  const range = document.getElementById("sfwRange");
+  const out = document.getElementById("sfwOut");
+  if (!range || !out) return;
+  const k = sfWhatIfSlope(c), cur = c.latest.value, thr = c.threshold;
+  // 판정이 바뀌는 남은 기간 평균 경유가
+  const pUp = Math.ceil(cur + (thr - c.base.diff) / k), pDown = Math.floor(cur + (-thr - c.base.diff) / k);
+  function upd() {
+    const P = Number(range.value);
+    const avg = Math.round((c.base.avg + k * (P - cur)) * 10) / 10;
+    const diff = Math.round((avg - c.baseFuel) * 10) / 10;
+    const verdict = diff >= thr ? "인상" : diff <= -thr ? "인하" : "동결";
+    document.getElementById("sfwVal").textContent = sfWon(P) + "원/L";
+    const rows = verdict === "동결" ? [] : (c.routes || []).map(r => {
+      const newRate = Math.round((r.rate + r.km / c.kmPerLiter * diff) / 100) * 100;
+      const change = newRate - r.rate;
+      return { name: r.name, km: r.km, rate: r.rate, newRate, change, changePct: r.rate ? Math.round(change / r.rate * 10000) / 100 : 0 };
+    });
+    out.innerHTML = `<div class="sf-line">산정 기간 평균은 <b>${sfWon(avg)}원</b>으로 기준보다 <b class="${sfCls(verdict)}">${sfSigned(diff)}원</b>입니다.
+        ${esc(c.window.applyLabel)} 적용분은 <b class="${sfCls(verdict)}">${esc(verdict)}</b> 예상입니다.</div>
+      <div class="sf-line">남은 기간 평균이 <b>${sfWon(pUp)}원</b> 이상이면 인상, <b>${sfWon(pDown)}원</b> 이하이면 인하입니다.</div>` +
+      (rows.length ? sfImpactTable(rows, `${c.window.applyLabel} 적용 예상 운임 (이 가정, 20FT 왕복, 원)`, c.rateFrom) : "");
+  }
+  range.addEventListener("input", upd);
+  upd();
+}
+
 // 조정 기준까지 남은 폭
 function sfMargin(diff, thr) {
   if (diff === null || diff === undefined) return "";
@@ -2171,6 +2293,7 @@ if (SAFE_FREIGHT) {
           ${sf.evolution && sf.evolution.length > 1 ? `<div class="sf-line">${sfMargin(sf.base.diff, sf.threshold)}.</div>
             <div class="chart-wrap" style="margin-top:4px;">${sfEvolutionSvg(sf.evolution, sf.baseFuel, sf.threshold, true)}</div>` : ""}
           ${scenario}
+          ${sfWhatIfSlope(sf) ? `<button type="button" class="ops-btn sfw-open" data-detail="safe-freight" data-focus="sfwRange">⛽ 경유가를 바꿔 보기</button>` : ""}
         </div>
         <div>${impact ? sfImpactTable(impact.rows, impact.title, sf.rateFrom) : sfRateTable(sf.routes || [], sf.rateFrom)}</div>
       </div>
@@ -2183,6 +2306,65 @@ if (SAFE_FREIGHT) {
   // Ties keep source order, so a card the order list does not name lands where it was.
   if (html) pushCard(typeof c.sort === "number" ? c.sort : 900, html);
 });
+
+// ---- 원화로 바꿔 보기 ---------------------------------------------------------------------
+// 달러나 위안 금액을 넣으면 최근, 1주 전, 1개월 전, 3개월 전, 1년 전 환율로 바꾼 원화 금액을 나란히 보여 준다.
+// 넣은 금액은 이 화면에서만 계산한다(저장하거나 보내지 않는다). 원/달러 카드 바로 뒤에 둔다.
+function fxCalcHtml() {
+  const cs = (FX_CALC && FX_CALC.currencies) || [];
+  if (!cs.length) return "";
+  return `<div class="card span2" id="fxCalc">
+      <div class="card-head"><h3>원화로 바꿔 보기</h3></div>
+      <div class="fxc-in">
+        <input id="fxcAmt" class="fxc-amt" type="text" inputmode="decimal" value="10,000" aria-label="외화 금액" autocomplete="off">
+        <div class="range-btns fxc-ccy" role="group" aria-label="통화">${cs.map((c, i) =>
+          `<button type="button" data-ccy="${esc(c.code)}" class="${i ? "" : "on"}">${esc(c.name)}</button>`).join("")}</div>
+      </div>
+      <table class="sf-table"><thead><tr><th>기준일</th><th>환율(원)</th><th>원화 금액(원)</th><th>최근과 차이(원)</th></tr></thead><tbody id="fxcBody"></tbody></table>
+      <div class="m-note">최근과 차이는 최근 금액에서 그때 금액을 뺀 값입니다. +이면 지금 환율로 원화가 더 듭니다.
+        넣은 금액은 이 화면에서만 계산하고 저장하거나 보내지 않습니다.</div>
+      <div class="card-src">출처: ${esc(FX_CALC.source || "")}</div>
+    </div>`;
+}
+function wireFxCalc() {
+  const box = document.getElementById("fxCalc");
+  if (!box) return;
+  const amt = document.getElementById("fxcAmt"), body = document.getElementById("fxcBody");
+  let ccy = FX_CALC.currencies[0].code;
+  const won = v => Math.round(v).toLocaleString("ko-KR");
+  const amount = () => Number(String(amt.value).replace(/[^\d.]/g, "")) || 0;
+  function upd() {
+    const a = amount();
+    const cur = FX_CALC.currencies.find(x => x.code === ccy);
+    if (!cur || !(cur.refs || []).length) { body.innerHTML = ""; return; }
+    const now = cur.refs[0];
+    // 해가 다른 날(1년 전)은 연도를 붙인다.
+    const dayOf = d => d.slice(0, 4) === now.date.slice(0, 4) ? sfMd(d) : `${d.slice(2, 4)}.${Number(d.slice(5, 7))}.${Number(d.slice(8, 10))}`;
+    const rate = v => Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    body.innerHTML = cur.refs.map((r, i) => {
+      const diff = a * (now.rate - r.rate);
+      const cls = !i || Math.round(diff) === 0 ? "" : diff > 0 ? "up" : "down";
+      return `<tr><td>${esc(r.label)}<span class="fxc-d">${esc(dayOf(r.date))}</span></td><td>${rate(r.rate)}</td>
+        <td>${a ? won(a * r.rate) : "–"}</td>
+        <td class="${cls}">${!i || !a ? "–" : (diff > 0 ? "+" : diff < 0 ? "−" : "") + won(Math.abs(diff))}</td></tr>`;
+    }).join("");
+  }
+  amt.addEventListener("input", upd);
+  amt.addEventListener("blur", () => { const a = amount(); if (a) amt.value = a.toLocaleString("en-US", { maximumFractionDigits: 2 }); });
+  box.querySelector(".fxc-ccy").addEventListener("click", e => {
+    const b = e.target.closest("[data-ccy]");
+    if (!b) return;
+    ccy = b.dataset.ccy;
+    box.querySelectorAll("[data-ccy]").forEach(x => x.classList.toggle("on", x === b));
+    upd();
+  });
+  upd();
+}
+{
+  const usdCard = (PRICES || []).find(p => p.id === "usdkrw");
+  const fxHtml = fxCalcHtml();
+  if (fxHtml) pushCard(usdCard && typeof usdCard.sort === "number" ? usdCard.sort + 0.5 : 960, fxHtml);
+}
 
 if (!HAS_FUEL_KEY) {
   pushCard(typeof CARD_SORTS.fuel === "number" ? CARD_SORTS.fuel : 950, `
@@ -2237,6 +2419,7 @@ if (!HAS_KCL) {
 })();
 
 document.querySelectorAll("#priceGroups .chart-wrap").forEach(attachChartHover);
+wireFxCalc();
 
 (function renderJumpNav() {
   const nav = document.getElementById("jumpNav");
@@ -2335,6 +2518,14 @@ function opsCsv() {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
+// 왜 움직였나: 그 지표 카드의 최근 7일 안 기사 제목 한 줄(생성 스크립트가 지표마다 맨 위 줄에만 붙인다)
+function hlNewsHtml(h) {
+  const n = h && h.news;
+  if (!n || !n.title || !/^https?:\/\//.test(n.link || "")) return "";
+  const meta = [n.source, /^\d{4}-\d{2}-\d{2}$/.test(n.date || "") ? sfMd(n.date) : ""].filter(Boolean).join(", ");
+  return `<div class="hl-news">관련 기사: <a href="${esc(n.link)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a>${meta ? `<span class="hl-src">(${esc(meta)})</span>` : ""}</div>`;
+}
+
 (function renderOpsSummary() {
   const box = document.getElementById("opsSummary");
   if (!box) return;
@@ -2421,7 +2612,7 @@ function opsCsv() {
   const hl = (OPS_SUMMARY.highlights || []).map(h => typeof h === "string" ? { tag: "", text: h } : h);
   const side = `<div class="ops-side">
       ${hl.length ? `<div class="ops-today"><div class="ops-today-title">지금 주목할 점</div>
-        <ul>${hl.map(h => `<li>${h.tag ? `<span class="hl-tag">${esc(h.tag)}</span>` : ""}${esc(h.text)}</li>`).join("")}</ul></div>` : ""}
+        <ul>${hl.map(h => `<li>${h.tag ? `<span class="hl-tag">${esc(h.tag)}</span>` : ""}${esc(h.text)}${hlNewsHtml(h)}</li>`).join("")}</ul></div>` : ""}
       <div class="ops-actions">
         <button class="ops-btn" id="opsCopy">📋 보고용 요약 복사</button>
         <button class="ops-btn" id="opsCsv">📥 CSV 내려받기</button>
@@ -2453,8 +2644,251 @@ function opsCsv() {
     if (t && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openDetail(t.dataset.ops); }
   });
 })();
+// ---- 함께 보기 ---------------------------------------------------------------------------
+// Koyfin 의 '같은 출발점 비교'. 고른 지표를 기간 시작일 값 0%로 맞춰 한 그림에 겹친다. 운임, 유가, 환율처럼 단위가 다른
+// 지표를 한 축에 놓을 수 있다. 선 색은 5개(파랑, 주황, 보라, 노랑, 분홍. 색약 검사를 통과한 순서이고, 이 페이지에서
+// 빨강·초록은 비용 상승·하락이라 뺐다). 색은 고를 때 빈 자리를 받고, 다른 지표를 끄거나 켜도 이미 그려진 선의 색은 그대로다.
+(function renderCompare() {
+  const sec = document.getElementById("secCompare"), host = document.getElementById("cmpBox");
+  if (!sec || !host || !OPS_SUMMARY || !OPS_SUMMARY.rows) return;
+  const seriesOf = id => {
+    if (id === "scfi") return (SCFI && SCFI.points) || [];
+    const lane = (SSE_LANES || []).find(l => l.id === id);
+    if (lane) return lane.points || [];
+    const c = (PRICES || []).find(p => p.id === id);
+    return (c && c.points) || [];
+  };
+  const toT = lbl => { const d = parseLabel(String(lbl)); return d ? d.getTime() : NaN; };
+  const pool = OPS_SUMMARY.rows.filter(r => r.id !== "safe-freight")
+    .map(r => ({ id: r.id, name: r.short || r.name, pts: seriesOf(r.id).map(p => ({ t: toT(p.label), v: p.value }))
+      .filter(p => isFinite(p.t) && typeof p.v === "number" && p.v > 0) }))
+    .filter(x => x.pts.length >= 6);
+  if (pool.length < 2) return;
+  const MAXC = 5;
+  const PER = [{ key: "3M", label: "3개월", days: 91 }, { key: "6M", label: "6개월", days: 182 }, { key: "1Y", label: "1년", days: 365 }, { key: "3Y", label: "3년", days: 1095 }];
+  const STORE = "work-compare-v1";
+  const has = id => pool.some(x => x.id === id);
+  let period = "1Y", color = {}, msg = "";
+  (function restore() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { saved = null; }
+    if (saved && typeof saved === "object") {
+      const used = {};
+      Object.keys(saved.color || {}).forEach(id => { const c = +saved.color[id]; if (has(id) && c >= 1 && c <= MAXC && !used[c]) { color[id] = c; used[c] = true; } });
+      if (PER.some(pd => pd.key === saved.period)) period = saved.period;
+    }
+    if (!Object.keys(color).length) {
+      ["scfi", "kcci", "brent", "usdkrw", "D047"].filter(has).slice(0, MAXC).forEach((id, k) => { color[id] = k + 1; });
+    }
+  })();
+  const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ color, period })); } catch (e) { /* 저장 못 해도 화면은 그대로 */ } };
+  // 기간 시작일 또는 그 전 마지막 값을 0%로. 자료가 기간보다 짧으면 첫 값이 기준이다.
+  function pointsOf(x) {
+    const pd = PER.find(p => p.key === period);
+    const cut = x.pts[x.pts.length - 1].t - pd.days * 86400000;
+    let k = x.pts.length - 1;
+    while (k > 0 && x.pts[k].t > cut) k--;
+    const base = x.pts[k].v;
+    const out = x.pts.slice(k).map(p => ({ t: p.t, v: (p.v / base - 1) * 100 }));
+    return out.length >= 2 ? { pts: out, short: x.pts[k].t > cut + 14 * 86400000 } : null;
+  }
+  const niceStep = raw => { const pw = Math.pow(10, Math.floor(Math.log10(raw || 1))); const n = raw / pw; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * pw; };
+  const fmtP = v => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(Math.abs(v) >= 100 ? 0 : 1) + "%";
+  const fmtAxis = v => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(Math.abs(v) < 10 && v % 1 ? 1 : 0) + "%";
+  const cls = v => Math.abs(v) < 0.05 ? "" : v > 0 ? "up" : "down";
+  const fmtDay = t => { const d = new Date(t); return `${d.getFullYear() % 100}.${d.getMonth() + 1}.${d.getDate()}`; };
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); Object.keys(attrs || {}).forEach(k => e.setAttribute(k, attrs[k])); return e; };
+
+  function chip(x) {
+    const on = !!color[x.id];
+    const r = on ? pointsOf(x) : null;
+    const v = r ? r.pts[r.pts.length - 1].v : null;
+    return `<button type="button" class="cmp-chip${on ? " on" : ""}" data-id="${esc(x.id)}" aria-pressed="${on}"${r && r.short ? ` title="자료가 기간보다 짧아 첫 자료일을 0%로 맞췄습니다"` : ""}>` +
+      (on ? `<span class="cmp-key line" style="background:var(--cmp-${color[x.id]})"></span>` : `<span class="cmp-key off"></span>`) +
+      `<span>${esc(x.name)}${r && r.short ? "*" : ""}</span>${v !== null ? `<span class="cmp-v ${cls(v)}">${fmtP(v)}</span>` : ""}</button>`;
+  }
+
+  let plot = null;
+  function drawChart() {
+    if (!plot) return;
+    plot.innerHTML = "";
+    const lines = pool.filter(x => color[x.id]).map(x => ({ x, r: pointsOf(x) })).filter(l => l.r).map(l => ({ x: l.x, pts: l.r.pts }));
+    if (!lines.length) { plot.innerHTML = `<div class="cmp-empty">위에서 비교할 지표를 고르세요.</div>`; return; }
+    const W = Math.max(300, Math.round(plot.clientWidth || 600));
+    const wide = W >= 640;
+    const H = wide ? 280 : 230;
+    const padL = 46, padR = wide ? 140 : 10, padT = 12, padB = 26;
+    let t0 = Infinity, t1 = -Infinity, lo = 0, hi = 0;
+    lines.forEach(l => l.pts.forEach(p => { t0 = Math.min(t0, p.t); t1 = Math.max(t1, p.t); lo = Math.min(lo, p.v); hi = Math.max(hi, p.v); }));
+    const step = niceStep((hi - lo) / 5 || 1);
+    lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+    if (hi - lo < step) hi = lo + step;
+    const X = t => padL + (t - t0) / ((t1 - t0) || 1) * (W - padL - padR);
+    const Y = v => padT + (hi - v) / (hi - lo) * (H - padT - padB);
+    const colorOf = l => `var(--cmp-${color[l.x.id]})`;
+    const svg = el("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, tabindex: "0", role: "img",
+      "aria-label": "함께 보기 그래프. " + lines.map(l => l.x.name + " " + fmtP(l.pts[l.pts.length - 1].v)).join(", ") });
+    for (let v = lo; v <= hi + step / 1000; v += step) {
+      const vv = Math.abs(v) < step / 1000 ? 0 : v;
+      svg.appendChild(el("line", { x1: padL, x2: W - padR, y1: Y(vv).toFixed(1), y2: Y(vv).toFixed(1), class: vv === 0 ? "cmp-zero" : "cmp-grid" }));
+      const tx = el("text", { x: padL - 6, y: (Y(vv) + 4).toFixed(1), "text-anchor": "end", class: "cmp-axis" });
+      tx.textContent = fmtAxis(vv);
+      svg.appendChild(tx);
+    }
+    // 아래 날짜: 6개월 이하는 달마다, 1년은 3개월마다, 3년은 해마다. 글자 사이가 56px 보다 좁으면 건너뛴다.
+    const stepM = (t1 - t0) / 86400000 > 800 ? 12 : (t1 - t0) / 86400000 > 200 ? 3 : 1;
+    const d = new Date(t0); d.setDate(1); d.setMonth(d.getMonth() + 1);
+    while (d.getMonth() % stepM) d.setMonth(d.getMonth() + 1);
+    let lastX = -Infinity;
+    for (; d.getTime() <= t1; d.setMonth(d.getMonth() + stepM)) {
+      const x = X(d.getTime());
+      if (x - lastX < 56 || x > W - padR - 10) continue;
+      lastX = x;
+      const tx = el("text", { x: x.toFixed(1), y: H - 6, "text-anchor": "middle", class: "cmp-axis" });
+      tx.textContent = d.getMonth() === 0 ? `${d.getFullYear()}년` : `${d.getMonth() + 1}월`;
+      svg.appendChild(tx);
+    }
+    lines.forEach(l => {
+      const path = el("path", { d: l.pts.map((p, i) => `${i ? "L" : "M"}${X(p.t).toFixed(1)},${Y(p.v).toFixed(1)}`).join(" "),
+        fill: "none", "stroke-width": "2", "stroke-linejoin": "round", "stroke-linecap": "round" });
+      path.setAttribute("style", `stroke:${colorOf(l)}`);
+      svg.appendChild(path);
+    });
+    if (wide) {
+      const labs = lines.map(l => ({ l, y: Y(l.pts[l.pts.length - 1].v) })).sort((a, b) => a.y - b.y);
+      for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 15) labs[i].y = labs[i - 1].y + 15;
+      const maxY = H - padB;
+      if (labs.length && labs[labs.length - 1].y > maxY) {
+        labs[labs.length - 1].y = maxY;
+        for (let i = labs.length - 2; i >= 0; i--) if (labs[i + 1].y - labs[i].y < 15) labs[i].y = labs[i + 1].y - 15;
+      }
+      const lx = W - padR + 8;
+      labs.forEach(o => {
+        const key = el("line", { x1: lx, x2: lx + 12, y1: o.y.toFixed(1), y2: o.y.toFixed(1), "stroke-width": 3, "stroke-linecap": "round" });
+        key.setAttribute("style", `stroke:${colorOf(o.l)}`);
+        svg.appendChild(key);
+        const tx = el("text", { x: lx + 17, y: (o.y + 4).toFixed(1), class: "cmp-end" });
+        tx.textContent = o.l.x.name + " " + fmtP(o.l.pts[o.l.pts.length - 1].v);
+        svg.appendChild(tx);
+      });
+    }
+    const hair = el("line", { y1: padT, y2: H - padB, class: "cmp-hair", visibility: "hidden" });
+    svg.appendChild(hair);
+    svg.appendChild(el("rect", { x: padL, y: padT, width: Math.max(1, W - padL - padR), height: H - padT - padB, fill: "transparent" }));
+    plot.appendChild(svg);
+    const tip = document.createElement("div");
+    tip.className = "cmp-tip";
+    tip.hidden = true;
+    plot.appendChild(tip);
+    const allT = Array.from(new Set([].concat(...lines.map(l => l.pts.map(p => p.t))))).sort((a, b) => a - b);
+    let cur = -1;
+    const valAt = (pts, t) => { let r = null; for (let i = 0; i < pts.length && pts[i].t <= t; i++) r = pts[i].v; return r; };
+    function show(k) {
+      cur = Math.max(0, Math.min(allT.length - 1, k));
+      const t = allT[cur], x = X(t);
+      hair.setAttribute("x1", x.toFixed(1)); hair.setAttribute("x2", x.toFixed(1)); hair.setAttribute("visibility", "visible");
+      tip.textContent = "";
+      const dEl = document.createElement("div");
+      dEl.className = "tt-d";
+      dEl.textContent = fmtDay(t);
+      tip.appendChild(dEl);
+      lines.map(l => ({ l, v: valAt(l.pts, t) })).filter(o => o.v !== null).sort((a, b) => b.v - a.v).forEach(o => {
+        const row = document.createElement("div");
+        row.className = "tt-r";
+        const k2 = document.createElement("span");
+        k2.className = "cmp-key line";
+        k2.style.background = colorOf(o.l);
+        const b = document.createElement("b");
+        b.textContent = fmtP(o.v);
+        const nm = document.createElement("span");
+        nm.className = "nm";
+        nm.textContent = o.l.x.name;
+        row.append(k2, b, nm);
+        tip.appendChild(row);
+      });
+      tip.hidden = false;
+      const tw = tip.offsetWidth || 160, sx = x / W * plot.clientWidth;
+      tip.style.left = (sx + 14 + tw > plot.clientWidth ? Math.max(0, sx - 14 - tw) : sx + 14) + "px";
+    }
+    const hide = () => { hair.setAttribute("visibility", "hidden"); tip.hidden = true; };
+    const onPoint = e => {
+      const r = svg.getBoundingClientRect();
+      const t = t0 + ((e.clientX - r.left) / r.width * W - padL) / ((W - padL - padR) || 1) * (t1 - t0);
+      let k = 0;
+      while (k < allT.length - 1 && Math.abs(allT[k + 1] - t) <= Math.abs(allT[k] - t)) k++;
+      show(k);
+    };
+    // 휴대폰은 누르거나 옆으로 끌 때 값을 보여 준다(위아래로 끌면 화면이 넘어간다).
+    svg.addEventListener("pointermove", onPoint);
+    svg.addEventListener("pointerdown", onPoint);
+    svg.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") hide(); });
+    svg.addEventListener("focus", () => show(cur < 0 ? allT.length - 1 : cur));
+    svg.addEventListener("blur", hide);
+    svg.addEventListener("keydown", e => {
+      if (e.key === "ArrowLeft") { e.preventDefault(); show(cur - 1); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); show(cur + 1); }
+      else if (e.key === "Escape") hide();
+    });
+  }
+
+  function render() {
+    host.innerHTML = `<div class="cmp-head"><h3>같은 출발점에서 본 변화율</h3>
+        <div class="range-btns" role="group" aria-label="비교 기간" style="margin:0;">${PER.map(pd =>
+          `<button type="button" data-cmp-period="${pd.key}" class="${pd.key === period ? "on" : ""}">${pd.label}</button>`).join("")}</div></div>
+      <div class="cmp-chips">${pool.map(chip).join("")}</div>
+      ${msg ? `<div class="cmp-msg">${esc(msg)}</div>` : ""}
+      <div class="cmp-plot"></div>
+      <div class="m-note" style="margin-top:6px;">기간 시작일의 값을 0%로 맞춘 변화율이라 운임, 유가, 환율처럼 단위가 다른 지표를 한 그림에서 비교할 수 있습니다.
+        지표는 한 번에 5개까지 볼 수 있고, 이름을 누르면 켜고 끕니다. 이름 뒤 *는 자료가 기간보다 짧아 첫 자료일을 0%로 맞춘 지표입니다.
+        그래프를 누르거나 마우스를 올리면 날짜별 값이 나옵니다.</div>`;
+    plot = host.querySelector(".cmp-plot");
+    drawChart();
+  }
+  host.addEventListener("click", e => {
+    const pb = e.target.closest("[data-cmp-period]");
+    if (pb) { period = pb.dataset.cmpPeriod; msg = ""; save(); render(); return; }
+    const c = e.target.closest(".cmp-chip");
+    if (!c) return;
+    const id = c.dataset.id;
+    msg = "";
+    if (color[id]) delete color[id];
+    else {
+      const used = Object.keys(color).map(k => color[k]);
+      const free = [1, 2, 3, 4, 5].find(n => used.indexOf(n) < 0);
+      if (free) color[id] = free;
+      else msg = "지표는 한 번에 5개까지 비교할 수 있습니다. 다른 지표를 먼저 끄세요.";
+    }
+    save();
+    render();
+    const again = host.querySelector(`.cmp-chip[data-id="${id}"]`);
+    if (again) again.focus();
+  });
+  // 숨긴 채로 그리면 폭을 0으로 읽으므로 먼저 보이게 한 뒤 그린다.
+  sec.hidden = false;
+  render();
+  // 바로가기 줄은 이보다 먼저 그려지므로 [수급 뉴스] 앞에 직접 끼운다.
+  const nav = document.getElementById("jumpNav");
+  if (nav && !nav.querySelector('a[href="#secCompare"]')) {
+    const a = document.createElement("a");
+    a.href = "#secCompare";
+    a.textContent = "함께 보기";
+    nav.insertBefore(a, nav.querySelector('a[href="#secNews"]'));
+  }
+  let lastW = plot ? plot.clientWidth : 0, rt = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => { if (plot && plot.clientWidth !== lastW) { lastW = plot.clientWidth; drawChart(); } }, 150);
+  });
+})();
+
 document.querySelectorAll("[data-detail]").forEach(btn =>
-  btn.addEventListener("click", () => openDetail(btn.dataset.detail))
+  btn.addEventListener("click", () => {
+    openDetail(btn.dataset.detail);
+    // [경유가를 바꿔 보기]처럼 상세 창의 한 부분으로 바로 가는 버튼
+    const t = btn.dataset.focus && document.getElementById(btn.dataset.focus);
+    if (t) { t.scrollIntoView({ block: "center" }); t.focus({ preventScroll: true }); }
+  })
 );
 
 // One renderer for both the 수급 뉴스 cards and the price-card popups, so a flagged headline

@@ -2289,6 +2289,63 @@ if ($krwPerCny) {
     }
 }
 
+# 환율 계산칸(페이지). 금액을 넣으면 오늘, 1주 전, 1개월 전, 3개월 전, 1년 전 환율로 바꾼 원화 금액을 나란히 보여 준다.
+# 카드의 원/달러는 주간 자료라 일별 1년치를 따로 받는다. 원/위안은 같은 날의 원/달러 ÷ 위안/달러다(그날 위안 값이
+# 없으면 그 전 마지막 값). 금액은 페이지 안에서만 계산하고 어디에도 보내거나 저장하지 않는다.
+function Get-YahooDaily {
+    param($sym)
+    $r = (Invoke-RestMethod -Uri "https://query1.finance.yahoo.com/v8/finance/chart/$([uri]::EscapeDataString($sym))?interval=1d&range=1y" -Headers $headers).chart.result[0]
+    $off = [TimeSpan]::FromSeconds([int]$r.meta.gmtoffset)
+    $cl = $r.indicators.quote[0].close
+    $ts = $r.timestamp
+    $m = [ordered]@{}
+    for ($i = 0; $i -lt $cl.Count; $i++) {
+        if ($null -ne $cl[$i]) { $m[[DateTimeOffset]::FromUnixTimeSeconds($ts[$i]).ToOffset($off).ToString("yyyy-MM-dd")] = [double]$cl[$i] }
+    }
+    $m
+}
+$fxCalc = $null
+try {
+    $usdD = Get-YahooDaily "KRW=X"
+    $cnyD = $null
+    try { $cnyD = Get-YahooDaily "CNY=X" } catch { Write-Warning "환율 계산칸: 위안 환율을 받지 못해 달러만 보여 줍니다: $($_.Exception.Message)" }
+    $uDates = @($usdD.Keys)
+    $cDates = if ($cnyD) { @($cnyD.Keys) } else { @() }
+    if ($uDates.Count -ge 30) {
+        $lastD = [datetime]::ParseExact([string]$uDates[-1], "yyyy-MM-dd", [Globalization.CultureInfo]::InvariantCulture)
+        $pick = {
+            param($dates, [string]$cut)
+            $k = $dates.Count - 1
+            while ($k -gt 0 -and [string]$dates[$k] -gt $cut) { $k-- }
+            $k
+        }
+        $usdRefs = @(); $cnyRefs = @()
+        foreach ($rf in @(@{ l = "최근"; d = 0 }, @{ l = "1주 전"; d = 7 }, @{ l = "1개월 전"; d = 30 }, @{ l = "3개월 전"; d = 91 }, @{ l = "1년 전"; d = 365 })) {
+            $cut = $lastD.AddDays(-[int]$rf.d).ToString("yyyy-MM-dd")
+            $ku = & $pick $uDates $cut
+            if ([string]$uDates[$ku] -gt $cut) { continue }   # 그만큼 오래된 자료가 없으면 뺀다
+            $du = [string]$uDates[$ku]
+            $vu = [double]$usdD[$du]
+            $usdRefs += [PSCustomObject]@{ label = $rf.l; date = $du; rate = [math]::Round($vu, 2) }
+            if ($cDates.Count) {
+                $kc = & $pick $cDates $du
+                $dc = [string]$cDates[$kc]
+                if ($dc -le $du -and [double]$cnyD[$dc] -gt 0) {
+                    $cnyRefs += [PSCustomObject]@{ label = $rf.l; date = $du; rate = [math]::Round($vu / [double]$cnyD[$dc], 2) }
+                }
+            }
+        }
+        $fxCalc = [PSCustomObject]@{
+            currencies = @(
+                [PSCustomObject]@{ code = "USD"; name = "달러"; refs = @($usdRefs) }
+                if ($cnyRefs.Count) { [PSCustomObject]@{ code = "CNY"; name = "위안"; refs = @($cnyRefs) } }
+            )
+            source = "Yahoo Finance 일별 종가(원/위안은 원/달러 ÷ 위안/달러)"
+        }
+        Write-Host "  환율 계산칸: 달러 $($usdRefs.Count)개, 위안 $($cnyRefs.Count)개 기준일"
+    }
+} catch { Write-Warning "환율 계산칸 자료를 받지 못했습니다: $($_.Exception.Message)" }
+
 $kcciSeries = @()
 if ($config.kcciSeries -and @($config.kcciSeries).Count -gt 0) {
     Write-Host "Fetching KCCI (부산 출발 컨테이너 운임)..."
@@ -2661,8 +2718,9 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
     $catOf = @{}
     foreach ($cat in @($config.opsSummary.categories)) { foreach ($i in @($cat.items)) { $catOf[[string]$i] = [string]$cat.title } }
     function Add-Highlight {
-        param([string]$tag, [string]$text)
-        [void]$opsHighlights.Add([PSCustomObject]@{ tag = $tag; text = $text })
+        # id 는 그 줄의 지표. 가격 카드 뉴스를 받은 뒤 관련 기사 한 줄을 붙일 때 쓴다(아래 '왜 움직였나').
+        param([string]$tag, [string]$text, [string]$id = "")
+        [void]$opsHighlights.Add([PSCustomObject]@{ tag = $tag; text = $text; id = $id })
     }
     $moves = @(foreach ($r in $opsRows) {
         if (-not $r.trend -or $r.trend -eq "수집 실패" -or $r.trend -eq "기록 부족" -or $r.id -eq "safe-freight") { continue }
@@ -2684,13 +2742,13 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
         $where = if ($r.band -eq "최고" -or $r.band -eq "최저") { "$($r.rangeName) 중 $($r.band)치" }
                  elseif ($r.band -eq "상단" -or $r.band -eq "하단") { "$($r.rangeName) 중 $($r.band)" } else { "" }
         $tag = if ($catOf.ContainsKey([string]$r.id)) { $catOf[[string]$r.id] } else { "지표" }
-        if ($where) { Add-Highlight $tag "$topic 최근 ${span}간 $pctTxt% $verb ${where}입니다." }
-        else { Add-Highlight $tag "$topic 최근 ${span}간 $pctTxt% $verbEnd." }
+        if ($where) { Add-Highlight $tag "$topic 최근 ${span}간 $pctTxt% $verb ${where}입니다." ([string]$r.id) }
+        else { Add-Highlight $tag "$topic 최근 ${span}간 $pctTxt% $verbEnd." ([string]$r.id) }
     }
     $movedIds = @($moves | Sort-Object score -Descending | Select-Object -First 3 | ForEach-Object { [string]$_.r.id })
     foreach ($r in @($opsRows | Where-Object { $_.changed -and $movedIds -notcontains [string]$_.id } | Select-Object -First 1)) {
         $tag = if ($catOf.ContainsKey([string]$r.id)) { $catOf[[string]$r.id] } else { "지표" }
-        Add-Highlight $tag "$($r.short)의 최근 흐름이 지난주 $($r.prevTrend)에서 $($r.trend)$(Get-Josa $r.trend '으로' '로') 바뀌었습니다."
+        Add-Highlight $tag "$($r.short)의 최근 흐름이 지난주 $($r.prevTrend)에서 $($r.trend)$(Get-Josa $r.trend '으로' '로') 바뀌었습니다." ([string]$r.id)
     }
     if ($opsHighlights.Count -eq 0) { Add-Highlight "지표" "평소 변동폭보다 크게 움직인 가격 지표는 없습니다." }
     if ($safeFreight) {
@@ -2923,6 +2981,25 @@ if ($safeFreight) {
     }
 }
 
+# 왜 움직였나. Perplexity·구글 금융의 시장 요약처럼 지금 주목할 점의 가격·흐름 줄 아래에 그 지표 카드의 최근 7일 안
+# 기사 제목을 하나 붙인다(주간 지표가 많아 7일로 본다). 이미 받은 카드 뉴스를 쓰므로 AI 를 부르지 않는다.
+# 한 지표에는 맨 위 줄에만 붙이고, 같은 기사가 두 줄에 붙지 않게 한다.
+if ($opsSummary) {
+    $hlNewsCut = $nowKst.Date.AddDays(-7).ToString("yyyy-MM-dd")
+    $hlSeenId = @{}
+    $hlSeenLink = @{}
+    foreach ($h in @($opsSummary.highlights)) {
+        if (-not $h.id -or $hlSeenId.ContainsKey([string]$h.id)) { continue }
+        $hlSeenId[[string]$h.id] = $true
+        $src = if ($h.id -eq "scfi") { $scfi } elseif ($h.id -eq "safe-freight") { $safeFreight } else { @($priceCards | Where-Object { [string]$_.id -eq [string]$h.id })[0] }
+        if (-not $src -or -not $src.news) { continue }
+        $nw = @($src.news | Where-Object { $_ -and $_.title -and [string]$_.date -ge $hlNewsCut -and -not $hlSeenLink.ContainsKey([string]$_.link) })[0]
+        if (-not $nw) { continue }
+        $hlSeenLink[[string]$nw.link] = $true
+        $h | Add-Member -NotePropertyName news -NotePropertyValue ([PSCustomObject]@{ title = [string]$nw.title; link = [string]$nw.link; source = [string]$nw.source; date = [string]$nw.date }) -Force
+    }
+}
+
 Write-Host "Fetching material news..."
 $materials = @(foreach ($mat in $config.materials) {
     Write-Host "  - $($mat.DisplayName)"
@@ -2982,10 +3059,11 @@ if ($newsOutage) {
 }
 $materialsJson = ConvertTo-JsonOrNull -InputObject @($materials) -Depth 6
 $opsSummaryJson = ConvertTo-JsonOrNull -InputObject $opsSummary -Depth 6
+$fxCalcJson = ConvertTo-JsonOrNull -InputObject $fxCalc -Depth 5
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
-$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__CARD_GROUPS_JSON__", $cardGroupsJson).Replace("__SCHEDULE_JSON__", $scheduleJson).Replace("__CHART_EVENTS_JSON__", $chartEventsJson).Replace("__NEXT_RELEASE_JSON__", $nextReleaseJson).Replace("__SAFE_FREIGHT_JSON__", $safeFreightJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__OPS_SUMMARY_JSON__", $opsSummaryJson).Replace("__NEWS_OUTAGE__", $(if ($newsOutage) { "true" } else { "false" })).Replace("__FETCHED_AT__", $fetchedAt)
+$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__CARD_GROUPS_JSON__", $cardGroupsJson).Replace("__SCHEDULE_JSON__", $scheduleJson).Replace("__CHART_EVENTS_JSON__", $chartEventsJson).Replace("__NEXT_RELEASE_JSON__", $nextReleaseJson).Replace("__SAFE_FREIGHT_JSON__", $safeFreightJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__OPS_SUMMARY_JSON__", $opsSummaryJson).Replace("__FX_CALC_JSON__", $fxCalcJson).Replace("__NEWS_OUTAGE__", $(if ($newsOutage) { "true" } else { "false" })).Replace("__FETCHED_AT__", $fetchedAt)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8
@@ -3510,6 +3588,21 @@ if ($missingCards.Count -gt 0) {
 # and the 수급 뉴스 section sits below weather and a dozen price cards - a headline worth acting
 # on should not depend on scrolling that far. Nothing is duplicated away: these still appear in
 # their own card below.
+# 메일의 지금 주목할 점. 관련 기사는 3줄까지만 붙인다(긴 뉴스 주소가 줄마다 수백 바이트라 90KB 경고선에 가깝다).
+$mailHlNews = 0
+$mailHlLines = @(if ($opsSummary) {
+    foreach ($h in @($opsSummary.highlights)) {
+        $line = "· <font color=#6e6c66>[$($h.tag)]</font> $($h.text)"
+        if ($h.news -and $mailHlNews -lt 3) {
+            $mailHlNews++
+            $nd = [string]$h.news.date
+            $ndTxt = if ($nd -match '^\d{4}-(\d{2})-(\d{2})$') { "$([int]$matches[1])/$([int]$matches[2])" } else { "" }
+            $nMeta = (@([string]$h.news.source, $ndTxt) | Where-Object { $_ }) -join ", "
+            $line += "<br>&nbsp;&nbsp;&nbsp;<font size=2 color=#6e6c66>관련 기사: <a href='$([System.Net.WebUtility]::HtmlEncode([string]$h.news.link))' style='color:#52514e;'>$([System.Net.WebUtility]::HtmlEncode([string]$h.news.title))</a> ($([System.Net.WebUtility]::HtmlEncode($nMeta)))</font>"
+        }
+        $line
+    }
+})
 $highlights = @($materials | ForEach-Object { $_.news } | Where-Object { $_ -and $_.flag } |
     Sort-Object score -Descending | Select-Object -First 3)
 
@@ -3629,7 +3722,7 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
   <div style="font-size:12px;font-weight:700;color:#0b0b0b;margin-bottom:4px;">$($opsSummary.title)</div>
   $tileHtml
   <div style="font-size:12px;font-weight:700;color:#0b0b0b;">지금 주목할 점</div>
-  <div style="font-size:12.5px;color:#0b0b0b;margin:4px 0 10px;line-height:1.6;">$((@($opsSummary.highlights | ForEach-Object { "· <font color=#6e6c66>[$($_.tag)]</font> $($_.text)" })) -join '<br>')</div>
+  <div style="font-size:12.5px;color:#0b0b0b;margin:4px 0 10px;line-height:1.6;">$($mailHlLines -join '<br>')</div>
   <table width="100%" cellpadding=4 cellspacing=0 style="margin-top:6px;font-size:12.5px;color:#0b0b0b;">
     <tr style="font-size:10.5px;color:#898781;"><td>지표 (최근 흐름)</td><td align=right>현재</td><td align=right>단기</td><td align=right>중기</td><td align=right>1년</td><td align=right>예상(4주 후)</td></tr>
     $($opsRowHtml -join "")
@@ -3867,7 +3960,7 @@ $problems = New-Object System.Collections.Generic.List[string]
 
 $renderedHtml = Get-Content -Path $outPath -Raw -Encoding UTF8
 
-foreach ($token in @("__WEATHER_JSON__", "__PRICES_JSON__", "__MATERIALS_JSON__", "__FETCHED_AT__")) {
+foreach ($token in @("__WEATHER_JSON__", "__PRICES_JSON__", "__MATERIALS_JSON__", "__FETCHED_AT__", "__FX_CALC_JSON__")) {
     if ($renderedHtml -like "*$token*") { $problems.Add("템플릿 치환 누락: $token") }
 }
 
