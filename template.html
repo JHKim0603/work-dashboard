@@ -729,6 +729,31 @@
   .sf-table td { padding: 5px 0 5px 8px; border-top: 1px solid var(--gridline); text-align: right; }
   .sf-table td.up { color: var(--bad); font-weight: 700; }
   .sf-table td.down { color: var(--good); font-weight: 700; }
+  .sf-table tr.fc td { background: var(--accent-wash); font-weight: 650; }
+  /* 다음 조정 예상: 질문(언제 운임이 어떻게 되나) → 답(동결·인상·인하) → 구간 막대 → 근거 문장 */
+  .sf-next { border: 1px solid var(--border); border-left: 4px solid var(--ink-muted); border-radius: 10px; padding: 10px 14px; background: var(--surface); margin: 6px 0 8px; }
+  .sf-next.up { border-left-color: var(--bad); }
+  .sf-next.down { border-left-color: var(--good); }
+  .sf-next-q { font-size: 13px; font-weight: 650; color: var(--ink-secondary); }
+  .sf-next-a { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 6px; font-size: 15px; font-weight: 650; color: var(--ink-primary); }
+  .sf-next-a .sf-verdict { font-size: 15px; }
+  .sf-next-read { font-size: 13px; line-height: 1.6; color: var(--ink-secondary); margin-top: 4px; }
+  .sf-next-read b { color: var(--ink-primary); font-variant-numeric: tabular-nums; }
+  .sf-next-read .up { color: var(--bad); }
+  .sf-next-read .down { color: var(--good); }
+  .sfg { margin: 4px 0 2px; }
+  .sfg-row { position: relative; height: 18px; font-size: 12px; }
+  .sfg-row span { position: absolute; top: 1px; transform: translateX(-50%); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .sfg-now span { font-weight: 700; color: var(--ink-primary); }
+  .sfg-zones span { font-weight: 700; color: var(--ink-secondary); }
+  .sfg-ticks span { color: var(--ink-muted); }
+  .sfg-bar { position: relative; height: 14px; margin: 2px 0; }
+  .sfg-zone { position: absolute; top: 0; height: 14px; }
+  .sfg-zone.down { background: var(--down-2); border-radius: 7px 0 0 7px; }
+  .sfg-zone.flat { background: var(--gridline); }
+  .sfg-zone.up { background: var(--up-2); border-radius: 0 7px 7px 0; }
+  .sfg-cut { position: absolute; top: -2px; width: 2px; height: 18px; margin-left: -1px; background: var(--ink-muted); }
+  .sfg-dot { position: absolute; top: -3px; width: 20px; height: 20px; margin-left: -10px; border-radius: 50%; background: var(--ink-primary); box-shadow: 0 0 0 3px var(--surface); }
   .locked-note {
     font-size: 12.5px; color: var(--ink-secondary); line-height: 1.6;
     background: var(--accent-wash); border: 1px dashed var(--border);
@@ -1812,8 +1837,13 @@ function openDetail(id) {
   // futures price in another country's currency, a nationwide pump average - and reading the
   // line before knowing which is how a Chinese VAT-inclusive quote gets mistaken for a domestic
   // purchase price.
+  // 내륙운송료는 '다음 조정이 어떻게 되나'가 가장 궁금한 내용이라 지표 설명보다 먼저 보인다.
+  const firstTitle = `style="margin-top:0;padding-top:0;border-top:none;"`;
+  if (c.isSafeFreight) {
+    body += `<div class="m-section-title" ${firstTitle}>다음 조정 예상</div>${sfNextHtml(c)}`;
+  }
   if (c.about) {
-    body += `<div class="m-section-title" style="margin-top:0;padding-top:0;border-top:none;">지표 설명</div>
+    body += `<div class="m-section-title"${c.isSafeFreight ? "" : " " + firstTitle}>지표 설명</div>
       <div class="m-about">${esc(c.about)}</div>`;
   }
 
@@ -1865,8 +1895,8 @@ function openDetail(id) {
     const s = c.scenario;
     const notes = (c.history || []).filter(r => r.note).map(r => `${esc(r.window)}: ${esc(r.note)}`);
     body += `<div class="m-sub">기준 고시: ${esc(c.notice || "")}<br>출처: ${esc(c.source || "")}</div>
-      <div class="m-section-title">유가 산정 이력</div>
-      ${sfHistoryTable(c.history || [], { window: c.window.label, avg: c.base.avg, applyLabel: c.window.applyLabel, verdict: c.base.verdict })}
+      <div class="m-section-title">운임 조정 이력 (최근 순)</div>
+      ${sfHistoryTable(c.history || [], c)}
       ${notes.length ? `<div class="m-note" style="margin-top:6px;">* ${notes.join("<br>* ")}</div>` : ""}
       <div class="m-section-title">기준 유가</div>
       <div class="m-read">다음 판정은 <b>${esc(c.baseWindow)} 평균 ${sfWon(c.baseFuel)}원</b>${c.baseProvisional ? "(잠정)" : ""}과 비교합니다.
@@ -2239,15 +2269,76 @@ function sfRateTable(routes, rateFrom) {
       ${routes.map(r => `<tr><td>${esc(r.name)} ${sfWon(r.km)}km</td><td>${sfWon(r.rate)}원</td></tr>`).join("")}
     </table>`;
 }
-function sfHistoryTable(rows, current) {
-  const cur = current ? `<tr><td>${esc(current.window)}</td><td>${sfWon(current.avg)}원</td><td>${esc(current.applyLabel)}</td>
-      <td class="${sfCls(current.verdict)}">${esc(current.verdict)} 예상</td></tr>` : "";
+// 기간 표기를 읽기 쉽게: "27년 02월~04월" → "27년 2~4월", "26년 11월~27년 01월" → "26년 11월~27년 1월"
+function sfSpan(label) {
+  return String(label || "").replace(/(\d{2})년 0?(\d{1,2})월~0?(\d{1,2})월/, "$1년 $2~$3월").replace(/(^|[^\d])0(\d)월/g, "$1$2월");
+}
+const SF_PLAIN = { "인상": "운임이 오를 것으로 보입니다", "인하": "운임이 내릴 것으로 보입니다", "동결": "지금 운임이 그대로 이어질 것으로 보입니다" };
+// 구간 막대: 가운데 회색이 동결(기준 ±조정 기준), 왼쪽 초록이 인하, 오른쪽 빨강이 인상 구간. 점이 지금 추정치다.
+function sfGauge(diff, thr, base, avg) {
+  const lim = Math.max(thr * 2, Math.ceil((Math.abs(diff) + thr / 2) / 25) * 25);
+  const pos = v => Math.max(0, Math.min(100, (v + lim) / (2 * lim) * 100));
+  const zL = pos(-thr), zR = pos(thr), d = pos(diff);
+  return `<div class="sfg" role="img" aria-label="기준 ${sfWon(base)}원에서 ${sfSigned(diff)}원. 인하는 ${sfWon(base - thr)}원 이하, 인상은 ${sfWon(base + thr)}원 이상">
+      <div class="sfg-row sfg-now"><span style="left:${d.toFixed(1)}%">지금 추정 ${sfWon(avg)}원</span></div>
+      <div class="sfg-bar">
+        <span class="sfg-zone down" style="left:0;width:${zL.toFixed(1)}%"></span>
+        <span class="sfg-zone flat" style="left:${zL.toFixed(1)}%;width:${(zR - zL).toFixed(1)}%"></span>
+        <span class="sfg-zone up" style="left:${zR.toFixed(1)}%;width:${(100 - zR).toFixed(1)}%"></span>
+        <span class="sfg-cut" style="left:${zL.toFixed(1)}%"></span><span class="sfg-cut" style="left:${zR.toFixed(1)}%"></span>
+        <span class="sfg-dot" style="left:${d.toFixed(1)}%"></span>
+      </div>
+      <div class="sfg-row sfg-zones"><span style="left:${(zL / 2).toFixed(1)}%">인하</span><span style="left:50%">동결</span><span style="left:${((zR + 100) / 2).toFixed(1)}%">인상</span></div>
+      <div class="sfg-row sfg-ticks"><span style="left:${zL.toFixed(1)}%">${sfWon(base - thr)}원</span><span style="left:50%">기준 ${sfWon(base)}원</span><span style="left:${zR.toFixed(1)}%">${sfWon(base + thr)}원</span></div>
+    </div>`;
+}
+// 다음 조정 예상 상자(카드와 상세 화면 맨 위). 질문 → 답 → 막대 → 근거 → 무엇이 바뀌면 판정이 바뀌는지 → 유류세 시나리오.
+function sfNextHtml(c) {
+  if (!c || !c.base || c.base.avg === null || c.base.avg === undefined) return "";
+  const v = c.base.verdict, thr = c.threshold, diff = c.base.diff;
+  const gap = Math.abs(diff);
+  const read = [
+    `${esc(sfSpan(c.window.label))} 경유 평균은 지금 추정으로 <b>${sfWon(c.base.avg)}원</b>입니다.`,
+    `기준 ${sfWon(c.baseFuel)}원${c.baseProvisional ? "(잠정)" : ""}보다 <b class="${sfCls(v)}">${sfWon(gap)}원 ${diff >= 0 ? "높아" : "낮아"}</b>` +
+      (gap >= thr ? ` 조정 기준 ${thr}원을 넘었습니다.` : ` 조정 기준 ${thr}원 안에 있습니다.`)
+  ];
+  const k = sfWhatIfSlope(c);
+  if (k) {
+    const pUp = Math.ceil(c.latest.value + (thr - diff) / k), pDown = Math.floor(c.latest.value + (-thr - diff) / k);
+    read.push(`남은 ${c.window.projectedDays}일의 경유 평균이 <b>${sfWon(pUp)}원</b> 이상이면 인상, <b>${sfWon(pDown)}원</b> 이하이면 인하로 바뀝니다(지금 ${sfWon(c.latest.value)}원).`);
+  }
+  const s = c.scenario;
+  let scen = "";
+  if (s) {
+    scen = s.trigger
+      ? `유류세 인하가 ${esc(sfMd(s.until))}에 끝나면(경유 +${sfWon(s.won)}원 가정) <b class="${sfCls(s.trigger.verdict)}">${esc(sfSpan(s.trigger.applyLabel))} 운임은 ${esc(s.trigger.verdict)} 예상</b>입니다.`
+      : `유류세 인하가 ${esc(sfMd(s.until))}에 끝나도(경유 +${sfWon(s.won)}원 가정) 조정 기준 안에 있습니다.`;
+  }
+  return `<div class="sf-next ${sfCls(v)}">
+      <div class="sf-next-q">${esc(sfSpan(c.window.applyLabel))} 운임은?</div>
+      <div class="sf-next-a"><span class="sf-verdict ${sfCls(v)}">${esc(v)} 예상</span>${esc(SF_PLAIN[v] || "")}.</div>
+      ${sfGauge(diff, thr, c.baseFuel, c.base.avg)}
+      <div class="sf-next-read">${read.join(" ")}</div>
+      ${scen ? `<div class="sf-next-read">${scen}</div>` : ""}
+    </div>`;
+}
+// 운임 조정 이력. 언제 운임이 어떻게 바뀌었는지를 먼저 읽게 '운임 적용 기간'을 맨 앞에 두고 최근 순으로 놓는다.
+// 차이는 직전 기준(마지막으로 인상·인하된 분기의 평균)과 비교한 값이다. 기준을 알 수 없는 앞쪽 행은 비운다.
+function sfHistoryTable(rows, c) {
+  let base = null;
+  const out = rows.map(r => {
+    const diff = base === null ? null : r.avg - base;
+    if (r.verdict !== "동결") base = r.avg;
+    return { span: r.applyLabel, verdict: r.verdict, avg: r.avg, calc: r.window, diff, note: r.note, prov: r.provisional, fc: false };
+  });
+  if (c && c.base) out.push({ span: c.window.applyLabel, verdict: c.base.verdict, avg: c.base.avg, calc: c.window.label, diff: c.base.diff, fc: true });
+  const word = (v, fc) => (v === "동결" ? "그대로" : v) + (fc ? " 예상" : "");
   return `<table class="sf-table">
-      <tr><th>평균유가 산정 기간</th><th>평균 경유가</th><th>안전운임 적용 기간</th><th>판정</th></tr>
-      ${rows.map(r => `<tr><td>${esc(r.window)}</td><td>${r.provisional ? "약 " : ""}${sfWon(r.avg)}원</td>
-        <td>${esc(r.applyLabel)}</td>
-        <td class="${sfCls(r.verdict)}" title="${esc(r.note || "")}">${esc(r.verdict)}${r.note ? " *" : ""}</td></tr>`).join("")}
-      ${cur}
+      <tr><th>운임 적용 기간</th><th>운임</th><th>근거: 산정 기간 경유 평균</th><th>직전 기준과 차이</th></tr>
+      ${out.reverse().map(r => `<tr${r.fc ? ' class="fc"' : ""}><td>${esc(sfSpan(r.span))}</td>
+        <td class="${sfCls(r.verdict)}"${r.note ? ` title="${esc(r.note)}"` : ""}>${esc(word(r.verdict, r.fc))}${r.note ? " *" : ""}</td>
+        <td>${esc(sfSpan(r.calc))} ${r.prov ? "약 " : ""}${sfWon(r.avg)}원${r.fc ? "(추정)" : ""}</td>
+        <td>${r.diff === null ? "–" : sfSigned(Math.round(r.diff * 100) / 100) + "원"}</td></tr>`).join("")}
     </table>`;
 }
 function sfMonthTable(months, scenMonths) {
@@ -2262,35 +2353,17 @@ function sfMonthTable(months, scenMonths) {
 if (SAFE_FREIGHT) {
   const sf = SAFE_FREIGHT;
   CARD_BY_ID["safe-freight"] = Object.assign({}, sf, { isSafeFreight: true, points: [] });
-  const prov = sf.baseProvisional ? `<span class="sf-est" title="오피넷 월간 평균으로 계산한 잠정치입니다">잠정</span>` : "";
-  const assume = sf.window.projectedDays ? `, 남은 ${sf.window.projectedDays}일은 현재 가격 유지 가정` : "";
-  // 적용 예정인 조정이 있으면(10/22 현재 7~9월 인하분이 11/1 적용 예정) 지금 시행 중인 값과 함께 먼저 보여 준다.
+  // 적용 예정인 조정이 있으면(10/30 현재 7~9월 인하분이 11/1 적용 예정) 지금 운임이 어떻게 되는지를 먼저 적는다.
   const pendingLine = (sf.pending && sf.applied)
-    ? `<div class="sf-line">${esc(sfMd(sf.pending.effective))}부터 <b>${sfWon(sf.pending.fuel)}원</b> 기준
-        <b class="${sfCls(sf.pending.verdict)}">${esc(sf.pending.verdict)}</b> 운임 적용 예정
-        <span style="color:var(--ink-muted);">(현재 ${sfWon(sf.applied.fuel)}원 기준)</span></div>` : "";
-  const baseLine = `산정 기간 ${esc(sf.window.label)} 평균 <b>${sfWon(sf.base.avg)}원</b>
-    <span style="color:var(--ink-muted);">(실측 ${sf.window.actualDays}일${assume})</span><br>
-    기준 유가 ${esc(sf.baseWindow)} <b>${sfWon(sf.baseFuel)}원</b>${prov} 대비
-    <b class="${sfCls(sf.base.verdict)}">${sfSigned(sf.base.diff)}원</b>
-    <span style="color:var(--ink-muted);">(조정 기준 ±${sf.threshold}원 ${sf.base.verdict === "동결" ? "미만" : "이상"})</span>`;
+    ? `<div class="sf-line"><b>${esc(sfMd(sf.pending.effective))}부터</b> ${esc(sfSpan(sf.pending.window))} 평균(${sf.pending.provisional ? "약 " : ""}${sfWon(sf.pending.fuel)}원) 기준으로
+        <b class="${sfCls(sf.pending.verdict)}">${esc(sf.pending.verdict)}</b>된 운임이 적용됩니다.</div>` : "";
 
-  let scenario = "";
+  // 오른쪽 표: 이번 조정이 동결이면 유류세 인하 종료 시 처음 걸리는 조정의 운임 영향을 보여 준다(시나리오 문장은 다음 조정 예상 상자에).
   let impact = sf.base.verdict !== "동결"
-    ? { rows: sf.base.impact, title: `${sf.window.applyLabel} 적용 예상 운임 (20FT 왕복, 원)` } : null;
-  if (sf.scenario) {
-    const s = sf.scenario;
-    const t = s.trigger;
-    const tw = t ? (t.window || (s.current.verdict !== "동결" ? s.current.window : s.next.window)) : "";
-    const result = t
-      ? `산정 ${esc(tw)} 평균이 기준보다 <b>${sfSigned(t.diff)}원</b> 달라져
-         <b class="${sfCls(t.verdict)}">${esc(t.applyLabel)} 적용분 ${esc(t.verdict)}</b> 예상입니다.`
-      : `산정 ${esc(s.current.window)}과 ${esc(s.next.window)} 모두 조정 기준(±${sf.threshold}원) 미만입니다.`;
-    scenario = `<div class="sf-sub">유류세 인하 종료 시 (${esc(sfMd(s.until))} 종료 예정, D-${s.dDay})</div>
-      <div class="sf-line" style="margin-top:2px;">경유 가격이 ${sfWon(s.won)}원${s.taxWon && s.taxWon !== s.won ? `(유류세 ${sfWon(s.taxWon)}원과 부가세)` : ""} 오른다고 가정하면 ${result}</div>`;
-    if (!impact && t) {
-      impact = { rows: t.impact, title: `유류세 인하 종료 시 ${t.applyLabel} 적용 예상 운임 (20FT 왕복, 원)` };
-    }
+    ? { rows: sf.base.impact, title: `${sfSpan(sf.window.applyLabel)} 적용 예상 운임 (20FT 왕복, 원)` } : null;
+  if (!impact && sf.scenario && sf.scenario.trigger) {
+    const t = sf.scenario.trigger;
+    impact = { rows: t.impact, title: `유류세 인하 종료 시 ${sfSpan(t.applyLabel)} 적용 예상 운임 (20FT 왕복, 원)` };
   }
 
   pushCard(typeof CARD_SORTS.safeFreight === "number" ? CARD_SORTS.safeFreight : 900, `
@@ -2299,17 +2372,12 @@ if (SAFE_FREIGHT) {
         <h3>${esc(sf.displayName)}</h3>
         <button class="detail-btn" data-detail="safe-freight">상세</button>
       </div>
-      <div class="sf-top">
-        <span class="sf-verdict ${sfCls(sf.base.verdict)}">${esc(sf.base.verdict)} 예상</span>
-        <span class="sf-apply">다음 유가 조정 (${esc(sf.window.applyLabel)} 적용분)</span>
-      </div>
       <div class="sf-cols">
         <div>
           ${pendingLine}
-          <div class="sf-line">${baseLine}</div>
-          ${sf.evolution && sf.evolution.length > 1 ? `<div class="sf-line">${sfMargin(sf.base.diff, sf.threshold)}.</div>
-            <div class="chart-wrap" style="margin-top:4px;">${sfEvolutionSvg(sf.evolution, sf.baseFuel, sf.threshold, true)}</div>` : ""}
-          ${scenario}
+          ${sfNextHtml(sf)}
+          ${sf.evolution && sf.evolution.length > 1 ? `<div class="sf-sub">${esc(sfSpan(sf.window.label))} 평균 추정치가 날마다 어떻게 움직였는지</div>
+            <div class="chart-wrap" style="margin-top:2px;">${sfEvolutionSvg(sf.evolution, sf.baseFuel, sf.threshold, true)}</div>` : ""}
           ${sfWhatIfSlope(sf) ? `<button type="button" class="ops-btn sfw-open" data-detail="safe-freight" data-focus="sfwRange">⛽ 경유가를 바꿔 보기</button>` : ""}
         </div>
         <div>${impact ? sfImpactTable(impact.rows, impact.title, sf.rateFrom) : sfRateTable(sf.routes || [], sf.rateFrom)}</div>

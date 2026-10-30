@@ -1647,12 +1647,13 @@ function Get-Forecast {
 # 다른 원가(인건비·감가상각 등)는 유가 고시에서 바뀌지 않기 때문이다. 계수(kmPerLiter)는 11월 개정의 실제 변동폭
 # 두 개(178km 구간 −6,900원, 400km 구간 −15,400원, 산정 유가 −141.68원)를 함께 맞춘 값이라 config 에 두었다(3.675).
 function Format-MonthSpan {
-    # 업무 표(평균유가 산정 기준)와 같은 표기: "26년 07월~09월", 해를 넘기면 "26년 11월~27년 01월"
+    # 읽기 쉬운 표기: "26년 7~9월", 해를 넘기면 "26년 11월~27년 1월". 2026-10-30 에 업무 표 표기("26년 07월~09월")에서
+    # 바꿨다(산정 이력이 읽기 어렵다는 의견). 메일 제목 상태 비교는 window.key(2026-Q4)를 쓰므로 표기와 무관하다.
     param([DateTime]$first)
     $last = $first.AddMonths(2)
-    $a = "{0:00}년 {1:00}월" -f ($first.Year % 100), $first.Month
-    if ($last.Year -eq $first.Year) { return "$a~$('{0:00}' -f $last.Month)월" }
-    "$a~$('{0:00}년 {1:00}월' -f ($last.Year % 100), $last.Month)"
+    $yy = "{0:00}" -f ($first.Year % 100)
+    if ($last.Year -eq $first.Year) { return "${yy}년 $($first.Month)~$($last.Month)월" }
+    "${yy}년 $($first.Month)월~$('{0:00}' -f ($last.Year % 100))년 $($last.Month)월"
 }
 
 function Get-QuarterInfo {
