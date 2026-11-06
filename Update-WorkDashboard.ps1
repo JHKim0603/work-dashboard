@@ -1455,9 +1455,10 @@ function Get-TrendStats {
             elseif ($pctile -ge 40) { "중간" } elseif ($pctile -ge 20) { "중하단" } else { "하단" }
 
     [PSCustomObject]@{
-        shortLabel = if ($monthly) { "1개월" } else { "4주" }
+        # 주간·일간 계열도 28일·91일 창이라 '1개월', '3개월'로 부른다(2026-11-06, '4주·13주'가 경영진에게 낯설다는 의견).
+        shortLabel = "1개월"
         shortPct   = $chS
-        longLabel  = if ($monthly) { "3개월" } else { "13주" }
+        longLabel  = "3개월"
         longPct    = $chL
         normalMove = [math]::Round($thrS * 2, 1)    # 평소 짧은 창 변동폭(표준편차)
         yoyPct     = $chY
@@ -1470,7 +1471,8 @@ function Get-TrendStats {
         rangeName  = $rangeName
         percentile = $pctile
         band       = $band
-        position   = "$rangeName 중 $band"
+        # 화면 문구용 위치. band(최고·상단 등)는 판정에 쓰는 내부 값이라 그대로 두고 읽는 말로 바꿔 적는다.
+        position   = "$rangeName 중 $(@{ '최고' = '가장 높음'; '최저' = '가장 낮음'; '상단' = '높은 편'; '중상단' = '중간보다 높음'; '중간' = '중간'; '중하단' = '중간보다 낮음'; '하단' = '낮은 편' }[$band])"
         longPosition = $(
             $spanAll = ($last.d - $rows[0].d).TotalDays
             if ($spanAll -ge 900) {
@@ -1536,11 +1538,11 @@ function Get-Forecast {
     $gaps = @(for ($i = 1; $i -lt $rows.Count; $i++) { ($rows[$i].d - $rows[$i - 1].d).TotalDays }) | Sort-Object
     $gap = @($gaps)[[int][math]::Floor(@($gaps).Count / 2)]
     if ($gap -le 2) {
-        $unit = "day";   $hs = @(@{ h = 28; label = "4주 후" }, @{ h = 91; label = "13주 후" })
+        $unit = "day";   $hs = @(@{ h = 28; label = "1개월 뒤" }, @{ h = 91; label = "3개월 뒤" })
     } elseif ($gap -le 10) {
-        $unit = "week";  $hs = @(@{ h = 4; label = "4주 후" }, @{ h = 13; label = "13주 후" })
+        $unit = "week";  $hs = @(@{ h = 4; label = "1개월 뒤" }, @{ h = 13; label = "3개월 뒤" })
     } elseif ($gap -le 40) {
-        $unit = "month"; $hs = @(@{ h = 1; label = "1개월 후" }, @{ h = 3; label = "3개월 후" })
+        $unit = "month"; $hs = @(@{ h = 1; label = "1개월 뒤" }, @{ h = 3; label = "3개월 뒤" })
     } else { return $null }
 
     $n = $rows.Count
@@ -1595,10 +1597,10 @@ function Get-Forecast {
         $mid = [math]::Exp($f)
         $low = [math]::Exp($f - $hw)
         $high = [math]::Exp($f + $hw)
-        $dir = if ($low -gt $last.v) { "상승 예상" } elseif ($high -lt $last.v) { "하락 예상" } else { "보합권" }
+        $dir = if ($low -gt $last.v) { "상승 예상" } elseif ($high -lt $last.v) { "하락 예상" } else { "지금과 비슷" }
         # 범위 폭이 현재 값의 30%를 넘으면(2026-10-30 KCCI 종합 4주 뒤 −20%~+26%) 방향을 말할 수 없는데 '보합권'이라 하면
         # 좁은 범위와 같은 무게로 읽힌다. 화면(template.html 의 FC_WIDE_PCT)도 같은 기준으로 흐리게 적는다.
-        if ($dir -eq "보합권" -and (($high - $low) / $last.v) * 100 -gt 30) { $dir = "예측 어려움" }
+        if ($dir -eq "지금과 비슷" -and (($high - $low) / $last.v) * 100 -gt 30) { $dir = "예측 어려움" }
         $when = switch ($unit) {
             "day"   { $last.d.AddDays($h).ToString("yyyy-MM-dd") }
             "week"  { $last.d.AddDays(7 * $h).ToString("yyyy-MM-dd") }
@@ -2631,7 +2633,7 @@ function Get-OpsSummaryRow {
     $row = [ordered]@{ id = $id; detail = $id; name = $id; value = $null; currency = ""; unit = ""; label = ""
         shortLabel = ""; shortPct = $null; longLabel = ""; longPct = $null; trend = ""; tone = "flat"; position = ""; note = ""
         fc = $null; yoyPct = $null; thrS = $null; thrL = $null; thrY = $null; band = ""; rangeName = ""; short = ""
-        prevTrend = ""; prevTone = ""; changed = $false; longPosition = "" }
+        prevTrend = ""; prevTone = ""; changed = $false; longPosition = ""; krw = $null }
     $series = $null
     $t = $null
     $fcSrc = $null
@@ -2668,6 +2670,8 @@ function Get-OpsSummaryRow {
         }
         $pts = @($c.points)
         $row.value = $pts[-1].value; $row.currency = [string]$c.currency; $row.unit = [string]$c.unit; $row.label = $pts[-1].label
+        # 위안 선물(PP·PE)은 원화로 바꾼 톤당 값을 함께 둔다(경영진 화면은 원화를 앞에 보인다).
+        if ($c.krwPerUnit) { $row.krw = [double]$c.krwPerUnit }
         $t = $c.trend; $fcSrc = $c.forecast; $series = $pts
     }
     if ($t) {
@@ -2753,20 +2757,26 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
         $span = if ($m.useShort) { $r.shortLabel } else { $r.longLabel }
         $verb = if ($pct -ge 0) { "올라" } else { "내려" }
         $verbEnd = if ($pct -ge 0) { "올랐습니다" } else { "내렸습니다" }
-        $pctTxt = [math]::Abs($pct).ToString("0.0", [Globalization.CultureInfo]::InvariantCulture)
-        $topic = "$($r.short)$(Get-Josa $r.short '은' '는')"
-        $where = if ($r.band -eq "최고" -or $r.band -eq "최저") { "$($r.rangeName) 중 $($r.band)치" }
-                 elseif ($r.band -eq "상단" -or $r.band -eq "하단") { "$($r.rangeName) 중 $($r.band)" } else { "" }
+        $absPct = [math]::Abs($pct)
+        $pctTxt = if ($absPct -ge 10) { [math]::Round($absPct).ToString("0") } else { $absPct.ToString("0.0", [Globalization.CultureInfo]::InvariantCulture) }
+        $topic = "$($r.short)$(Get-Josa $r.short '이' '가')"
+        $where = switch ($r.band) {
+            "최고" { "$($r.rangeName) 중 가장 높습니다" }
+            "최저" { "$($r.rangeName) 중 가장 낮습니다" }
+            "상단" { "$($r.rangeName) 중 높은 편입니다" }
+            "하단" { "$($r.rangeName) 중 낮은 편입니다" }
+            default { "" }
+        }
         $tag = if ($catOf.ContainsKey([string]$r.id)) { $catOf[[string]$r.id] } else { "지표" }
-        if ($where) { Add-Highlight $tag "$topic 최근 ${span}간 $pctTxt% $verb ${where}입니다." ([string]$r.id) }
-        else { Add-Highlight $tag "$topic 최근 ${span}간 $pctTxt% $verbEnd." ([string]$r.id) }
+        if ($where) { Add-Highlight $tag "$topic 최근 $span 사이 $pctTxt% $verb ${where}." ([string]$r.id) }
+        else { Add-Highlight $tag "$topic 최근 $span 사이 $pctTxt% $verbEnd." ([string]$r.id) }
     }
     $movedIds = @($moves | Sort-Object score -Descending | Select-Object -First 3 | ForEach-Object { [string]$_.r.id })
     foreach ($r in @($opsRows | Where-Object { $_.changed -and $movedIds -notcontains [string]$_.id } | Select-Object -First 1)) {
         $tag = if ($catOf.ContainsKey([string]$r.id)) { $catOf[[string]$r.id] } else { "지표" }
-        Add-Highlight $tag "$($r.short)의 최근 흐름이 지난주 $($r.prevTrend)에서 $($r.trend)$(Get-Josa $r.trend '으로' '로') 바뀌었습니다." ([string]$r.id)
+        Add-Highlight $tag "$($r.short)$(Get-Josa $r.short '이' '가') 지난주 $($r.prevTrend)에서 이번 주 $($r.trend)$(Get-Josa $r.trend '으로' '로') 바뀌었습니다." ([string]$r.id)
     }
-    if ($opsHighlights.Count -eq 0) { Add-Highlight "지표" "평소 변동폭보다 크게 움직인 가격 지표는 없습니다." }
+    if ($opsHighlights.Count -eq 0) { Add-Highlight "지표" "평소보다 크게 움직인 지표는 없습니다." }
     if ($safeFreight) {
         $sf = $safeFreight
         if ($sf.pending -and $sf.pending.effective) {
@@ -2777,10 +2787,10 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
             }
         }
         if ($sf.base.verdict -ne "동결") {
-            Add-Highlight "내륙운송료" "$($sf.window.applyLabel) 적용분 내륙운송료는 $($sf.base.verdict) 예상입니다."
+            Add-Highlight "내륙운송료" "내륙운송료 다음 조정($($sf.window.applyLabel)분)은 $($sf.base.verdict)$(Get-Josa $sf.base.verdict '이' '가') 예상됩니다."
         } elseif ($sf.scenario -and $sf.scenario.trigger -and $sf.scenario.dDay -le 45) {
             $u = [DateTime]$sf.scenario.until
-            Add-Highlight "내륙운송료" "유류세 인하가 $($u.Month)/$($u.Day)에 끝나면 $($sf.scenario.trigger.applyLabel) 적용분 내륙운송료는 $($sf.scenario.trigger.verdict) 예상입니다."
+            Add-Highlight "내륙운송료" "유류세 인하가 $($u.Month)/$($u.Day)에 끝나면 내륙운송료 $($sf.scenario.trigger.applyLabel)분은 $($sf.scenario.trigger.verdict)$(Get-Josa $sf.scenario.trigger.verdict '이' '가') 예상됩니다."
         }
     }
     if ($typhoon -and @($typhoon.active).Count -gt 0) {
@@ -2791,7 +2801,7 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
     }
 
     # 분야별 한눈 요약 타일. "물류비가 오르는 중인가?"에 문장을 읽지 않고 답하기 위한 것이다.
-    # 분야 판정: 상승 지표가 많으면 상승, 하락이 많으면 하락, 같으면 엇갈림. 대표 지표(lead)의 값과 13주 변화를 함께 보인다.
+    # 분야 판정: 상승 지표가 많으면 상승, 하락이 많으면 하락, 같으면 '항목별로 다름'. 대표 지표(lead)의 값과 3개월 변화를 함께 보인다.
     $opsTiles = @(foreach ($cat in @($config.opsSummary.categories)) {
         $items = @($cat.items | ForEach-Object { [string]$_ })
         if ($items -contains "safe-freight") {
@@ -2808,8 +2818,9 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
             if ($sf.scenario -and $sf.scenario.trigger) {
                 $lines += "유류세 인하가 끝나면 $($sf.scenario.trigger.applyLabel)분 $($sf.scenario.trigger.verdict)"
             }
+            $sfMean = switch ($sf.base.verdict) { "인상" { "다음 조정에서 운임이 오를 것으로 보입니다." } "인하" { "다음 조정에서 운임이 내릴 것으로 보입니다." } default { "다음 조정에서 운임이 바뀌지 않을 것으로 보입니다." } }
             [PSCustomObject]@{ key = [string]$cat.key; title = [string]$cat.title; tone = $tone; word = "$($sf.base.verdict) 예상"
-                detail = "safe-freight"; lead = $null; change = $null; count = ""; lines = @($lines) }
+                detail = "safe-freight"; lead = $null; change = $null; count = ""; lines = @($lines); role = [string]$cat.role; meaning = $sfMean; second = $null }
             continue
         }
         $rows = @($opsRows | Where-Object { $items -contains [string]$_.id -and $_.trend -and $_.trend -ne "수집 실패" -and $_.trend -ne "기록 부족" })
@@ -2818,32 +2829,38 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
         $nDown = @($rows | Where-Object { $_.tone -eq "down" }).Count
         $nMixed = @($rows | Where-Object { $_.tone -eq "mixed" }).Count
         $nFlat = $rows.Count - $nUp - $nDown - $nMixed
-        if ($nUp -gt $nDown) { $word = "상승"; $tone = "up" }
-        elseif ($nDown -gt $nUp) { $word = "하락"; $tone = "down" }
-        elseif ($nUp -gt 0) { $word = "엇갈림"; $tone = "mixed" }
-        elseif ($nMixed -gt 0) { $word = "방향 전환"; $tone = "mixed" }
-        else { $word = "보합"; $tone = "flat" }
         $leadId = [string]$cat.lead
         $lead = @($rows | Where-Object { [string]$_.id -eq $leadId })[0]
         if (-not $lead) { $lead = $rows[0] }
+        # 분야 판정: 상승이 많으면 상승, 하락이 많으면 하락, 같으면 '항목별로 다름'. 오르내림(상승 후 조정 등)만 있으면 대표 지표의 말을 쓴다.
+        if ($nUp -gt $nDown) { $word = "상승"; $tone = "up" }
+        elseif ($nDown -gt $nUp) { $word = "하락"; $tone = "down" }
+        elseif ($nUp -gt 0) { $word = "항목별로 다름"; $tone = "mixed" }
+        elseif ($nMixed -gt 0) { $word = $(if ($lead.tone -eq "mixed") { [string]$lead.trend } else { "방향 전환" }); $tone = "mixed" }
+        else { $word = "보합"; $tone = "flat" }
         $count = ""
         if ($rows.Count -gt 1) {
             $parts = @()
             if ($nUp) { $parts += "상승 $nUp" }
             if ($nDown) { $parts += "하락 $nDown" }
-            if ($nMixed) { $parts += "방향 전환 $nMixed" }
-            if ($nFlat) { $parts += "보합 $nFlat" }
-            $count = "$($rows.Count)개 지표 중 $($parts -join ', ')"
+            if ($nMixed) { $parts += "방향 전환 ${nMixed}개" }
+            if ($nFlat) { $parts += "보합 ${nFlat}개" }
+            $count = "지표 $($rows.Count)개 중 $(($parts | ForEach-Object { $_ -replace '^(상승|하락) (\d+)$', '$1 $2개' }) -join ', ')"
         } elseif ($lead.position) {
             $count = [string]$lead.position
         }
+        # 둘째 지표(대표 지표 다음 것) 한 줄. 경영진이 분야 안의 다른 숫자도 바로 보게 한다.
+        $sec = @($rows | Where-Object { [string]$_.id -ne [string]$lead.id })[0]
+        $second = if ($sec) { [PSCustomObject]@{ name = $sec.short; label = $sec.longLabel; pct = $sec.longPct } } else { $null }
+        # 이 분야가 우리 비용에 주는 뜻(config.opsSummary.categories[].meaning 의 up·down·flat·mixed)
+        $mean = if ($cat.meaning -and $cat.meaning.$tone) { [string]$cat.meaning.$tone } else { "" }
         [PSCustomObject]@{ key = [string]$cat.key; title = [string]$cat.title; tone = $tone; word = $word; detail = $lead.detail
-            lead = [PSCustomObject]@{ name = $lead.short; value = $lead.value; currency = $lead.currency; unit = $lead.unit; label = $lead.label }
+            lead = [PSCustomObject]@{ id = $lead.id; name = $lead.short; value = $lead.value; currency = $lead.currency; unit = $lead.unit; label = $lead.label; krw = $lead.krw }
             change = [PSCustomObject]@{ label = $lead.longLabel; pct = $lead.longPct }
-            count = $count; lines = @() }
+            count = $count; lines = @(); role = [string]$cat.role; meaning = $mean; second = $second }
     })
     $opsCategories = @(foreach ($cat in @($config.opsSummary.categories)) {
-        [PSCustomObject]@{ key = [string]$cat.key; title = [string]$cat.title; items = @($cat.items | ForEach-Object { [string]$_ }) }
+        [PSCustomObject]@{ key = [string]$cat.key; title = [string]$cat.title; items = @($cat.items | ForEach-Object { [string]$_ }); role = [string]$cat.role }
     })
     $opsSummary = [PSCustomObject]@{
         title    = if ($config.opsSummary.title) { $config.opsSummary.title } else { "물류 운영 핵심 지표" }
@@ -2853,7 +2870,7 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
         highlights = @($opsHighlights)
         tiles    = @($opsTiles)
         categories = @($opsCategories)
-        method   = "경향은 4주와 13주(월간 지표는 1개월과 3개월) 변화율을 지표별 평소 변동폭과 비교해 자동으로 판정합니다."
+        method   = "상승과 하락은 최근 1개월과 3개월 변화율을 지표마다 평소 움직임과 비교해 자동으로 정합니다."
         dashboardUrl = "https://jhkim0603.github.io/work-dashboard/"
     }
     Write-Host "  핵심 지표 요약 $($opsRows.Count)개 · $sentence"
@@ -2946,71 +2963,155 @@ if ($config.releaseSchedule) {
 }
 $nextReleaseJson = ConvertTo-Json -InputObject $nextRelease -Compress
 if (-not $nextReleaseJson -or $nextReleaseJson -eq "null") { $nextReleaseJson = "{}" }
-# 오늘의 브리핑(요약판 맨 위, 메일 맨 위, 보고용 요약 복사). 증권 앱의 AI 요약처럼 오늘 상황을 항목별로 한두 문장씩
-# 정리한다. AI 를 부르지 않고 이 스크립트가 계산한 값으로 문장을 만든다(같은 데이터면 늘 같은 문장, 숫자가 틀릴 일이 없다).
-# 항목: 흐름(분야 타일), 내륙운송료, 환율, 일정(7일 안, 태풍). 한 문장에 한 내용.
+# 한 줄 결론과 브리핑(요약판 맨 위, 메일 맨 위, 주간 보고). 물류팀이 주로 보는 해상운임, 내륙운송료, 부자재(PP·PE)를 중심으로
+# 쓰고, 환율과 유가는 이 셋에 영향을 주는 참고 지표로 짧게 붙인다(2026-11-06 의견: 원재료는 물류팀이 주로 볼 내용이 아님).
+# AI 를 부르지 않고 계산한 값으로 문장을 만든다. 숫자는 10% 이상이면 정수, 그 아래는 소수 첫째 자리까지.
 if ($opsSummary) {
+    function Format-PctWord {
+        param([double]$p)
+        $a = [math]::Abs($p)
+        if ($a -ge 10) { [math]::Round($a).ToString("0") } else { $a.ToString("0.0") }
+    }
+    $rowOf = @{}
+    foreach ($r in @($opsSummary.rows)) { $rowOf[[string]$r.id] = $r }
+    $tileOf = @{}
+    foreach ($t in @($opsSummary.tiles)) { $tileOf[[string]$t.key] = $t }
+    # "3개월 사이 44% 올랐습니다" 꼴. 오르내림(상승 후 조정 등)과 보합은 따로 말한다.
+    function Get-MoveSentence {
+        param($r, [string]$subject)
+        if (-not $r -or $null -eq $r.longPct) { return "" }
+        $p = [double]$r.longPct
+        switch ([string]$r.trend) {
+            "상승 후 조정" { return "$subject 오른 뒤 최근 1개월은 내려가고 있습니다." }
+            "하락 후 반등" { return "$subject 내린 뒤 최근 1개월은 오르고 있습니다." }
+        }
+        if ($r.tone -eq "flat" -or [math]::Abs($p) -lt 0.5) { return "$subject $($r.longLabel) 사이 큰 변화가 없습니다." }
+        "$subject $($r.longLabel) 사이 $(Format-PctWord $p)% $(if ($p -ge 0) { '올랐습니다' } else { '내렸습니다' })."
+    }
+    $fr = $rowOf["kcci-sea"]; if (-not $fr) { $fr = $rowOf["scfi"] }
+    $pp = $rowOf["pp"]; $pe = $rowOf["pe"]
+    $fx = $rowOf["usdkrw"]; $br = $rowOf["brent"]
+    $sf = $safeFreight
+
+    # 한 줄 결론 제목: 오르거나 내리는 분야 이름을 그대로 쓴다. 예) "해상운임과 PP·PE 가격이 오르고 있습니다"
+    # 해상운임과 부자재는 시장 가격이라 '오르고/내리고 있다', 내륙운송료는 고시 운임이라 '인상/인하가 예상된다'로 쓴다.
+    $ups = @(); $downs = @()
+    foreach ($pair in @(@{ k = "freight"; n = "해상운임" }, @{ k = "packaging"; n = "PP·PE 가격" })) {
+        if (-not $tileOf.ContainsKey($pair.k)) { continue }
+        if ($tileOf[$pair.k].tone -eq "up") { $ups += $pair.n } elseif ($tileOf[$pair.k].tone -eq "down") { $downs += $pair.n }
+    }
+    function Join-Topic {
+        param([string[]]$names, [string]$j1, [string]$j2)
+        if ($names.Count -eq 2) { return "$($names[0])$(Get-Josa $names[0] '과' '와') $($names[1])$(Get-Josa $names[1] $j1 $j2)" }
+        "$($names[0])$(Get-Josa $names[0] $j1 $j2)"
+    }
+    $sfVerdict = if ($sf -and $sf.base) { [string]$sf.base.verdict } else { "" }
+    if ($ups.Count -and $downs.Count) {
+        $hlTone = "mixed"; $hlTitle = "$(Join-Topic $ups '은' '는') 오르고, $(Join-Topic $downs '은' '는') 내리고 있습니다"
+    } elseif ($ups.Count) {
+        $hlTone = "up"; $hlTitle = "$(Join-Topic $ups '이' '가') 오르고 있습니다"
+    } elseif ($downs.Count) {
+        $hlTone = "down"; $hlTitle = "$(Join-Topic $downs '이' '가') 내리고 있습니다"
+    } elseif ($sfVerdict -eq "인상" -or $sfVerdict -eq "인하") {
+        $hlTone = $(if ($sfVerdict -eq "인상") { "up" } else { "down" }); $hlTitle = "내륙운송료 ${sfVerdict}$(Get-Josa $sfVerdict '이' '가') 예상됩니다"
+    } else {
+        $hlTone = "flat"; $hlTitle = "운임과 부자재 가격에 큰 변화가 없습니다"
+    }
+    # 시장 가격은 오르는데 내륙운송료가 인하 예상이면(또는 그 반대) 결론 색은 '항목별로 다름'으로 둔다.
+    if (($hlTone -eq "up" -and $sfVerdict -eq "인하") -or ($hlTone -eq "down" -and $sfVerdict -eq "인상")) { $hlTone = "mixed" }
+    $hlText = @()
+    if ($fr) { $hlText += (Get-MoveSentence $fr "해상운임은 부산→동남아 기준으로") }
+    if ($pp -and $pe -and $null -ne $pp.longPct -and $null -ne $pe.longPct) {
+        $a = [double]$pp.longPct; $b = [double]$pe.longPct
+        if ([math]::Abs($a) -lt 0.5 -and [math]::Abs($b) -lt 0.5) { $hlText += "PP와 PE 가격은 3개월 사이 큰 변화가 없습니다." }
+        elseif (($a -ge 0) -eq ($b -ge 0)) { $hlText += "PP와 PE 가격은 3개월 사이 각각 $(Format-PctWord $a)%, $(Format-PctWord $b)% $(if ($a -ge 0) { '올랐습니다' } else { '내렸습니다' })." }
+        else { $hlText += "PP 가격은 3개월 사이 $(Format-PctWord $a)% $(if ($a -ge 0) { '올랐고' } else { '내렸고' }), PE 가격은 $(Format-PctWord $b)% $(if ($b -ge 0) { '올랐습니다' } else { '내렸습니다' })." }
+    }
+    if ($sf -and $sf.base) {
+        $hlText += "내륙운송료 다음 조정($($sf.window.applyLabel)분)은 $($sf.base.verdict)$(Get-Josa $sf.base.verdict '이' '가') 예상됩니다."
+        if ($sf.scenario -and $sf.scenario.trigger -and $sf.scenario.dDay -le 60) {
+            $u = [DateTime]$sf.scenario.until
+            $hlText += "다만 유류세 인하가 $($u.Month)/$($u.Day)에 끝나면 $($sf.scenario.trigger.applyLabel)분은 $($sf.scenario.trigger.verdict)$(Get-Josa $sf.scenario.trigger.verdict '이' '가') 예상됩니다."
+        }
+    }
+    $refParts = @()
+    if ($fx -and $null -ne $fx.longPct) { $refParts += "원/달러 환율은 3개월 사이 $(Format-PctWord $fx.longPct)% $(if ([double]$fx.longPct -ge 0) { '올랐습니다' } else { '내렸습니다' })." }
+    if ($br -and $null -ne $br.longPct) { $refParts += "국제유가는 같은 기간 $(Format-PctWord $br.longPct)% $(if ([double]$br.longPct -ge 0) { '올랐습니다' } else { '내렸습니다' })." }
+    if ($refParts.Count) { $refParts[0] = "참고로 " + $refParts[0]; $hlText += $refParts }
+    $opsSummary | Add-Member -NotePropertyName headline -NotePropertyValue ([PSCustomObject]@{ tone = $hlTone; title = $hlTitle; text = ($hlText -join " ") }) -Force
+
+    # 브리핑(요약판 [자세히], 주간 보고): 분야별 두세 문장.
     $brief = New-Object System.Collections.ArrayList
     function Add-Brief { param([string]$label, [string]$text) if ($text) { [void]$brief.Add([PSCustomObject]@{ label = $label; text = $text }) } }
-    function Join-Ko {
-        # "A", "A와 B", "A, B와 C"
-        param([string[]]$items)
-        if ($items.Count -le 1) { return ($items -join "") }
-        $head = if ($items.Count -gt 2) { ($items[0..($items.Count - 2)] -join ", ") } else { $items[0] }
-        "$head$(Get-Josa $items[-2] '과' '와') $($items[-1])"
+    # 값 표시(Format-PriceValue 는 스크립트 뒤쪽에 있어 여기서 부를 수 없다). 1,000 이상은 정수, 그 아래는 소수 둘째 자리까지.
+    $fmtV = {
+        param($r)
+        $d = [double]$r.value
+        $txt = if ([math]::Abs($d) -ge 1000) { $d.ToString("N0") } else { (("{0:N2}" -f $d) -replace '0+$', '') -replace '\.$', '' }
+        "$($r.currency)$txt"
     }
-    $tl = @($opsSummary.tiles | Where-Object { $_.detail -ne "safe-freight" })
-    $ups = @($tl | Where-Object { $_.tone -eq "up" } | ForEach-Object { [string]$_.title })
-    $downs = @($tl | Where-Object { $_.tone -eq "down" } | ForEach-Object { [string]$_.title })
-    $mixed = @($tl | Where-Object { $_.tone -eq "mixed" } | ForEach-Object { [string]$_.title })
-    $flow = @()
-    if ($ups.Count) { $flow += "$(Join-Ko $ups)$(Get-Josa $ups[-1] '은' '는') 오르는 흐름" }
-    if ($downs.Count) { $flow += "$(Join-Ko $downs)$(Get-Josa $downs[-1] '은' '는') 내리는 흐름" }
-    if ($mixed.Count) { $flow += "$(Join-Ko $mixed)$(Get-Josa $mixed[-1] '은' '는') 방향이 엇갈리는 흐름" }
-    if ($flow.Count) {
-        $ft = ($flow -join "이고, ") + "입니다."
-        if ($ups.Count -gt $downs.Count) { $ft += " 비용이 오르는 분야가 더 많습니다." }
-        elseif ($downs.Count -gt $ups.Count) { $ft += " 비용이 내리는 분야가 더 많습니다." }
-        Add-Brief "흐름" $ft
+    $posTxt = { param($r) if ($r.band -eq "최고" -or $r.band -eq "최저" -or $r.band -eq "상단" -or $r.band -eq "하단") { " 지금 값은 $($r.position)입니다." } else { "" } }
+    $t1 = @()
+    if ($fr) {
+        $frName = if ([string]$fr.id -eq "kcci-sea") { "부산→동남아 운임은 40ft 컨테이너 1개에" } else { "$($fr.short)$(Get-Josa $fr.short '은' '는')" }
+        $t1 += "$frName $(& $fmtV $fr)입니다."
+        $t1 += (Get-MoveSentence $fr "이 운임은") + (& $posTxt $fr)
     }
-    if ($safeFreight) {
-        $sf = $safeFreight
-        $sfT = @()
-        if ($sf.pending -and $sf.pending.effective) {
-            $pe = [DateTime]$sf.pending.effective
-            if ($pe -ge $todayKst) { $sfT += "$($pe.Month)/$($pe.Day)부터 $($sf.pending.verdict)된 운임이 적용됩니다." }
+    $sc = $rowOf["scfi"]
+    if ($sc -and $null -ne $sc.longPct -and [string]$fr.id -ne "scfi") { $t1 += (Get-MoveSentence $sc "상하이발 운임(SCFI)은") }
+    Add-Brief "해상운임" (($t1 | Where-Object { $_ }) -join " ")
+    if ($sf -and $sf.base) {
+        $t2 = @()
+        if ($sf.applied -and $sf.applied.since) {
+            $since = [DateTime]$sf.applied.since
+            $appliedRow = @($sf.history | Where-Object { [string]$_.effective -eq [string]$sf.applied.since })[0]
+            if ($appliedRow -and ($nowKst.Date - $since).Days -le 31) { $t2 += "$($since.Month)/$($since.Day)부터 $($appliedRow.verdict)된 운임이 적용되고 있습니다." }
         }
-        $sfT += "다음 조정($($sf.window.applyLabel) 적용분)은 $($sf.base.verdict) 예상입니다."
+        if ($sf.pending -and $sf.pending.effective) {
+            $pe2 = [DateTime]$sf.pending.effective
+            if ($pe2 -ge $nowKst.Date) { $t2 += "$($pe2.Month)/$($pe2.Day)부터 $($sf.pending.verdict)된 운임이 적용됩니다." }
+        }
+        $gap = [math]::Round([math]::Abs([double]$sf.base.diff))
+        $t2 += "다음 조정($($sf.window.applyLabel)분)은 $($sf.base.verdict)$(Get-Josa $sf.base.verdict '이' '가') 예상됩니다."
+        $t2 += "산정 기간 경유 평균이 기준보다 약 ${gap}원 $(if ([double]$sf.base.diff -ge 0) { '높아' } else { '낮아' }) 조정 기준(±$($sf.threshold)원) $(if ([math]::Abs([double]$sf.base.diff) -ge [double]$sf.threshold) { '밖에' } else { '안에' }) 있습니다."
         if ($sf.scenario -and $sf.scenario.trigger) {
             $u = [DateTime]$sf.scenario.until
-            $sfT += "유류세 인하가 $($u.Month)/$($u.Day)에 끝나면 $($sf.scenario.trigger.applyLabel) 적용분은 $($sf.scenario.trigger.verdict) 예상입니다."
+            $t2 += "유류세 인하가 $($u.Month)/$($u.Day)에 끝나면 $($sf.scenario.trigger.applyLabel)분은 $($sf.scenario.trigger.verdict)$(Get-Josa $sf.scenario.trigger.verdict '이' '가') 예상됩니다."
         }
-        Add-Brief "내륙운송료" ($sfT -join " ")
+        Add-Brief "내륙운송료" ($t2 -join " ")
     }
-    if ($fxCalc) {
-        $usd = @($fxCalc.currencies | Where-Object { $_.code -eq "USD" })[0]
-        $cny = @($fxCalc.currencies | Where-Object { $_.code -eq "CNY" })[0]
-        if ($usd -and @($usd.refs).Count) {
-            $u0 = [double]$usd.refs[0].rate
-            $u1 = @($usd.refs | Where-Object { $_.label -eq "1주 전" })[0]
-            $fxT = if ($u1) {
-                $fp = ($u0 / [double]$u1.rate - 1) * 100
-                $fw = if ([math]::Abs($fp) -lt 0.05) { "보합입니다." } elseif ($fp -gt 0) { "$([math]::Abs($fp).ToString('0.0'))% 올랐습니다." } else { "$([math]::Abs($fp).ToString('0.0'))% 내렸습니다." }
-                # 위 '흐름'은 13주 판정이라 1주 변화와 방향이 다르면 두 기간을 밝혀 적는다(같은 상자에서 반대로 읽히지 않게).
-                $fxRow = @($opsSummary.rows | Where-Object { $_.id -eq "usdkrw" })[0]
-                $opp = $fxRow -and $fxRow.trend -and (($fxRow.tone -eq "down" -and $fp -ge 0.05) -or ($fxRow.tone -eq "up" -and $fp -le -0.05))
-                if ($opp) { "원/달러 환율은 $($u0.ToString('N2'))원입니다. 흐름은 $($fxRow.trend)이지만 최근 1주는 $fw" }
-                else { "원/달러 환율은 $($u0.ToString('N2'))원으로 1주 전보다 $fw" }
-            } else { "원/달러 환율은 $($u0.ToString('N2'))원입니다." }
-            if ($cny -and @($cny.refs).Count) { $fxT += " 원/위안 환율은 $(([double]$cny.refs[0].rate).ToString('N2'))원입니다." }
-            Add-Brief "환율" $fxT
-        }
+    $t3 = @()
+    $samePos = $pp -and $pe -and (& $posTxt $pp) -and ([string]$pp.position -eq [string]$pe.position)
+    foreach ($pair in @(@{ r = $pp; n = "PP" }, @{ r = $pe; n = "PE" })) {
+        $r = $pair.r
+        if (-not $r) { continue }
+        $won = if ($r.krw) { "톤당 약 $([math]::Round([double]$r.krw / 10000).ToString('N0'))만원($(& $fmtV $r))" } else { (& $fmtV $r) }
+        $mv = if ($null -ne $r.longPct) { " 3개월 사이 $(Format-PctWord $r.longPct)% $(if ([double]$r.longPct -ge 0) { '올랐습니다' } else { '내렸습니다' })." } else { "" }
+        $t3 += "$($pair.n) 가격은 ${won}입니다.$mv$(if ($samePos) { '' } else { & $posTxt $r })"
     }
-    # 내륙운송료 날짜는 바로 위 항목에 있으므로 일정에서는 뺀다.
-    $soon = @($schedule | Where-Object { $_.dDay -le 7 -and [string]$_.title -notmatch '내륙운송료' } | Sort-Object date | Select-Object -First 3)
+    if ($samePos) { $t3 += "두 가격 모두 $($pp.position)입니다." }
+    # 국내 수지 물가지수(한국은행, 월간)의 전월 대비: 국내에 얼마나 반영됐는지
+    foreach ($pair in @(@{ id = "ppi-pp-resin"; n = "국내 PP 수지" }, @{ id = "ppi-pe-resin"; n = "국내 PE 수지" })) {
+        $c = @($priceCards | Where-Object { [string]$_.id -eq $pair.id })[0]
+        if (-not $c -or @($c.points).Count -lt 2) { continue }
+        $cp = @($c.points)
+        $m = [double]$cp[-1].value / [double]$cp[-2].value * 100 - 100
+        $mon = if ([string]$cp[-1].label -match '^\d{4}-(\d{2})$') { "$([int]$matches[1])월" } else { [string]$cp[-1].label }
+        $t3 += if ([math]::Abs($m) -lt 0.05) { "$($pair.n) 물가지수는 ${mon}에 전월과 같습니다." }
+            else { "$($pair.n) 물가지수는 ${mon}에 전월보다 $([math]::Abs($m).ToString('0.0'))% $(if ($m -gt 0) { '올랐습니다' } else { '내렸습니다' })." }
+    }
+    Add-Brief "부자재" ($t3 -join " ")
+    $t4 = @()
+    if ($fx) { $t4 += "원/달러 환율은 $([math]::Round([double]$fx.value).ToString('N0'))원입니다."; if ($null -ne $fx.longPct) { $t4[-1] += " 3개월 사이 $(Format-PctWord $fx.longPct)% $(if ([double]$fx.longPct -ge 0) { '올랐습니다' } else { '내렸습니다' })." } }
+    if ($br) { $t4 += "국제유가(브렌트)는 배럴당 $(& $fmtV $br)입니다."; if ($null -ne $br.longPct) { $t4[-1] += " 3개월 사이 $(Format-PctWord $br.longPct)% $(if ([double]$br.longPct -ge 0) { '올랐습니다' } else { '내렸습니다' })." } }
+    $dsl = $rowOf["D047"]
+    if ($dsl -and $null -ne $dsl.value) { $t4 += "국내 경유는 리터당 $([math]::Round([double]$dsl.value).ToString('N0'))원입니다." }
+    Add-Brief "환율·유가" ($t4 -join " ")
+    # 일정: 매주 반복되는 지수 발표는 빼고 한 달 안 정책 일정만.
+    $soon = @($schedule | Where-Object { $_.kind -ne "발표" -and $_.dDay -ge 0 -and $_.dDay -le 31 } | Sort-Object date | Select-Object -First 3)
     $schT = @()
     if ($soon.Count) {
-        $schT += "7일 안 일정은 $((@($soon | ForEach-Object { $d = [DateTime]$_.date; "$($d.Month)/$($d.Day)($($dowKo[[int]$d.DayOfWeek])) $($_.title)" })) -join ', ')입니다."
+        $schT += "$((@($soon | ForEach-Object { $d = [DateTime]$_.date; "$($d.Month)/$($d.Day)($($dowKo[[int]$d.DayOfWeek])) $($_.title)" })) -join ', ')입니다."
     }
     if ($typhoon -and @($typhoon.active).Count -gt 0) {
         $tn = (@($typhoon.active | ForEach-Object { $_.name }) -join ", ")
@@ -3795,7 +3896,7 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
         # 칸마다 style 을 반복하면 행 하나가 700B 가까이 된다. 여백은 표의 cellpadding, 줄바꿈 막기는
         # nowrap 속성으로 넘겨 행당 크기를 절반 아래로 줄였다(메일이 Gmail 잘림 기준 102KB 에 가깝다).
         $subHtml = if ($sub) { "<br><font size=1 color=#898781>$(Get-HtmlText $sub)</font>" } else { "" }
-        $fcHtml = if ($r.fc) { "<br><font size=1 color=#52514e>$($r.fc.label) $($r.currency)$(Format-PriceValue $r.fc.low)~$(Format-PriceValue $r.fc.high)</font>" } else { "" }
+        $fcHtml = if ($r.fc) { "<br><font size=1 color=#52514e>$($r.currency)$(Format-PriceValue $r.fc.low)~$(Format-PriceValue $r.fc.high)</font>" } else { "" }
         $chgMark = if ($r.changed) { " <font size=1 color=#2a78d6>(지난주 $($r.prevTrend))</font>" } else { "" }
         $opsRowMap[[string]$r.id] = "<tr><td><b>$($r.name)</b> <b><font size=1 color=$tc>$($r.trend)</font></b>$chgMark$subHtml</td><td align=right nowrap>$val</td>$(Get-PctCell $r.shortPct $r.thrS)$(Get-PctCell $r.longPct $r.thrL)$(Get-PctCell $r.yoyPct $r.thrY)<td align=right nowrap>$($fcHtml -replace '^<br>', '')</td></tr>"
     }
@@ -3813,7 +3914,9 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
         $arrow = switch ($t.tone) { "up" { "▲ " } "down" { "▼ " } default { "" } }
         $body = if ($t.lead) {
             $chg = if ($t.change -and $null -ne $t.change.pct) { "<br>$($t.change.label) $(Get-PctText $t.change.pct)" } else { "" }
-            "$($t.lead.name)<br><b>$($t.lead.currency)$(Format-PriceValue $t.lead.value)</b>$chg"
+            # 위안 선물(PP·PE)은 원화 톤당 값으로 보인다(화면 타일과 같게).
+            $leadVal = if ($t.lead.krw) { "톤당 약 $([math]::Round([double]$t.lead.krw / 10000).ToString('N0'))만원" } else { "$($t.lead.currency)$(Format-PriceValue $t.lead.value)" }
+            "$($t.lead.name)<br><b>$leadVal</b>$chg"
         } else { [string](@($t.lines) | Select-Object -First 1) }
         "<td valign=top width=$tileW% style='border-left:3px solid $c;background:#fafaf8;'><font size=1 color=#6e6c66>$($t.title)</font><br><b><font color=$c>$arrow$($t.word)</font></b><br><font size=1 color=#3d3b37>$body</font></td>"
     })
@@ -3822,19 +3925,24 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
     $briefRows = @(@($opsSummary.brief) | Where-Object { $_ } | ForEach-Object {
         "<tr><td valign=top nowrap style='padding:3px 10px 3px 0;font-size:12px;font-weight:700;color:#2a78d6;'>$([System.Net.WebUtility]::HtmlEncode([string]$_.label))</td><td style='padding:3px 0;font-size:12.5px;color:#0b0b0b;line-height:1.6;'>$([System.Net.WebUtility]::HtmlEncode([string]$_.text))</td></tr>"
     })
+    # 맨 위 한 줄 결론(굵은 제목 + 두세 문장). 브리핑 표는 결론과 겹쳐 메일에서는 뺀다.
+    $hl = $opsSummary.headline
+    $hlColor = if ($hl) { $toneColor[[string]$hl.tone] } else { $null }
+    if (-not $hlColor) { $hlColor = "#52514e" }
+    $headlineMailHtml = if ($hl) { "<div style='margin:0 0 10px;padding:10px 12px;background:#f4f6f9;border-left:4px solid $hlColor;border-radius:6px;'><div style='font-size:14px;font-weight:700;color:#0b0b0b;'>$(Get-HtmlText $hl.title)</div><div style='font-size:12.5px;color:#3d3b37;line-height:1.6;margin-top:3px;'>$(Get-HtmlText $hl.text)</div></div>" } else { "" }
     $briefMailHtml = if ($briefRows.Count) { "<div style='margin:0 0 10px;padding:10px 12px;background:#eef4fc;border-radius:6px;'><div style='font-size:12px;font-weight:700;color:#0b0b0b;margin-bottom:4px;'>오늘의 브리핑</div><table cellpadding=0 cellspacing=0 style='border-collapse:collapse;'>$($briefRows -join '')</table></div>" } else { "" }
     $opsHtml = @"
 <div style="margin:16px 0;padding:13px 15px;background:#ffffff;border:1px solid #e1e0d9;border-radius:8px;">
   <div style="font-size:12px;font-weight:700;color:#0b0b0b;margin-bottom:4px;">$($opsSummary.title)</div>
-  $briefMailHtml
+  $headlineMailHtml
   $tileHtml
   <div style="font-size:12px;font-weight:700;color:#0b0b0b;">지금 주목할 점</div>
   <div style="font-size:12.5px;color:#0b0b0b;margin:4px 0 10px;line-height:1.6;">$($mailHlLines -join '<br>')</div>
   <table width="100%" cellpadding=4 cellspacing=0 style="margin-top:6px;font-size:12.5px;color:#0b0b0b;">
-    <tr style="font-size:10.5px;color:#898781;"><td>지표 (최근 흐름)</td><td align=right>현재</td><td align=right>단기</td><td align=right>중기</td><td align=right>1년</td><td align=right>예상(4주 후)</td></tr>
+    <tr style="font-size:10.5px;color:#898781;"><td>지표</td><td align=right>현재</td><td align=right>1개월</td><td align=right>3개월</td><td align=right>1년</td><td align=right>1개월 뒤 예상</td></tr>
     $($opsRowHtml -join "")
   </table>
-  <div style="font-size:10.5px;color:#898781;margin-top:8px;">단기는 4주, 중기는 13주입니다(월간 지표는 1개월, 3개월). 빨강은 비용 상승, 초록은 비용 하락이며, 배경색은 평소 변동폭보다 크게 움직인 칸입니다. $($opsSummary.method) 예상은 4주(1개월) 후 범위이며 사건과 정책 변화는 반영하지 않습니다.</div>
+  <div style="font-size:10.5px;color:#898781;margin-top:8px;">1개월, 3개월, 1년 칸은 지금 값과 그만큼 전 값의 차이입니다. 빨강은 비용 상승, 초록은 비용 하락이며, 배경색은 평소보다 크게 움직인 칸입니다.</div>
 </div>
 "@
 }

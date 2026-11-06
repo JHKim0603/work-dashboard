@@ -137,10 +137,12 @@
   .update-btn:hover { filter: brightness(1.08); }
   .update-btn:focus-visible { outline: 2px solid var(--ink-primary); outline-offset: 2px; }
   .update-btn .ico { font-size: 14px; line-height: 1; }
+  .update-btn.alt { background: var(--surface-raised); color: var(--accent); border: 1px solid var(--accent); }
   .update-hint {
     font-size: 12px; color: var(--ink-muted); margin-top: 6px; text-align: right; line-height: 1.5;
   }
-  .topbar .actions { display: flex; flex-direction: column; align-items: flex-end; }
+  .topbar .actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+  body.exec .topbar .update-btn:not(.alt) { display: none; }
 
   .wrap { max-width: var(--page-max); margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
   /* 구역 바로가기. 페이지가 길어 아래 구역까지 스크롤해야 했다. 위에 붙어 따라온다. */
@@ -528,6 +530,47 @@
   .ops-table td.hd2 { background: var(--down-2); }
   /* 한눈 요약: 분야별 타일 → 지금 주목할 점 → 지표 표. 화면 폭에 따라 타일 줄 수와 배치가 바뀐다. */
   .ops-card { padding: 16px 18px 14px; }
+  /* 한 줄 결론: 요약판 맨 위. 경영진이 첫 화면에서 '물류비가 오르나 내리나'를 바로 읽게 한다. */
+  .ops-head { border-left: 5px solid var(--ink-muted); background: var(--accent-wash); border-radius: 8px; padding: 12px 16px; margin: 0 0 12px; }
+  .ops-head.up { border-left-color: var(--bad); }
+  .ops-head.down { border-left-color: var(--good); }
+  .ops-head.mixed { border-left-color: var(--warn); }
+  .oh-title { font-size: 19px; font-weight: 750; color: var(--ink-primary); line-height: 1.35; }
+  .oh-text { font-size: 14px; color: var(--ink-secondary); line-height: 1.65; margin-top: 4px; }
+  /* 분야 타일: 왼쪽 큰 세 칸은 물류팀이 주로 보는 분야, 오른쪽 작은 두 칸은 참고 지표 */
+  .kpi-wrap { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); gap: 10px; margin-bottom: 14px; }
+  .kpi-main { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .kpi-ref { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-content: start; }
+  .kpi-ref-title { font-size: 12px; font-weight: 650; color: var(--ink-muted); margin: -2px 0 -4px; }
+  .kpi-tile.ref { padding: 8px 12px; }
+  .kpi-tile.ref .kt-word { font-size: 16px; margin: 0 0 2px; }
+  .kt-spark { display: block; width: 100%; height: 30px; margin: 4px 0 2px; overflow: visible; }
+  .kt-spark path { fill: none; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .kt-spark .up { stroke: var(--bad); }
+  .kt-spark .down { stroke: var(--good); }
+  .kt-spark .mixed { stroke: var(--warn); }
+  .kt-spark .flat { stroke: var(--ink-muted); }
+  .kt-second { font-size: 12.5px; color: var(--ink-muted); line-height: 1.45; }
+  .kt-mean { font-size: 13px; color: var(--ink-primary); line-height: 1.5; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--gridline); }
+  .kpi-tile.ref .kt-mean { font-size: 12.5px; margin-top: 4px; padding-top: 4px; }
+  .ops-brief-more { margin: 0 0 12px; }
+  .ops-brief-more > summary { cursor: pointer; font-size: 13px; font-weight: 650; color: var(--accent); width: fit-content; margin-bottom: 6px; }
+  .ops-brief-more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ops-brief-more .ops-brief { margin: 0; }
+  @media screen and (max-width: 1099px) {
+    .kpi-wrap { grid-template-columns: minmax(0, 1fr); }
+    .kpi-ref { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kpi-ref-title { grid-column: 1 / -1; margin: 0; }
+  }
+  @media screen and (max-width: 639px) {
+    .kpi-main { grid-template-columns: minmax(0, 1fr); }
+    .oh-title { font-size: 17px; }
+  }
+  /* 경영진 요약 보기(?view=exec): 결론과 분야 타일만. 결론 문장이 주목할 점을 이미 담고 있어 표와 주목할 점 목록은 숨긴다. */
+  body.exec #jumpNav, body.exec #secTop, body.exec #priceGroups, body.exec #secCompare, body.exec #secNews,
+  body.exec .ops-body { display: none !important; }
+  .exec-note { display: none; font-size: 12.5px; color: var(--ink-muted); margin-top: 10px; }
+  body.exec .exec-note { display: block; }
   .ops-title { font-size: 15px; font-weight: 700; margin: 0 0 10px; color: var(--ink-primary); }
   .kpi-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
   .kpi-tile {
@@ -551,13 +594,14 @@
   .kt-chg.down { color: var(--good); }
   .kt-sub { font-size: 12px; color: var(--ink-muted); line-height: 1.45; margin-top: 2px; }
   @media screen and (max-width: 1099px) { .kpi-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  /* 휴대폰: 타일 두 칸. 보조 설명 줄은 숨겨 첫 화면에 타일이 다 들어오게 한다(내륙운송료는 첫 줄만). */
+  @media screen and (max-width: 639px) { .kt-spark { height: 26px; } }
+  /* 휴대폰: 큰 타일은 한 줄에 하나라 보조 줄(유류세 시나리오, 단위)까지 보인다. 참고 지표 두 칸은 좁아 단위를 숨긴다. */
   @media screen and (max-width: 639px) {
     .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
     .kpi-tile { padding: 8px 10px; }
     .kt-word { font-size: 18px; }
-    .kt-sub { display: none; }
-    .kt-lead .ou { display: none; }
+    .kpi-tile.ref .kt-sub { display: none; }
+    .kpi-tile.ref .kt-lead .ou { display: none; }
   }
   /* 넓은 화면(1400px 이상)은 표 옆에 '지금 주목할 점'을 두어 한 화면에 들어오게 한다. */
   .ops-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
@@ -916,7 +960,7 @@
   .up-more[open] > summary::before { content: "▾ "; }
   @media print {
     .viz-root {
-      padding: 0; background: #fff;
+      padding: 0; background: #fff; min-height: 0;
       -webkit-print-color-adjust: exact; print-color-adjust: exact;
     }
     .update-btn, .update-hint, .detail-btn, .modal-backdrop, .jump-nav, .range-btns { display: none !important; }
@@ -928,6 +972,10 @@
     .footnote, .credit { break-inside: avoid; }
     .ops-actions, .ops-method { display: none !important; }
     .kpi-row { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
+    .kpi-wrap { grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); gap: 6px; }
+    .kpi-ref { grid-template-columns: minmax(0, 1fr); }
+    .oh-title { font-size: 14px; }
+    .oh-text, .kt-mean, .kt-second { font-size: 10px; }
     .kpi-tile { padding: 6px 8px; break-inside: avoid; }
     .kt-word { font-size: 15px; }
     .kt-title, .kt-lead, .kt-chg, .kt-sub { font-size: 10px; }
@@ -942,6 +990,11 @@
     .ops-table .os, .ops-table .ou { font-size: 9.5px; }
     .trend-chip { font-size: 9.5px; padding: 0 5px; }
     #secOps { break-after: page; }
+    /* 경영진 요약 보기는 A4 한 장: 쪽 나눔 없이 출처까지 이어 찍고, 접힌 설명과 안내 문구는 뺀다. */
+    body.exec #secOps { break-after: auto; }
+    .exec-note, body.exec .ops-brief-more { display: none !important; }
+    .kpi-tile.ref .kt-mean { font-size: 10px; }
+    .kpi-tile.ref .kt-word { font-size: 13px; }
     .week-day .wd-label { font-size: 9px; }
     a { text-decoration: none; color: inherit; }
   }
@@ -961,6 +1014,7 @@
          title="GitHub Actions 화면에서 [Run workflow]를 누르면 몇 분 뒤 새 값이 반영됩니다.">
         <span class="ico">🔄</span> 지금 업데이트
       </a>
+      <a class="update-btn alt" id="viewToggle" href="?view=exec" title="결론과 분야 타일만 보여 주는 화면입니다. 주소를 그대로 보내면 같은 화면이 열립니다.">경영진 요약 보기</a>
     </div>
   </div>
 
@@ -969,6 +1023,13 @@
   <div class="wrap">
     <div id="secOps">
       <div id="opsSummary"></div>
+    </div>
+
+    <div class="price-groups" id="priceGroups"></div>
+
+    <div id="secCompare" hidden>
+      <div class="section-title">함께 보기</div>
+      <div class="card" id="cmpBox"></div>
     </div>
 
     <div class="top-row" id="secTop">
@@ -988,12 +1049,6 @@
       </div>
     </div>
 
-    <div class="price-groups" id="priceGroups"></div>
-
-    <div id="secCompare" hidden>
-      <div class="section-title">함께 보기</div>
-      <div class="card" id="cmpBox"></div>
-    </div>
 
     <div id="secNews">
       <div class="section-title">수급 뉴스</div>
@@ -1329,7 +1384,7 @@ if (!TYPHOON) {
   // the method that missed every storm that actually delayed a shipment last August. The verdict
   // is still shown, because a weak read beats none, but it must not pass as the same thing.
   const trackNote = t => t.trackOk === false
-    ? ' <span class="track-warn" title="GDACS에서 이 태풍의 전체 경로를 받지 못해 마지막 관측 위치로만 판정했습니다. 실제 경로는 더 가까웠을 수 있습니다.">경로 미확인</span>'
+    ? ' <span class="track-warn" title="GDACS에서 이 태풍의 전체 경로를 받지 못해 마지막 관측 위치로만 계산했습니다. 실제 경로는 더 가까웠을 수 있습니다.">경로 미확인</span>'
     : "";
 
   // Where this month sits in 47 years of storms. The card already showed what happened
@@ -1580,15 +1635,13 @@ function trendLine(t) {
   return `<div class="trend-line">${trendChip(t.trend, t.tone)}<span>${where}</span></div>`;
 }
 function trendExplain(t) {
-  const where = (t.band === "최고" || t.band === "최저")
-    ? `${esc(t.rangeName)} 중 <b>${esc(t.band)}치</b>입니다`
-    : `${esc(t.rangeName)} 범위에서 <b>${esc(t.band)}</b>(${posText(t)})입니다`;
-  return `<b>${esc(t.trend)}</b>로 판정했습니다.
-    최근 ${esc(t.shortLabel)} 변화는 ${pctText(t.shortPct)}, ${esc(t.longLabel)} 변화는 ${pctText(t.longPct)}입니다.
-    이 지표의 평소 ${esc(t.shortLabel)} 변동폭은 ±${t.normalMove}% 정도입니다.
-    현재 값은 ${where}.
-    <div style="color:var(--ink-muted);font-size:12.5px;margin-top:6px;">판정 기준: ${esc(t.shortLabel)}와 ${esc(t.longLabel)} 변화가 평소 변동폭의 절반을 넘으면 상승 또는 하락으로 봅니다.
-    두 기간이 같은 방향이면 추세, 방향이 다르면 조정 또는 반등으로 표시합니다.</div>`;
+  const where = (t.band === "최고" || t.band === "최저") ? `<b>${esc(t.position)}</b>` : `<b>${esc(t.position)}</b>(${posText(t)})`;
+  return `지금 상태는 <b>${esc(t.trend)}</b>입니다.
+    최근 1개월 변화는 ${pctText(t.shortPct)}, 3개월 변화는 ${pctText(t.longPct)}입니다.
+    이 지표는 평소 한 달에 ±${t.normalMove}% 정도 움직입니다.
+    지금 값은 ${where}입니다.
+    <div style="color:var(--ink-muted);font-size:12.5px;margin-top:6px;">보는 기준: 1개월과 3개월 변화가 평소 움직임의 절반을 넘으면 상승 또는 하락으로 봅니다.
+    두 기간이 같은 방향이면 추세, 방향이 다르면 '상승 후 조정' 또는 '하락 후 반등'으로 적습니다.</div>`;
 }
 
 // ---- 예상치 표시 ----------------------------------------------------------------------
@@ -1598,7 +1651,8 @@ function fcCls(dir) { return dir === "상승 예상" ? "up" : dir === "하락 �
 const FC_WIDE_PCT = 30;
 function fcDir(h) {
   const w = (typeof h.highPct === "number" && typeof h.lowPct === "number") ? h.highPct - h.lowPct : null;
-  return h.direction === "보합권" && w !== null && w > FC_WIDE_PCT ? "예측 어려움" : h.direction;
+  const dir = h.direction === "보합권" ? "지금과 비슷" : h.direction;   // 예전 자료의 이름도 새 이름으로
+  return dir === "지금과 비슷" && w !== null && w > FC_WIDE_PCT ? "예측 어려움" : dir;
 }
 function fcRange(h, cur) {
   const txt = `${esc(cur || "")}${fmtNum(h.low)}~${esc(cur || "")}${fmtNum(h.high)}`;
@@ -1680,7 +1734,7 @@ function forecastSection(c) {
       ${rows}
     </table>
     <div class="m-note">${how}<br>예상 범위는 과거 시험에서 실제 값의 약 80%가 들어오도록 정했습니다.
-      범위 전체가 현재 값보다 높거나 낮을 때만 상승 예상 또는 하락 예상으로 표시하고, 그 밖에는 보합권으로 표시합니다.
+      범위 전체가 현재 값보다 높거나 낮을 때만 상승 예상 또는 하락 예상으로 표시하고, 그 밖에는 '지금과 비슷'으로 표시합니다.
       다만 범위 폭이 현재 값의 ${FC_WIDE_PCT}%를 넘으면 방향을 말하기 어려워 예측 어려움으로 표시합니다.
       ${esc(fc.note || "")}</div>`;
 }
@@ -1758,13 +1812,13 @@ function trendSentence(c) {
     const a = Math.abs(m3.pct);
     const word = m3.pct >= 0 ? "상승" : "하락";
     const pc = `${m3.pct >= 0 ? "+" : ""}${m3.pct.toFixed(1)}%`;
-    dir = a < 2 ? `최근 변화는 ${pc}로 <b>보합권</b>입니다.`
+    dir = a < 2 ? `최근 변화가 ${pc}라 <b>큰 변화가 없습니다</b>.`
         : a < 10 ? `최근 ${pc} 변해 완만한 <b>${word}세</b>입니다.`
         : `최근 ${pc} 변해 뚜렷한 <b>${word}세</b>입니다.`;
   }
 
-  const band = posPct >= 80 ? "<b>상단</b>" : posPct >= 55 ? "중상단"
-             : posPct >= 45 ? "<b>중간</b>" : posPct >= 20 ? "중하단" : "<b>하단</b>";
+  const band = posPct >= 80 ? "<b>높은 편</b>" : posPct >= 55 ? "중간보다 높은 곳"
+             : posPct >= 45 ? "<b>중간</b>" : posPct >= 20 ? "중간보다 낮은 곳" : "<b>낮은 편</b>";
 
   // currency-prefixed series ($82.85) vs unit-suffixed ones (1,845 원/L)
   const money = v => c.currency ? `${c.currency}${fmtNum(v)}` : `${fmtNum(v)}${c.unit ? " " + c.unit : ""}`;
@@ -1873,7 +1927,7 @@ function kcciLaneSection(lanes) {
   });
   return `<div class="m-section-title">항로별 운임 (부산 출발, 40피트 1개 $, ${esc(lanes[0].label)} 기준)</div>
     <table class="sf-table lane-table">
-      <tr><th>항로</th><th>현재</th><th>전주 대비</th><th>13주</th><th>1년</th><th>최근 1년</th></tr>
+      <tr><th>항로</th><th>현재</th><th>전주 대비</th><th>3개월</th><th>1년</th><th>최근 1년</th></tr>
       ${rows}
     </table>
     <div class="m-note">빨강은 운임 상승, 초록은 운임 하락입니다. 근해(중국·일본·동남아)는 운임 수준이 낮아 같은 금액 변화도 비율로는 크게 나타납니다.</div>`;
@@ -1944,7 +1998,7 @@ function openDetail(id) {
       ${c.krwPerUnit ? `<div class="price-krw">원화 환산 약 ${fmtNum(c.krwPerUnit)}원/톤 <span>(1위안 ${fmtNum(c.krwRate, 1)}원 기준)</span></div>` : ""}
       <div class="chart-wrap" id="wrap-${chartId}">${priceChartSvg(shown, chartId, CH, evsFor(id))}<div class="ch-tip"></div></div>
       <div class="m-stats">${statWindowsFor(pts).map(w => statBox(w.label, changeOver(pts, w.days))).join("")}</div>
-      ${c.trend ? `<div class="m-section-title">경향 판정</div><div class="m-read">${trendExplain(c.trend)}</div>`
+      ${c.trend ? `<div class="m-section-title">지금 상태</div><div class="m-read">${trendExplain(c.trend)}</div>`
         : `<div class="m-section-title">추이 요약</div><div class="m-read">${trendSentence(c)}</div>`}
       ${forecastSection(c)}
       ${seasonalSection(c)}
@@ -1969,7 +2023,7 @@ function openDetail(id) {
       ${sfHistoryTable(c.history || [], c)}
       ${notes.length ? `<div class="m-note" style="margin-top:6px;">* ${notes.join("<br>* ")}</div>` : ""}
       <div class="m-section-title">기준 유가</div>
-      <div class="m-read">다음 판정은 <b>${esc(c.baseWindow)} 평균 ${sfWon(c.baseFuel)}원</b>${c.baseProvisional ? "(잠정)" : ""}과 비교합니다.
+      <div class="m-read">다음 조정은 <b>${esc(c.baseWindow)} 평균 ${sfWon(c.baseFuel)}원</b>${c.baseProvisional ? "(잠정)" : ""}과 비교해 정합니다.
         기준은 현재 운임에 반영된 산정 기간의 유가입니다. 동결된 분기는 기준을 바꾸지 않습니다.
         ${c.pending && c.applied ? `<br>현재 운임은 ${esc(c.applied.window)} 평균 ${sfWon(c.applied.fuel)}원 기준입니다.
           ${esc(c.pending.effective)}부터는 ${esc(c.pending.window)} 평균 기준으로 ${esc(c.pending.verdict)}된 운임이 적용될 예정입니다.` : ""}</div>
@@ -1977,10 +2031,10 @@ function openDetail(id) {
         <div class="chart-wrap">${sfEvolutionSvg(c.evolution, c.baseFuel, c.threshold, false)}</div>
         <div class="m-note" style="margin-top:6px;">${sfMargin(c.base.diff, c.threshold)}.
           날마다 그날까지의 오피넷 전국평균으로 계산하고, 남은 날은 그날 값이 유지된다고 가정한 산정 기간 평균입니다.
-          띠 안에 있으면 동결, 위 선을 넘으면 인상, 아래 선을 넘으면 인하 판정입니다.</div>` : ""}
+          띠 안에 있으면 동결, 위 선을 넘으면 인상, 아래 선을 넘으면 인하입니다.</div>` : ""}
       <div class="m-section-title">산정 기간 ${esc(c.window.label)} 월평균 경유가 (오피넷 전국평균)</div>
       ${sfMonthTable(c.window.months, s ? s.current.months : null)}
-      <div class="m-section-title">판정</div>
+      <div class="m-section-title">다음 조정 예상</div>
       <div class="m-read">${esc(c.base.assumption)}하면 산정 기간 평균은 <b>${sfWon(c.base.avg)}원</b>입니다.
         기준 대비 <b>${sfSigned(c.base.diff)}원</b>이므로 ${esc(c.window.applyLabel)} 적용분은 <b>${esc(c.base.verdict)}</b> 예상입니다.
         ${s ? `<br><br><b>${esc(s.label)}</b>: 다음 날부터 경유 가격이 ${sfWon(s.won)}원${s.taxWon && s.taxWon !== s.won ? `(유류세 ${sfWon(s.taxWon)}원과 부가세)` : ""} 오른다고 가정했습니다.
@@ -1989,7 +2043,7 @@ function openDetail(id) {
       ${c.base.verdict !== "동결" ? sfImpactTable(c.base.impact, `${c.window.applyLabel} 적용 예상 운임 (기본 가정, 20FT 왕복, 원)`, c.rateFrom) : ""}
       ${s && s.trigger ? sfImpactTable(s.trigger.impact, `${s.trigger.applyLabel} 적용 예상 운임 (유류세 인하 종료 시, 20FT 왕복, 원)`, c.rateFrom) : ""}
       ${sfWhatIfHtml(c)}
-      <div class="m-note">판정 기준: 평균유가 산정 기간(3개월)의 경유 평균이 현재 운임에 반영된 유가보다 ${c.threshold}원 이상
+      <div class="m-note">조정 기준: 평균유가 산정 기간(3개월)의 경유 평균이 현재 운임에 반영된 유가보다 ${c.threshold}원 이상
         오르거나 내리면 운임을 다시 고시합니다. 조정된 운임은 산정 기간이 끝난 뒤 두 달째부터 3개월간 적용됩니다.<br>
         산정 기간 평균은 월평균 3개의 단순평균입니다. 월평균은 매일 받은 오피넷 전국평균으로 계산하므로
         오피넷 월간 평균과 1원 안팎 차이가 날 수 있습니다(26년 9월: 이 페이지 1,843.6원, 오피넷 1,844원).
@@ -2582,15 +2636,27 @@ if (!HAS_KCL) {
 document.querySelectorAll("#priceGroups .chart-wrap").forEach(attachChartHover);
 wireFxCalc();
 
+// 경영진 요약 보기(?view=exec): 결론, 분야 타일, 주목할 점만 보이게 한다. 주소를 그대로 보내면 같은 화면이 열린다.
+(function setupExecView() {
+  const exec = new URLSearchParams(location.search).get("view") === "exec";
+  if (exec) document.body.classList.add("exec");
+  const t = document.getElementById("viewToggle");
+  if (t) {
+    t.textContent = exec ? "전체 화면 보기" : "경영진 요약 보기";
+    t.href = exec ? location.pathname : "?view=exec";
+  }
+})();
+
 (function renderJumpNav() {
   const nav = document.getElementById("jumpNav");
   if (!nav) return;
-  const links = [["secOps", "핵심 지표"], ["secTop", "날씨·일정·태풍"]];
+  // 화면 순서와 같게: 핵심 지표, 가격 구역들, (함께 보기는 그 구역이 직접 끼운다), 날씨·일정·태풍, 수급 뉴스
+  const links = [["secOps", "핵심 지표"]];
   document.querySelectorAll("#priceGroups > [id]").forEach(g => {
     const t = g.querySelector(".section-title");
     if (t) links.push([g.id, t.textContent.trim()]);
   });
-  links.push(["secNews", "수급 뉴스"]);
+  links.push(["secTop", "날씨·일정·태풍"], ["secNews", "수급 뉴스"]);
   nav.innerHTML = links.map(([id, label]) => `<a href="#${id}">${esc(label)}</a>`).join("");
 })();
 
@@ -2598,17 +2664,19 @@ wireFxCalc();
 function opsReportText() {
   const when = FETCHED_AT ? FETCHED_AT.slice(0, 16).replace("T", " ") : "";
   const lines = [`[물류팀 운영 참고지표] ${when} 기준`, ""];
+  const headR = OPS_SUMMARY.headline;
+  if (headR) lines.push("■ 결론", `${headR.title}.`, headR.text, "");
   const brief = (OPS_SUMMARY.brief || []).filter(b => b && b.text);
   if (brief.length) {
-    lines.push("■ 오늘의 브리핑");
+    lines.push("■ 분야별 설명");
     brief.forEach(b => lines.push(`- ${b.label}: ${b.text}`));
     lines.push("");
   }
   if ((OPS_SUMMARY.tiles || []).length) {
-    lines.push("■ 분야별 흐름");
+    lines.push("■ 분야별 상태");
     OPS_SUMMARY.tiles.forEach(t => {
       const detail = t.lead
-        ? `${t.lead.name} ${t.lead.currency || ""}${fmtNum(t.lead.value)}${t.change && t.change.pct !== null && t.change.pct !== undefined ? `, ${t.change.label} ${pctText(t.change.pct, true)}` : ""}`
+        ? `${t.lead.name} ${reportValue(t.lead)}${t.change && t.change.pct !== null && t.change.pct !== undefined ? `, ${t.change.label} ${pctText(t.change.pct, true)}` : ""}`
         : (t.lines || []).join(", ");
       lines.push(`- ${t.title}: ${t.word}${detail ? ` (${detail})` : ""}`);
     });
@@ -2644,12 +2712,22 @@ function opsReportText() {
 
 // 주간 보고용 요약. 같은 내용을 여러 번 쓰지 않게 '한 줄 요약 → 분야별 한 줄 → 다가오는 일정'만 담는다.
 // 분야 줄에는 지금 값과 전주 대비(월간 지표는 전월 대비)를 적고, 1년 최고·최저나 흐름이 바뀐 지표는 그 줄 안에 표시한다.
+// 보고용 글의 값 표시. 위안 선물(PP·PE)은 "톤당 약 194만원(¥9,544)", 환율은 "1,356원"처럼 읽기 쉬운 꼴로 쓴다.
+// notes(전주 대비 등)는 괄호 하나에 함께 넣어 "(¥9,544) (전주 …)"처럼 괄호가 겹치지 않게 한다.
+function reportValue(x, unitFn, notes) {
+  const raw = `${x.currency || ""}${fmtNum(x.value)}`;
+  const n = notes && notes.length ? notes.join(", ") : "";
+  if (x.krw) return `톤당 약 ${Math.round(x.krw / 10000).toLocaleString("ko-KR")}만원(${raw}${n ? ", " + n : ""})`;
+  const v = x.unit === "원/USD" ? `${Math.round(x.value).toLocaleString("ko-KR")}원` : raw + (unitFn ? unitFn(x) : "");
+  return v + (n ? ` (${n})` : "");
+}
+
 function weeklyReportText() {
   const d = FETCHED_AT ? new Date(FETCHED_AT) : new Date();
   const DOW = "일월화수목금토";
   const lines = [`[물류 참고지표 주간 요약] ${d.getMonth() + 1}/${d.getDate()}(${DOW[d.getDay()]}) 기준`, ""];
-  const flow = ((OPS_SUMMARY.brief || []).find(b => b && b.label === "흐름") || {}).text;
-  if (flow) lines.push("■ 요약", flow, "");
+  const head = OPS_SUMMARY.headline;
+  if (head) lines.push("■ 요약", `${head.title}.`, head.text, "");
   const rowsById = {};
   (OPS_SUMMARY.rows || []).forEach(r => { rowsById[r.id] = r; });
   const tileByKey = {};
@@ -2714,8 +2792,8 @@ function weeklyReportText() {
       const notes = [];
       if (ch !== null) notes.push(`${monthly ? "전월" : "전주"} ${pctText(ch, true)}`);
       if (r.rangeName === "1년" && (r.band === "최고" || r.band === "최저")) notes.push(`1년 중 ${r.band}`);
-      if (r.changed && r.prevTrend) notes.push(`흐름이 ${r.prevTrend}에서 ${r.trend}${josaRo(r.trend)} 바뀜`);
-      return `${r.short || r.name} ${r.currency || ""}${fmtNum(r.value)}${unitOf(r)}${notes.length ? `(${notes.join(", ")})` : ""}`;
+      if (r.changed && r.prevTrend) notes.push(`지난주 ${r.prevTrend}에서 ${r.trend}${josaRo(r.trend)} 바뀜`);
+      return `${r.short || r.name} ${reportValue(r, unitOf, notes)}`;
     });
     const t = tileByKey[cat.key];
     lines.push(`- ${cat.title}${t ? " " + t.word : ""}: ${parts.join(", ")}`);
@@ -2729,7 +2807,7 @@ function weeklyReportText() {
       lines.push(`- ${dt.getMonth() + 1}/${dt.getDate()}(${DOW[dt.getDay()]}) ${x.title}${x.note && x.kind === "정책" && /예상/.test(x.note) ? `(${x.note})` : ""}`);
     });
   }
-  lines.push("", `흐름은 4주와 13주 변화를 지표별 평소 변동폭과 비교한 자동 판정입니다. 대시보드: ${OPS_SUMMARY.dashboardUrl}`);
+  lines.push("", `상승과 하락은 1개월과 3개월 변화를 지표마다 평소 움직임과 비교해 자동으로 정합니다. 대시보드: ${OPS_SUMMARY.dashboardUrl}`);
   return lines.join("\n");
 }
 
@@ -2827,14 +2905,14 @@ function hlNewsHtml(h) {
       ? `${esc(r.currency || "")}${fmtNum(r.value)} <span class="ou">${esc(r.unit || "")}</span>` : "";
     const clickable = CARD_BY_ID[r.detail] ? ` data-ops="${esc(r.detail)}" tabindex="0"` : "";
     const changed = r.changed && r.prevTrend
-      ? `<span class="chg-flag" title="1주 전 자료로 판정하면 ${esc(r.prevTrend)}였습니다">지난주 ${esc(r.prevTrend)}</span>` : "";
+      ? `<span class="chg-flag" title="1주 전 자료로 보면 ${esc(r.prevTrend)}였습니다">지난주 ${esc(r.prevTrend)}</span>` : "";
     return `<tr class="ops-row"${clickable}>
       <td class="c-name"><div class="on">${esc(r.name)}${trendChip(r.trend, r.tone)}${changed}</div>${(r.position || r.longPosition) ? `<div class="os">${esc([r.position, r.longPosition].filter(Boolean).join(", "))}</div>` : ""}</td>
       <td class="c-val">${val}${r.label ? `<div class="os">${esc(r.label)}</div>` : ""}</td>
       <td class="c-spark mid">${spark(r)}</td>
-      ${pctTd(r.shortPct, r.thrS, "c-s", r.shortLabel || "4주")}
-      ${pctTd(r.longPct, r.thrL, "c-l", r.longLabel || "13주")}
-      ${pctTd(r.yoyPct, r.thrY, "c-y", "1년")}
+      ${pctTd(r.shortPct, r.thrS, "c-s", "1개월 변화")}
+      ${pctTd(r.longPct, r.thrL, "c-l", "3개월 변화")}
+      ${pctTd(r.yoyPct, r.thrY, "c-y", "1년 변화")}
       <td class="c-fc">${fcCell(r)}</td>
     </tr>`;
   };
@@ -2851,21 +2929,57 @@ function hlNewsHtml(h) {
   const rest = tableRows.filter(r => !placed.has(r.id));
   if (rest.length) bodyRows += (placed.size ? `<tr class="ops-cat"><td colspan="7">기타</td></tr>` : "") + rest.map(rowHtml).join("");
 
-  // 분야별 한눈 요약 타일
+  // 분야 타일. 큰 세 칸(해상운임, 내륙운송료, 부자재)은 값, 3개월 변화, 6개월 추이, 둘째 지표, 우리 비용에 주는 뜻을 담고,
+  // 작은 두 칸(환율, 유가)은 참고 지표로 값과 변화, 뜻만 담는다.
   const ARROW = { up: "▲", down: "▼", mixed: "◆", flat: "●" };
-  const tiles = (OPS_SUMMARY.tiles || []).map(t => {
+  const UNIT_WORD = { "/FEU": "(40ft 1개)", "/bbl": "(배럴당)", "/mt": "(톤당)", "원/USD": "", "pt": "", "USD": "" };
+  const leadValue = lead => {
+    // 위안 선물(PP·PE)은 원화 톤당 값을 앞에 보인다.
+    if (lead.krw) return `<b>톤당 약 ${Math.round(lead.krw / 10000).toLocaleString("ko-KR")}만원</b>`;
+    const v = Math.abs(lead.value) >= 1000 ? Math.round(lead.value).toLocaleString("ko-KR") : fmtNum(lead.value);
+    const u = String(lead.unit || "");
+    const unit = u === "원/USD" ? "원" : "";
+    const word = UNIT_WORD[u] !== undefined ? UNIT_WORD[u] : u;
+    return `<b>${esc(lead.currency || "")}${v}${unit}</b>${word ? ` <span class="ou">${esc(word)}</span>` : ""}`;
+  };
+  const tileSpark = t => {
+    if (!t.lead || !t.lead.id) return "";
+    const pts = seriesOf({ id: t.lead.id });
+    if (pts.length < 3) return "";
+    const lastD = parseLabel(pts[pts.length - 1].label);
+    let use = lastD ? pts.filter(p => { const d = parseLabel(p.label); return d && (lastD - d) / 86400000 <= 183; }) : pts;
+    if (use.length < 3) use = pts.slice(-Math.min(pts.length, 12));
+    const vals = use.map(p => p.value), { lo, span } = yRange(vals);
+    const W = 120, H = 30;
+    const d = use.map((p, i) => `${i ? "L" : "M"}${(i / (use.length - 1) * W).toFixed(1)},${(2 + (1 - (p.value - lo) / span) * (H - 4)).toFixed(1)}`).join(" ");
+    return `<svg class="kt-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="최근 6개월 추이"><path d="${d}" class="${esc(t.tone || "flat")}"/></svg>`;
+  };
+  const tileHtml = t => {
     const click = CARD_BY_ID[t.detail] ? ` data-ops="${esc(t.detail)}" role="button" tabindex="0"` : "";
-    const body = t.lead
-      ? `<div class="kt-lead">${esc(t.lead.name)} <b>${esc(t.lead.currency || "")}${fmtNum(t.lead.value)}</b>${t.lead.unit ? ` <span class="ou">${esc(t.lead.unit)}</span>` : ""}</div>
-         ${t.change && t.change.pct !== null && t.change.pct !== undefined ? `<div class="kt-chg ${pctCls(t.change.pct)}">${esc(t.change.label)} ${pctText(t.change.pct)}</div>` : ""}
-         ${t.count ? `<div class="kt-sub">${esc(t.count)}</div>` : ""}`
-      : (t.lines || []).map((l, i) => `<div class="${i ? "kt-sub" : "kt-lead"}">${esc(l)}</div>`).join("");
-    return `<div class="kpi-tile ${esc(t.tone || "flat")}"${click}>
+    const ref = t.role === "ref";
+    let body;
+    if (t.lead) {
+      body = `<div class="kt-lead">${esc(t.lead.name)} ${leadValue(t.lead)}</div>
+        ${t.change && t.change.pct !== null && t.change.pct !== undefined ? `<div class="kt-chg ${pctCls(t.change.pct)}">${esc(t.change.label)} ${pctText(t.change.pct)}</div>` : ""}
+        ${ref ? "" : tileSpark(t)}
+        ${!ref && t.second && t.second.pct !== null && t.second.pct !== undefined ? `<div class="kt-second">${esc(t.second.name)} ${esc(t.second.label)} ${pctText(t.second.pct)}</div>` : ""}`;
+    } else {
+      body = (t.lines || []).map((l, i) => `<div class="${i ? "kt-sub" : "kt-lead"}">${esc(l)}</div>`).join("");
+    }
+    return `<div class="kpi-tile ${ref ? "ref " : "main "}${esc(t.tone || "flat")}"${click}>
         <div class="kt-title">${esc(t.title)}</div>
         <div class="kt-word">${ARROW[t.tone] || ""} ${esc(t.word)}</div>
         ${body}
+        ${t.meaning ? `<div class="kt-mean">${esc(t.meaning)}</div>` : ""}
       </div>`;
-  }).join("");
+  };
+  const allTiles = OPS_SUMMARY.tiles || [];
+  const mainTiles = allTiles.filter(t => t.role !== "ref").map(tileHtml).join("");
+  const refTiles = allTiles.filter(t => t.role === "ref").map(tileHtml).join("");
+  const tiles = allTiles.length ? `<div class="kpi-wrap"><div class="kpi-main">${mainTiles}</div>` +
+    (refTiles ? `<div class="kpi-ref"><div class="kpi-ref-title">참고 지표</div>${refTiles}</div>` : "") + `</div>` : "";
+  const head = OPS_SUMMARY.headline;
+  const headHtml = head ? `<div class="ops-head ${esc(head.tone || "flat")}"><div class="oh-title">${esc(head.title)}</div><div class="oh-text">${esc(head.text)}</div></div>` : "";
 
   const hl = (OPS_SUMMARY.highlights || []).map(h => typeof h === "string" ? { tag: "", text: h } : h);
   // 지금 주목할 점은 5건까지 먼저 보이고 나머지는 접어 둔다.
@@ -2881,26 +2995,28 @@ function hlNewsHtml(h) {
         <button class="ops-btn" id="opsCsv">📥 CSV 내려받기</button>
       </div>
     </div>`;
-  // 오늘의 브리핑: 생성 스크립트가 분야 흐름, 내륙운송료, 환율, 일정을 문장으로 만든다.
+  // 분야별 설명(생성 스크립트가 해상운임, 내륙운송료, 부자재, 환율·유가, 일정을 문장으로 만든다). 결론과 타일 아래에 접어 둔다.
   const brief = (OPS_SUMMARY.brief || []).filter(b => b && b.text);
-  const briefHtml = brief.length ? `<div class="ops-brief"><div class="ops-brief-title">오늘의 브리핑</div><dl>${brief.map(b =>
-    `<dt>${esc(b.label)}</dt><dd>${esc(b.text)}</dd>`).join("")}</dl></div>` : "";
+  const briefHtml = brief.length ? `<details class="ops-brief-more"><summary>분야별 설명 자세히 보기</summary><div class="ops-brief"><dl>${brief.map(b =>
+    `<dt>${esc(b.label)}</dt><dd>${esc(b.text)}</dd>`).join("")}</dl></div></details>` : "";
   box.innerHTML = `<div class="card ops-card">
       <div class="ops-title">${esc(OPS_SUMMARY.title || "물류 운영 핵심 지표")}</div>
+      ${headHtml}
+      ${tiles}
       ${briefHtml}
-      ${tiles ? `<div class="kpi-row">${tiles}</div>` : ""}
       <div class="ops-body">
         ${side}
         <div class="ops-main">
           <div class="ops-legend"><b class="up">빨강</b>은 비용 상승, <b class="down">초록</b>은 비용 하락입니다. 칸 배경이 진할수록 평소보다 크게 움직였습니다.
-            <details class="ops-more"><summary>표 읽는 법</summary><p>최근 흐름은 4주와 13주 변화로 판정하며, 지난주와 방향이 달라진 지표에는 <span class="chg-flag" style="margin-left:0;">지난주 판정</span>을 함께 적습니다.
-              예상 범위는 과거 자료로 시험해 정확도가 높았던 방법으로 계산하며, 사건과 정책 변화는 반영하지 않습니다. 타일이나 행을 누르면 상세 화면이 열립니다.</p></details></div>
+            <details class="ops-more"><summary>표 읽는 법</summary><p>상승과 하락은 최근 1개월과 3개월 변화를 지표마다 평소 움직임과 비교해 정합니다. 지난주와 상태가 달라진 지표에는 <span class="chg-flag" style="margin-left:0;">지난주 상태</span>를 함께 적습니다.
+              예상 범위는 과거 자료로 시험해 잘 맞았던 방법으로 계산하며, 사건이나 정책 변화는 반영하지 않습니다. 타일이나 행을 누르면 상세 화면이 열립니다.</p></details></div>
           <div class="ops-scroll"><table class="ops-table">
-            <tr class="ops-hdr"><th>지표 (최근 흐름)</th><th>현재</th><th class="c-spark">최근 6개월</th><th>단기 변화<br>(4주·1개월)</th><th>중기 변화<br>(13주·3개월)</th><th>1년 대비</th><th>단기 예상<br>(4주·1개월 후)</th></tr>
+            <tr class="ops-hdr"><th>지표 (지금 상태)</th><th>현재</th><th class="c-spark">최근 6개월</th><th>1개월 변화</th><th>3개월 변화</th><th>1년 변화</th><th>1개월 뒤 예상</th></tr>
             ${bodyRows}
           </table></div>
         </div>
       </div>
+      <div class="exec-note">전체 지표와 상세 화면은 위의 [전체 화면 보기]에서 볼 수 있습니다.</div>
     </div>`;
   box.addEventListener("click", e => {
     if (e.target.closest("#opsWeekly")) { opsCopy(e.target.closest("#opsWeekly"), weeklyReportText); return; }
@@ -3146,7 +3262,7 @@ function hlNewsHtml(h) {
     const a = document.createElement("a");
     a.href = "#secCompare";
     a.textContent = "함께 보기";
-    nav.insertBefore(a, nav.querySelector('a[href="#secNews"]'));
+    nav.insertBefore(a, nav.querySelector('a[href="#secTop"]') || nav.querySelector('a[href="#secNews"]'));
   }
   let lastW = plot ? plot.clientWidth : 0, rt = null;
   window.addEventListener("resize", () => {
