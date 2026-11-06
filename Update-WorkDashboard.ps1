@@ -2853,7 +2853,14 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
         $sec = @($rows | Where-Object { [string]$_.id -ne [string]$lead.id })[0]
         $second = if ($sec) { [PSCustomObject]@{ name = $sec.short; label = $sec.longLabel; pct = $sec.longPct } } else { $null }
         # 이 분야가 우리 비용에 주는 뜻(config.opsSummary.categories[].meaning 의 up·down·flat·mixed)
-        $mean = if ($cat.meaning -and $cat.meaning.$tone) { [string]$cat.meaning.$tone } else { "" }
+        # 대표 지표가 방향을 바꾸는 중이면(상승 후 조정, 하락 후 반등) 그 뜻을 그대로 쓴다. config 의 mixed 문장은
+        # '항목별로 다름'(오르는 지표와 내리는 지표가 같은 수)일 때의 뜻이라 여기에 맞지 않는다.
+        $mean = switch ($word) {
+            "상승 후 조정" { "3개월 전보다 높지만 최근 1개월은 내리고 있습니다." }
+            "하락 후 반등" { "3개월 전보다 낮지만 최근 1개월은 오르고 있습니다." }
+            "방향 전환"    { "최근 1개월 들어 움직임의 방향이 바뀌고 있습니다." }
+            default { if ($cat.meaning -and $cat.meaning.$tone) { [string]$cat.meaning.$tone } else { "" } }
+        }
         [PSCustomObject]@{ key = [string]$cat.key; title = [string]$cat.title; tone = $tone; word = $word; detail = $lead.detail
             lead = [PSCustomObject]@{ id = $lead.id; name = $lead.short; value = $lead.value; currency = $lead.currency; unit = $lead.unit; label = $lead.label; krw = $lead.krw }
             change = [PSCustomObject]@{ label = $lead.longLabel; pct = $lead.longPct }
