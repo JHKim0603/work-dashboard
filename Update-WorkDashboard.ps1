@@ -1454,6 +1454,82 @@ function Get-TrendStats {
             elseif ($pctile -ge 80) { "상단" } elseif ($pctile -ge 60) { "중상단" }
             elseif ($pctile -ge 40) { "중간" } elseif ($pctile -ge 20) { "중하단" } else { "하단" }
 
+    # 언제 이후 최고·최저인지. 해운 지수 발표문("2023년 12월 이후 최고")처럼 지금 값 이상(최저는 이하)이었던
+    # 가장 최근 날을 찾는다. 120일 안이면 흔한 일이라 말하지 않고, 기록 전체에서 처음이면 기록 기간을 적는다
+    # (기록이 1년 이상일 때만. 70일 기록에서 최고는 뜻이 없다).
+    # 지금이 최근 120일 고점(저점)이거나 그 근처(평소 한 달 움직임의 4분의 1, 최대 2% 안)일 때만 본다. 정확히 고점이면
+    # '가장 높습니다', 근처면 '가장 높은 수준입니다'. 그 앞에서 지금 값 이상이었던 날이 반년보다 가까우면 말하지 않는다.
+    $since = $null
+    $spanAll = ($last.d - $rows[0].d).TotalDays
+    $cutD = $last.d.AddDays(-120)
+    $tol = [math]::Min(2.0, 0.5 * $thrS) / 100
+    $recent = @(for ($i = 0; $i -lt $n; $i++) { if ($rows[$i].d -ge $cutD) { $rows[$i].v } })
+    foreach ($dir in @("high", "low")) {
+        $exact = $true
+        if ($recent.Count) {
+            if ($dir -eq "high") {
+                $rm = ($recent | Measure-Object -Maximum).Maximum
+                if ($rm -gt $last.v * (1 + $tol)) { continue }
+                $exact = ($rm -le $last.v)
+            } else {
+                $rm = ($recent | Measure-Object -Minimum).Minimum
+                if ($rm -lt $last.v * (1 - $tol)) { continue }
+                $exact = ($rm -ge $last.v)
+            }
+        }
+        $j = -1
+        for ($i = $n - 1; $i -ge 0; $i--) {
+            if ($rows[$i].d -ge $cutD) { continue }
+            if (($dir -eq "high" -and $rows[$i].v -ge $last.v) -or ($dir -eq "low" -and $rows[$i].v -le $last.v)) { $j = $i; break }
+        }
+        $word = if ($dir -eq "high") { "높" } else { "낮" }
+        $wordS = if ($dir -eq "high") { "최고" } else { "최저" }
+        $lvl = if ($exact) { "가장 ${word}습니다" } else { "가장 ${word}은 수준입니다" }
+        $lvlS = if ($exact) { $wordS } else { "$wordS 수준" }
+        # 기록 첫 두 달 안의 날이면 '그때 이후'가 곧 '기록 시작 이후'라 기록 기간으로 적는다(KCCI 는 2022년 11월부터).
+        if ($j -ge 0 -and ($rows[$j].d - $rows[0].d).TotalDays -lt 60) { $j = -1 }
+        if ($j -lt 0) {
+            if ($spanAll -ge 365) {
+                $yrs = [int][math]::Floor(($spanAll + 30) / 365)
+                $since = [PSCustomObject]@{ dir = $dir; text = "기록이 있는 ${yrs}년 중 $lvl"; short = "${yrs}년 중 $lvlS" }
+                break
+            }
+        } elseif (($last.d - $rows[$j].d).TotalDays -ge 180) {
+            $ym = "$($rows[$j].d.Year)년 $($rows[$j].d.Month)월"
+            $since = [PSCustomObject]@{ dir = $dir; text = "$ym 이후 $lvl"; short = "$ym 이후 $lvlS" }
+            break
+        }
+    }
+    # 몇 주째 이어지는지(주간 계열은 주, 월간 계열은 개월). 국내 해운 기사("3주째 하락", "10주 상승세가 끝난 뒤")와
+    # 같은 셈이다. 한 번의 변화가 ±0.5% 안이면 보합으로 센다. 일간 계열은 하루하루 오르내림이 잦아 세지 않는다.
+    $streak = $null
+    if ($monthly -or ($gap -ge 5 -and $gap -le 9)) {
+        $dirs = @(for ($i = $n; $i -ge 1; $i--) {
+            $a = $rows[$i - 1].v
+            if ($a -eq 0) { "flat"; continue }
+            $pc = ($rows[$i].v - $a) / [math]::Abs($a) * 100
+            if ($pc -ge 0.5) { "up" } elseif ($pc -le -0.5) { "down" } else { "flat" }
+        })
+        if ($dirs.Count -ge 2) {
+            $k = 1
+            while ($k -lt $dirs.Count -and $dirs[$k] -eq $dirs[0]) { $k++ }
+            $k2 = 0
+            if ($k -lt $dirs.Count) { $m = $k; while ($m -lt $dirs.Count -and $dirs[$m] -eq $dirs[$k]) { $m++ }; $k2 = $m - $k }
+            $unitW = if ($monthly) { "개월" } else { "주" }
+            $thisW = if ($monthly) { "이번 달" } else { "이번 주" }
+            $prevDir = if ($k -lt $dirs.Count) { $dirs[$k] } else { "" }
+            $sShort = ""; $sText = ""
+            if ($k -ge 3) {
+                $sShort = switch ($dirs[0]) { "up" { "${k}${unitW}째 상승" } "down" { "${k}${unitW}째 하락" } default { "${k}${unitW} 연속 보합" } }
+                $sText = switch ($dirs[0]) { "up" { "${k}${unitW}째 오르고 있습니다" } "down" { "${k}${unitW}째 내리고 있습니다" } default { "${k}${unitW}째 큰 변화가 없습니다" } }
+            } elseif ($k -eq 1 -and $k2 -ge 4 -and ($prevDir -eq "up" -or $prevDir -eq "down")) {
+                $sShort = "${k2}${unitW} $(if ($prevDir -eq 'up') { '상승' } else { '하락' }) 멈춤"
+                $sText = "${k2}${unitW} 이어진 $(if ($prevDir -eq 'up') { '오름세' } else { '내림세' })가 $thisW 멈췄습니다"
+            }
+            $streak = [PSCustomObject]@{ dir = $dirs[0]; count = $k; unit = $unitW; prevDir = $prevDir; prevCount = $k2; short = $sShort; text = $sText }
+        }
+    }
+
     [PSCustomObject]@{
         # 주간·일간 계열도 28일·91일 창이라 '1개월', '3개월'로 부른다(2026-11-06, '4주·13주'가 경영진에게 낯설다는 의견).
         shortLabel = "1개월"
@@ -1482,6 +1558,11 @@ function Get-TrendStats {
                 if ($pAll -ge 50) { "${yrs}년 중 상위 $([math]::Max(1, 100 - $pAll))%" } else { "${yrs}년 중 하위 $([math]::Max(1, $pAll))%" }
             } else { "" })
         points     = $rows.Count
+        since      = $since
+        streak     = $streak
+        # 평소 움직임(같은 길이 변화율의 표준편차) 대비 몇 배인지. 2.5배 이상이면 '급등·급락'으로 쓴다.
+        ratioS     = $(if ($null -ne $chS -and $thrS -gt 0) { [math]::Round([math]::Abs($chS) / (2 * $thrS), 1) } else { $null })
+        ratioL     = $(if ($null -ne $chL -and $thrL -gt 0) { [math]::Round([math]::Abs($chL) / (2 * $thrL), 1) } else { $null })
     }
 }
 
@@ -2633,7 +2714,8 @@ function Get-OpsSummaryRow {
     $row = [ordered]@{ id = $id; detail = $id; name = $id; value = $null; currency = ""; unit = ""; label = ""
         shortLabel = ""; shortPct = $null; longLabel = ""; longPct = $null; trend = ""; tone = "flat"; position = ""; note = ""
         fc = $null; yoyPct = $null; thrS = $null; thrL = $null; thrY = $null; band = ""; rangeName = ""; short = ""
-        prevTrend = ""; prevTone = ""; changed = $false; longPosition = ""; krw = $null }
+        prevTrend = ""; prevTone = ""; changed = $false; longPosition = ""; krw = $null
+        since = $null; streak = $null; ratioS = $null; ratioL = $null; context = "" }
     $series = $null
     $t = $null
     $fcSrc = $null
@@ -2679,6 +2761,12 @@ function Get-OpsSummaryRow {
         $row.trend = $t.trend; $row.tone = $t.tone; $row.position = $t.position
         $row.yoyPct = $t.yoyPct; $row.thrS = $t.thrShort; $row.thrL = $t.thrLong; $row.thrY = $t.thrYear
         $row.band = $t.band; $row.rangeName = $t.rangeName; $row.longPosition = [string]$t.longPosition
+        $row.since = $t.since; $row.streak = $t.streak; $row.ratioS = $t.ratioS; $row.ratioL = $t.ratioL
+        # 표와 메일의 이름 아래 작은 글씨: '2022년 10월 이후 최고'가 있으면 위치 대신 그것을, 이어서 '3주째 상승'.
+        $ctx = @()
+        if ($t.since) { $ctx += $t.since.short } else { if ($t.position) { $ctx += $t.position }; if ($t.longPosition) { $ctx += [string]$t.longPosition } }
+        if ($t.streak -and $t.streak.short) { $ctx += $t.streak.short }
+        $row.context = ($ctx -join ", ")
         # 1주 전(마지막 점에서 6일 넘게 앞선 자료까지)으로 다시 판정. 월간 계열은 지난달 자료까지가 된다.
         $ptsArr = @($series)
         if ($ptsArr.Count -ge 4) {
@@ -2723,7 +2811,8 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
     # 받침 유무로 조사를 고른다. 영문·숫자로 끝나면 읽는 소리로 판단한다(KCl → 엘 → 받침 있음).
     function Get-Josa {
         param([string]$word, [string]$withFinal, [string]$withoutFinal)
-        $w = ($word -replace '[\s\)\]]+$', '')
+        # 끝의 괄호 묶음은 떼고 그 앞 말로 고른다: "부산발 운임 종합(KCCI)이"(괄호 앞 말 기준).
+        $w = ($word -replace '(\s*[\(\[][^\(\)\[\]]*[\)\]])+\s*$', '') -replace '\s+$', ''
         if (-not $w) { return $withoutFinal }
         $ch = $w[$w.Length - 1]
         $code = [int]$ch
@@ -2732,6 +2821,45 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
         }
         if ("LMNRlmnr0136783".Contains([string]$ch)) { return $withFinal }
         $withoutFinal
+    }
+    # 변화율 숫자: 10% 이상은 정수, 그 아래는 소수 첫째 자리(결론, 설명, 주목할 점이 같은 규칙).
+    function Format-PctWord {
+        param([double]$p)
+        $a = [math]::Abs($p)
+        if ($a -ge 10) { [math]::Round($a).ToString("0") } else { $a.ToString("0.0", [Globalization.CultureInfo]::InvariantCulture) }
+    }
+    # 움직임의 크기를 말로. 평소 움직임의 2.5배 이상이면 급등·급락, 아니면 올라·내려. mid 는 문장 가운데 꼴(…해, …라).
+    function Get-MoveVerb {
+        param([double]$p, $ratio, [bool]$mid)
+        $big = ($null -ne $ratio) -and ([double]$ratio -ge 2.5)
+        if ($p -ge 0) { if ($big) { if ($mid) { "급등해" } else { "급등했습니다" } } elseif ($mid) { "올라" } else { "올랐습니다" } }
+        else { if ($big) { if ($mid) { "급락해" } else { "급락했습니다" } } elseif ($mid) { "내려" } else { "내렸습니다" } }
+    }
+    # "3개월 사이 44% 급등해 2022년 10월 이후 가장 높습니다." 처럼 변화와 '언제 이후'를 한 문장으로. 주어는 붙이지 않는다.
+    function Get-PctMove {
+        param($r, [string]$which = "long", [bool]$withSince = $true)
+        $p = if ($which -eq "short") { $r.shortPct } else { $r.longPct }
+        if ($null -eq $p) { return "" }
+        $p = [double]$p
+        $ratio = if ($which -eq "short") { $r.ratioS } else { $r.ratioL }
+        $span = if ($which -eq "short") { $r.shortLabel } else { $r.longLabel }
+        $sinceOk = $withSince -and $r.since -and (($p -ge 0 -and $r.since.dir -eq "high") -or ($p -lt 0 -and $r.since.dir -eq "low"))
+        if ($sinceOk) { "$span 사이 $(Format-PctWord $p)% $(Get-MoveVerb $p $ratio $true) $($r.since.text)." }
+        else { "$span 사이 $(Format-PctWord $p)% $(Get-MoveVerb $p $ratio $false)." }
+    }
+    # 평소의 몇 배인지(2배 이상일 때만). "평소 석 달 움직임의 3.1배입니다."
+    function Get-RatioSentence {
+        param($r, [string]$which = "long")
+        $ratio = if ($which -eq "short") { $r.ratioS } else { $r.ratioL }
+        if ($null -eq $ratio -or [double]$ratio -lt 2) { return "" }
+        "평소 $(if ($which -eq 'short') { '한 달' } else { '석 달' }) 움직임의 $(([double]$ratio).ToString('0.0', [Globalization.CultureInfo]::InvariantCulture))배입니다."
+    }
+    # "부산발 운임 종합(KCCI)이 3주째 오르고 있습니다." / "…은 4주 이어진 오름세가 이번 주 멈췄습니다."
+    function Get-StreakSentence {
+        param($r, [string]$name)
+        if (-not $r.streak -or -not $r.streak.text) { return "" }
+        if ($r.streak.count -eq 1) { "$name$(Get-Josa $name '은' '는') $($r.streak.text)." }
+        else { "$name$(Get-Josa $name '이' '가') $($r.streak.text)." }
     }
     $opsHighlights = New-Object System.Collections.ArrayList
     # 분야 표시. config.opsSummary.categories 의 분야 이름을 지표 id 로 찾는다.
@@ -2755,18 +2883,20 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
         $r = $m.r
         $pct = if ($m.useShort) { [double]$r.shortPct } else { [double]$r.longPct }
         $span = if ($m.useShort) { $r.shortLabel } else { $r.longLabel }
-        $verb = if ($pct -ge 0) { "올라" } else { "내려" }
-        $verbEnd = if ($pct -ge 0) { "올랐습니다" } else { "내렸습니다" }
-        $absPct = [math]::Abs($pct)
-        $pctTxt = if ($absPct -ge 10) { [math]::Round($absPct).ToString("0") } else { $absPct.ToString("0.0", [Globalization.CultureInfo]::InvariantCulture) }
+        $ratio = if ($m.useShort) { $r.ratioS } else { $r.ratioL }
+        $verb = Get-MoveVerb $pct $ratio $true
+        $verbEnd = Get-MoveVerb $pct $ratio $false
+        $pctTxt = Format-PctWord $pct
         $topic = "$($r.short)$(Get-Josa $r.short '이' '가')"
-        $where = switch ($r.band) {
+        # '2022년 10월 이후 가장 높습니다'가 있으면 그것을, 없으면 1년 안 위치를 쓴다.
+        $sinceOk = $r.since -and (($pct -ge 0 -and $r.since.dir -eq "high") -or ($pct -lt 0 -and $r.since.dir -eq "low"))
+        $where = if ($sinceOk) { $r.since.text } else { switch ($r.band) {
             "최고" { "$($r.rangeName) 중 가장 높습니다" }
             "최저" { "$($r.rangeName) 중 가장 낮습니다" }
             "상단" { "$($r.rangeName) 중 높은 편입니다" }
             "하단" { "$($r.rangeName) 중 낮은 편입니다" }
             default { "" }
-        }
+        } }
         $tag = if ($catOf.ContainsKey([string]$r.id)) { $catOf[[string]$r.id] } else { "지표" }
         if ($where) { Add-Highlight $tag "$topic 최근 $span 사이 $pctTxt% $verb ${where}." ([string]$r.id) }
         else { Add-Highlight $tag "$topic 최근 $span 사이 $pctTxt% $verbEnd." ([string]$r.id) }
@@ -2775,6 +2905,14 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
     foreach ($r in @($opsRows | Where-Object { $_.changed -and $movedIds -notcontains [string]$_.id } | Select-Object -First 1)) {
         $tag = if ($catOf.ContainsKey([string]$r.id)) { $catOf[[string]$r.id] } else { "지표" }
         Add-Highlight $tag "$($r.short)$(Get-Josa $r.short '이' '가') 지난주 $($r.prevTrend)에서 이번 주 $($r.trend)$(Get-Josa $r.trend '으로' '로') 바뀌었습니다." ([string]$r.id)
+    }
+    # 연속 기록: 4주(4개월) 이상 같은 방향으로 움직였거나, 그렇게 이어지던 흐름이 이번에 멈춘 주간·월간 지표. 두 줄까지.
+    $streakRows = @($opsRows | Where-Object { $_.streak -and $_.streak.text -and $movedIds -notcontains [string]$_.id -and
+        (($_.streak.count -ge 4 -and $_.streak.dir -ne "flat") -or $_.streak.count -eq 1) } |
+        Sort-Object { if ($_.streak.count -eq 1) { $_.streak.prevCount } else { $_.streak.count } } -Descending | Select-Object -First 2)
+    foreach ($r in $streakRows) {
+        $tag = if ($catOf.ContainsKey([string]$r.id)) { $catOf[[string]$r.id] } else { "지표" }
+        Add-Highlight $tag (Get-StreakSentence $r $r.short) ([string]$r.id)
     }
     if ($opsHighlights.Count -eq 0) { Add-Highlight "지표" "평소보다 크게 움직인 지표는 없습니다." }
     if ($safeFreight) {
@@ -2974,18 +3112,15 @@ if (-not $nextReleaseJson -or $nextReleaseJson -eq "null") { $nextReleaseJson = 
 # 쓰고, 환율과 유가는 이 셋에 영향을 주는 참고 지표로 짧게 붙인다(2026-11-06 의견: 원재료는 물류팀이 주로 볼 내용이 아님).
 # AI 를 부르지 않고 계산한 값으로 문장을 만든다. 숫자는 10% 이상이면 정수, 그 아래는 소수 첫째 자리까지.
 if ($opsSummary) {
-    function Format-PctWord {
-        param([double]$p)
-        $a = [math]::Abs($p)
-        if ($a -ge 10) { [math]::Round($a).ToString("0") } else { $a.ToString("0.0") }
-    }
     $rowOf = @{}
     foreach ($r in @($opsSummary.rows)) { $rowOf[[string]$r.id] = $r }
     $tileOf = @{}
     foreach ($t in @($opsSummary.tiles)) { $tileOf[[string]$t.key] = $t }
     # "3개월 사이 44% 올랐습니다" 꼴. 오르내림(상승 후 조정 등)과 보합은 따로 말한다.
+    # 크기 말(급등·급락)과 '언제 이후 최고'는 Get-PctMove 가 붙인다. withSince 가 거짓이면 '언제 이후'는 빼고
+    # 분야별 설명처럼 위치를 따로 한 문장으로 쓰는 곳에서 겹치지 않게 한다.
     function Get-MoveSentence {
-        param($r, [string]$subject)
+        param($r, [string]$subject, [bool]$withSince = $true)
         if (-not $r -or $null -eq $r.longPct) { return "" }
         $p = [double]$r.longPct
         switch ([string]$r.trend) {
@@ -2993,8 +3128,10 @@ if ($opsSummary) {
             "하락 후 반등" { return "$subject 내린 뒤 최근 1개월은 오르고 있습니다." }
         }
         if ($r.tone -eq "flat" -or [math]::Abs($p) -lt 0.5) { return "$subject $($r.longLabel) 사이 큰 변화가 없습니다." }
-        "$subject $($r.longLabel) 사이 $(Format-PctWord $p)% $(if ($p -ge 0) { '올랐습니다' } else { '내렸습니다' })."
+        "$subject $(Get-PctMove $r 'long' $withSince)"
     }
+    # 연속 기록을 결론에 올릴 만한지: 3주(3개월) 이상 오르거나 내렸거나, 4주 넘게 이어지던 흐름이 멈췄을 때.
+    $streakWorthy = { param($r) $r -and $r.streak -and $r.streak.text -and (($r.streak.count -ge 3 -and $r.streak.dir -ne "flat") -or $r.streak.count -eq 1) }
     $fr = $rowOf["kcci-sea"]; if (-not $fr) { $fr = $rowOf["scfi"] }
     $pp = $rowOf["pp"]; $pe = $rowOf["pe"]
     $fx = $rowOf["usdkrw"]; $br = $rowOf["brent"]
@@ -3027,11 +3164,24 @@ if ($opsSummary) {
     # 시장 가격은 오르는데 내륙운송료가 인하 예상이면(또는 그 반대) 결론 색은 '항목별로 다름'으로 둔다.
     if (($hlTone -eq "up" -and $sfVerdict -eq "인하") -or ($hlTone -eq "down" -and $sfVerdict -eq "인상")) { $hlTone = "mixed" }
     $hlText = @()
-    if ($fr) { $hlText += (Get-MoveSentence $fr "해상운임은 부산→동남아 기준으로") }
+    if ($fr) {
+        $hlText += (Get-MoveSentence $fr "해상운임은 부산→동남아 기준으로")
+        if (& $streakWorthy $fr) { $hlText += (Get-StreakSentence $fr $fr.short) }
+    }
     if ($pp -and $pe -and $null -ne $pp.longPct -and $null -ne $pe.longPct) {
         $a = [double]$pp.longPct; $b = [double]$pe.longPct
         if ([math]::Abs($a) -lt 0.5 -and [math]::Abs($b) -lt 0.5) { $hlText += "PP와 PE 가격은 3개월 사이 큰 변화가 없습니다." }
-        elseif (($a -ge 0) -eq ($b -ge 0)) { $hlText += "PP와 PE 가격은 3개월 사이 각각 $(Format-PctWord $a)%, $(Format-PctWord $b)% $(if ($a -ge 0) { '올랐습니다' } else { '내렸습니다' })." }
+        elseif (($a -ge 0) -eq ($b -ge 0)) {
+            # 둘 다 평소의 2.5배를 넘을 때만 '급등·급락'(작은 쪽 배수로 고른다).
+            $rMin = if ($null -ne $pp.ratioL -and $null -ne $pe.ratioL) { [math]::Min([double]$pp.ratioL, [double]$pe.ratioL) } else { $null }
+            $hlText += "PP와 PE 가격은 3개월 사이 각각 $(Format-PctWord $a)%, $(Format-PctWord $b)% $(Get-MoveVerb $a $rMin $false)."
+            foreach ($pair in @(@{ r = $pp; n = "PP 가격" }, @{ r = $pe; n = "PE 가격" })) {
+                $x = $pair.r
+                if ($x.since -and (([double]$x.longPct -ge 0 -and $x.since.dir -eq "high") -or ([double]$x.longPct -lt 0 -and $x.since.dir -eq "low"))) {
+                    $hlText += "$($pair.n)$(Get-Josa $pair.n '은' '는') $($x.since.text)."
+                }
+            }
+        }
         else { $hlText += "PP 가격은 3개월 사이 $(Format-PctWord $a)% $(if ($a -ge 0) { '올랐고' } else { '내렸고' }), PE 가격은 $(Format-PctWord $b)% $(if ($b -ge 0) { '올랐습니다' } else { '내렸습니다' })." }
     }
     if ($sf -and $sf.base) {
@@ -3042,8 +3192,8 @@ if ($opsSummary) {
         }
     }
     $refParts = @()
-    if ($fx -and $null -ne $fx.longPct) { $refParts += "원/달러 환율은 3개월 사이 $(Format-PctWord $fx.longPct)% $(if ([double]$fx.longPct -ge 0) { '올랐습니다' } else { '내렸습니다' })." }
-    if ($br -and $null -ne $br.longPct) { $refParts += "국제유가는 같은 기간 $(Format-PctWord $br.longPct)% $(if ([double]$br.longPct -ge 0) { '올랐습니다' } else { '내렸습니다' })." }
+    if ($fx -and $null -ne $fx.longPct) { $refParts += "원/달러 환율은 $(Get-PctMove $fx 'long' $true)" }
+    if ($br -and $null -ne $br.longPct) { $refParts += "국제유가는 같은 기간 $(Format-PctWord $br.longPct)% $(Get-MoveVerb ([double]$br.longPct) $br.ratioL $false)." }
     if ($refParts.Count) { $refParts[0] = "참고로 " + $refParts[0]; $hlText += $refParts }
     $opsSummary | Add-Member -NotePropertyName headline -NotePropertyValue ([PSCustomObject]@{ tone = $hlTone; title = $hlTitle; text = ($hlText -join " ") }) -Force
 
@@ -3057,15 +3207,24 @@ if ($opsSummary) {
         $txt = if ([math]::Abs($d) -ge 1000) { $d.ToString("N0") } else { (("{0:N2}" -f $d) -replace '0+$', '') -replace '\.$', '' }
         "$($r.currency)$txt"
     }
-    $posTxt = { param($r) if ($r.band -eq "최고" -or $r.band -eq "최저" -or $r.band -eq "상단" -or $r.band -eq "하단") { " 지금 값은 $($r.position)입니다." } else { "" } }
+    $posTxt = { param($r)
+        if ($r.since) { " 지금 값은 $($r.since.text)." }
+        elseif ($r.band -eq "최고" -or $r.band -eq "최저" -or $r.band -eq "상단" -or $r.band -eq "하단") { " 지금 값은 $($r.position)입니다." } else { "" } }
+    $ratioTxt = { param($r) $x = Get-RatioSentence $r "long"; if ($x) { " $x" } else { "" } }
     $t1 = @()
     if ($fr) {
         $frName = if ([string]$fr.id -eq "kcci-sea") { "부산→동남아 운임은 40ft 컨테이너 1개에" } else { "$($fr.short)$(Get-Josa $fr.short '은' '는')" }
         $t1 += "$frName $(& $fmtV $fr)입니다."
-        $t1 += (Get-MoveSentence $fr "이 운임은") + (& $posTxt $fr)
+        $t1 += (Get-MoveSentence $fr "이 운임은" $false) + (& $ratioTxt $fr) + (& $posTxt $fr)
     }
     $sc = $rowOf["scfi"]
     if ($sc -and $null -ne $sc.longPct -and [string]$fr.id -ne "scfi") { $t1 += (Get-MoveSentence $sc "상하이발 운임(SCFI)은") }
+    # 주간 운임지수의 연속 기록(두 줄까지). 예) "부산발 운임 종합(KCCI)이 3주째 큰 변화가 없습니다."
+    $streakTxt = @(foreach ($id in @("kcci-sea", "kcci", "scfi", "drybulk")) {
+        $x = $rowOf[$id]
+        if ($x -and $x.streak -and $x.streak.text -and ($x.streak.count -ge 3 -or $x.streak.count -eq 1)) { Get-StreakSentence $x $x.short }
+    })
+    $t1 += @($streakTxt | Select-Object -First 2)
     Add-Brief "해상운임" (($t1 | Where-Object { $_ }) -join " ")
     if ($sf -and $sf.base) {
         $t2 = @()
@@ -3088,12 +3247,12 @@ if ($opsSummary) {
         Add-Brief "내륙운송료" ($t2 -join " ")
     }
     $t3 = @()
-    $samePos = $pp -and $pe -and (& $posTxt $pp) -and ([string]$pp.position -eq [string]$pe.position)
+    $samePos = $pp -and $pe -and -not $pp.since -and -not $pe.since -and (& $posTxt $pp) -and ([string]$pp.position -eq [string]$pe.position)
     foreach ($pair in @(@{ r = $pp; n = "PP" }, @{ r = $pe; n = "PE" })) {
         $r = $pair.r
         if (-not $r) { continue }
         $won = if ($r.krw) { "톤당 약 $([math]::Round([double]$r.krw / 10000).ToString('N0'))만원($(& $fmtV $r))" } else { (& $fmtV $r) }
-        $mv = if ($null -ne $r.longPct) { " 3개월 사이 $(Format-PctWord $r.longPct)% $(if ([double]$r.longPct -ge 0) { '올랐습니다' } else { '내렸습니다' })." } else { "" }
+        $mv = if ($null -ne $r.longPct) { " $(Get-PctMove $r 'long' $false)$(& $ratioTxt $r)" } else { "" }
         $t3 += "$($pair.n) 가격은 ${won}입니다.$mv$(if ($samePos) { '' } else { & $posTxt $r })"
     }
     if ($samePos) { $t3 += "두 가격 모두 $($pp.position)입니다." }
@@ -3109,8 +3268,8 @@ if ($opsSummary) {
     }
     Add-Brief "부자재" ($t3 -join " ")
     $t4 = @()
-    if ($fx) { $t4 += "원/달러 환율은 $([math]::Round([double]$fx.value).ToString('N0'))원입니다."; if ($null -ne $fx.longPct) { $t4[-1] += " 3개월 사이 $(Format-PctWord $fx.longPct)% $(if ([double]$fx.longPct -ge 0) { '올랐습니다' } else { '내렸습니다' })." } }
-    if ($br) { $t4 += "국제유가(브렌트)는 배럴당 $(& $fmtV $br)입니다."; if ($null -ne $br.longPct) { $t4[-1] += " 3개월 사이 $(Format-PctWord $br.longPct)% $(if ([double]$br.longPct -ge 0) { '올랐습니다' } else { '내렸습니다' })." } }
+    if ($fx) { $t4 += "원/달러 환율은 $([math]::Round([double]$fx.value).ToString('N0'))원입니다."; if ($null -ne $fx.longPct) { $t4[-1] += " $(Get-PctMove $fx 'long' $true)" } }
+    if ($br) { $t4 += "국제유가(브렌트)는 배럴당 $(& $fmtV $br)입니다."; if ($null -ne $br.longPct) { $t4[-1] += " $(Get-PctMove $br 'long' $true)" } }
     $dsl = $rowOf["D047"]
     if ($dsl -and $null -ne $dsl.value) { $t4 += "국내 경유는 리터당 $([math]::Round([double]$dsl.value).ToString('N0'))원입니다." }
     Add-Brief "환율·유가" ($t4 -join " ")
@@ -3899,7 +4058,7 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
         $val = if ($null -ne $r.value) { "$($r.currency)$(Format-PriceValue $r.value)" } else { "" }
         $tc = $toneColor[[string]$r.tone]
         if (-not $tc) { $tc = "#6e6c66" }
-        $sub = if ($r.note) { $r.note } elseif ($r.position) { $r.position } else { "" }
+        $sub = if ($r.note) { $r.note } elseif ($r.context) { $r.context } elseif ($r.position) { $r.position } else { "" }
         # 칸마다 style 을 반복하면 행 하나가 700B 가까이 된다. 여백은 표의 cellpadding, 줄바꿈 막기는
         # nowrap 속성으로 넘겨 행당 크기를 절반 아래로 줄였다(메일이 Gmail 잘림 기준 102KB 에 가깝다).
         $subHtml = if ($sub) { "<br><font size=1 color=#898781>$(Get-HtmlText $sub)</font>" } else { "" }

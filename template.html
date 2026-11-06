@@ -1629,17 +1629,19 @@ function posText(t) {
   const p = t.percentile || 0;
   return p >= 50 ? `상위 ${Math.max(1, 100 - p)}%` : `하위 ${Math.max(1, p)}%`;
 }
+// 카드 머리의 위치 줄. '2022년 10월 이후 최고'처럼 언제 이후인지가 있으면 그것을, 이어서 '3주째 상승' 같은 연속 기록.
 function trendLine(t) {
   if (!t) return "";
-  const where = (t.band === "최고" || t.band === "최저") ? esc(t.position) : `${esc(t.position)} (${posText(t)})`;
+  let where = t.since ? esc(t.since.short) : (t.band === "최고" || t.band === "최저") ? esc(t.position) : `${esc(t.position)} (${posText(t)})`;
+  if (t.streak && t.streak.short) where += `, ${esc(t.streak.short)}`;
   return `<div class="trend-line">${trendChip(t.trend, t.tone)}<span>${where}</span></div>`;
 }
 function trendExplain(t) {
   const where = (t.band === "최고" || t.band === "최저") ? `<b>${esc(t.position)}</b>` : `<b>${esc(t.position)}</b>(${posText(t)})`;
   return `지금 상태는 <b>${esc(t.trend)}</b>입니다.
     최근 1개월 변화는 ${pctText(t.shortPct)}, 3개월 변화는 ${pctText(t.longPct)}입니다.
-    이 지표는 평소 한 달에 ±${t.normalMove}% 정도 움직입니다.
-    지금 값은 ${where}입니다.
+    이 지표는 평소 한 달에 ±${t.normalMove}% 정도 움직입니다.${t.ratioL >= 2 ? ` 최근 3개월 변화는 평소 석 달 움직임의 <b>${t.ratioL.toFixed(1)}배</b>입니다.` : ""}
+    지금 값은 ${where}입니다.${t.since ? ` ${esc(t.since.text)}.` : ""}${t.streak && t.streak.text ? ` ${esc(t.streak.text)}.` : ""}
     <div style="color:var(--ink-muted);font-size:12.5px;margin-top:6px;">보는 기준: 1개월과 3개월 변화가 평소 움직임의 절반을 넘으면 상승 또는 하락으로 봅니다.
     두 기간이 같은 방향이면 추세, 방향이 다르면 '상승 후 조정' 또는 '하락 후 반등'으로 적습니다.</div>`;
 }
@@ -2791,7 +2793,9 @@ function weeklyReportText() {
       const ch = pts.length > 1 ? prevChange(pts, monthly) : null;
       const notes = [];
       if (ch !== null) notes.push(`${monthly ? "전월" : "전주"} ${pctText(ch, true)}`);
-      if (r.rangeName === "1년" && (r.band === "최고" || r.band === "최저")) notes.push(`1년 중 ${r.band}`);
+      if (r.since) notes.push(r.since.short);
+      else if (r.rangeName === "1년" && (r.band === "최고" || r.band === "최저")) notes.push(`1년 중 ${r.band}`);
+      if (r.streak && r.streak.short) notes.push(r.streak.short);
       if (r.changed && r.prevTrend) notes.push(`지난주 ${r.prevTrend}에서 ${r.trend}${josaRo(r.trend)} 바뀜`);
       return `${r.short || r.name} ${reportValue(r, unitOf, notes)}`;
     });
@@ -2907,7 +2911,7 @@ function hlNewsHtml(h) {
     const changed = r.changed && r.prevTrend
       ? `<span class="chg-flag" title="1주 전 자료로 보면 ${esc(r.prevTrend)}였습니다">지난주 ${esc(r.prevTrend)}</span>` : "";
     return `<tr class="ops-row"${clickable}>
-      <td class="c-name"><div class="on">${esc(r.name)}${trendChip(r.trend, r.tone)}${changed}</div>${(r.position || r.longPosition) ? `<div class="os">${esc([r.position, r.longPosition].filter(Boolean).join(", "))}</div>` : ""}</td>
+      <td class="c-name"><div class="on">${esc(r.name)}${trendChip(r.trend, r.tone)}${changed}</div>${(r.context || r.position || r.longPosition) ? `<div class="os">${esc(r.context || [r.position, r.longPosition].filter(Boolean).join(", "))}</div>` : ""}</td>
       <td class="c-val">${val}${r.label ? `<div class="os">${esc(r.label)}</div>` : ""}</td>
       <td class="c-spark mid">${spark(r)}</td>
       ${pctTd(r.shortPct, r.thrS, "c-s", "1개월 변화")}
@@ -2961,6 +2965,7 @@ function hlNewsHtml(h) {
     if (t.lead) {
       body = `<div class="kt-lead">${esc(t.lead.name)} ${leadValue(t.lead)}</div>
         ${t.change && t.change.pct !== null && t.change.pct !== undefined ? `<div class="kt-chg ${pctCls(t.change.pct)}">${esc(t.change.label)} ${pctText(t.change.pct)}</div>` : ""}
+        ${(() => { const lr = (OPS_SUMMARY.rows || []).find(r => r.id === t.lead.id); return lr && lr.since ? `<div class="kt-sub">${esc(lr.since.short)}</div>` : ""; })()}
         ${ref ? "" : tileSpark(t)}
         ${!ref && t.second && t.second.pct !== null && t.second.pct !== undefined ? `<div class="kt-second">${esc(t.second.name)} ${esc(t.second.label)} ${pctText(t.second.pct)}</div>` : ""}`;
     } else {
