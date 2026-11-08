@@ -67,6 +67,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # news-filter.ps1 은 stockdashboard·work-dashboard 가 똑같이 쓰는 뉴스 제목 거르기다. 한쪽만 고치면 다른 쪽과
+      # 어긋나므로 실행 때마다 stockdashboard 의 같은 파일과 비교해 다르면 경고만 남긴다(배포는 막지 않는다).
+      - name: Compare shared news filter with stockdashboard
+        continue-on-error: true
+        run: |
+          if curl -fsSL "https://raw.githubusercontent.com/JHKim0603/stockdashboard/master/news-filter.ps1" -o /tmp/sibling-news-filter.ps1; then
+            if cmp -s news-filter.ps1 /tmp/sibling-news-filter.ps1; then echo "news-filter.ps1 matches stockdashboard"
+            else echo "::warning::news-filter.ps1 differs from stockdashboard - 두 저장소의 공통 파일을 같게 맞추세요"; fi
+          else echo "stockdashboard 의 news-filter.ps1 을 받지 못해 비교를 건너뜁니다"; fi
+
       - name: Generate dashboard.html
         shell: pwsh
         env:

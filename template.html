@@ -567,7 +567,7 @@
     .oh-title { font-size: 17px; }
   }
   /* 경영진 요약 보기(?view=exec): 결론과 분야 타일만. 결론 문장이 주목할 점을 이미 담고 있어 표와 주목할 점 목록은 숨긴다. */
-  body.exec #jumpNav, body.exec #secTop, body.exec #priceGroups, body.exec #secCompare, body.exec #secNews,
+  body.exec #jumpNav, body.exec #secTop, body.exec #priceGroups, body.exec #secCost, body.exec #secCompare, body.exec #secNews,
   body.exec .ops-body { display: none !important; }
   .exec-note { display: none; font-size: 12.5px; color: var(--ink-muted); margin-top: 10px; }
   body.exec .exec-note { display: block; }
@@ -949,6 +949,17 @@
       color: var(--accent); background: var(--accent-wash); border: 0; border-radius: 8px; cursor: pointer;
     }
   }
+  /* 선행 관계 표, 원가 영향 계산 */
+  .ll-wrap, .cost-wrap { overflow-x: auto; }
+  .ll-table td, .ll-table th, .cost-table td, .cost-table th { white-space: nowrap; }
+  .ll-table td.ll-read { white-space: normal; min-width: 280px; color: var(--ink-secondary); text-align: left; }
+  .ll-table th:last-child { text-align: left; }
+  .cost-in { width: 7.5em; padding: 4px 6px; font: inherit; font-size: 13px; text-align: right; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface); color: var(--ink-primary); font-variant-numeric: tabular-nums; }
+  .cost-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .cost-table td.num, .cost-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .cost-table tr.cost-total td { font-weight: 700; border-top: 2px solid var(--border); }
+  .cost-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 2px 0 8px; font-size: 13px; color: var(--ink-secondary); }
   /* 요약 타일 문구는 낱말 단위로 줄을 바꾼다('적용분'이 '적용/분'으로 갈리던 것). */
   .kpi-tile { word-break: keep-all; overflow-wrap: anywhere; }
   /* 일정 카드: 가까운 일정을 맨 위에 크게, 2주 뒤 일정은 접는다. */
@@ -1026,6 +1037,11 @@
     </div>
 
     <div class="price-groups" id="priceGroups"></div>
+
+    <div id="secCost" hidden>
+      <div class="section-title">원가 영향 계산</div>
+      <div class="card" id="costBox"></div>
+    </div>
 
     <div id="secCompare" hidden>
       <div class="section-title">함께 보기</div>
@@ -2518,6 +2534,94 @@ if (SAFE_FREIGHT) {
   if (html) pushCard(typeof c.sort === "number" ? c.sort : 900, html);
 });
 
+// ---- 선행 관계: 중국 선물 → 국내 물가지수 ------------------------------------------------------
+// 부자재 단가 협의 시점을 잡으려고, DCE 선물(주간)이 국내 생산자물가지수(월간)를 몇 달 앞서 움직이는지 과거 5년 자료로 계산한다.
+// 월평균의 월별 변화율끼리 시차 0~4개월의 상관을 보고 가장 높은 시차를 고른다. 기울기(선물 10% 움직일 때 지수가 평균 몇 %)도 같이 낸다.
+// 관세청 수입 단가는 아직 11개월치뿐이라 넣지 않았다(2년 넘게 쌓이면 같은 방법으로 추가).
+const LEAD_PAIRS = [
+  { from: "pp", to: "ppi-pp-resin" }, { from: "pe", to: "ppi-pe-resin" },
+  { from: "pe", to: "ppi-pe-film" }, { from: "pp", to: "ppi-sack" }
+];
+function monthlyAvg(points) {
+  const by = {};
+  (points || []).forEach(p => {
+    const m = String(p.label).slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(m) || typeof p.value !== "number") return;
+    (by[m] = by[m] || []).push(p.value);
+  });
+  const out = {};
+  Object.keys(by).forEach(m => { out[m] = by[m].reduce((a, b) => a + b, 0) / by[m].length; });
+  return out;
+}
+function monthShift(m, k) { const d = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7) - 1 + k, 1)); return d.toISOString().slice(0, 7); }
+function leadLag(fromPts, toPts) {
+  const X = monthlyAvg(fromPts), Y = monthlyAvg(toPts);
+  // 변화율: 그달 평균 ÷ 전달 평균 - 1. 선물의 마지막 달은 아직 다 차지 않았을 수 있어 뺀다.
+  const lastX = Object.keys(X).sort().slice(-1)[0];
+  const chg = (S, m) => (S[m] && S[monthShift(m, -1)]) ? S[m] / S[monthShift(m, -1)] - 1 : null;
+  let best = null;
+  for (let L = 0; L <= 4; L++) {
+    const xs = [], ys = [];
+    Object.keys(Y).sort().forEach(m => {
+      const xm = monthShift(m, -L);
+      if (xm >= lastX) return;
+      const x = chg(X, xm), y = chg(Y, m);
+      if (x !== null && y !== null) { xs.push(x); ys.push(y); }
+    });
+    if (xs.length < 24) continue;
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length, my = ys.reduce((a, b) => a + b, 0) / ys.length;
+    let sxy = 0, sxx = 0, syy = 0;
+    xs.forEach((x, i) => { sxy += (x - mx) * (ys[i] - my); sxx += (x - mx) ** 2; syy += (ys[i] - my) ** 2; });
+    const r = sxx && syy ? sxy / Math.sqrt(sxx * syy) : 0;
+    if (!best || r > best.r) best = { lag: L, r, beta: sxx ? sxy / sxx : 0, n: xs.length };
+  }
+  return best;
+}
+(function leadLagCard() {
+  const byId = {};
+  (PRICES || []).forEach(c => { byId[c.id] = c; });
+  const strength = r => r >= 0.6 ? "강함" : r >= 0.4 ? "보통" : r >= 0.25 ? "약함" : "뚜렷하지 않음";
+  const rows = LEAD_PAIRS.map(p => {
+    const a = byId[p.from], b = byId[p.to];
+    if (!a || !b || !(a.points || []).length || !(b.points || []).length) return null;
+    const res = leadLag(a.points, b.points);
+    if (!res) return null;
+    // 선행 지표의 최근 변화(마지막 값 ÷ n일쯤 전 값 - 1). 3개월은 흐름을 보여 주는 칸, 시차 기간 변화는 '아직 덜 반영됐을 몫'에 쓴다.
+    const pts = a.points, lastD = parseLabel(String(pts[pts.length - 1].label));
+    const changeOver = days => {
+      for (let i = pts.length - 2; i >= 0 && lastD; i--) { const di = parseLabel(String(pts[i].label)); if (di && (lastD - di) / 86400000 >= days - 3) return (pts[pts.length - 1].value / pts[i].value - 1) * 100; }
+      return null;
+    };
+    const recent = changeOver(91), lagMove = res.lag ? changeOver(res.lag * 30.5) : null;
+    return { a, b, res, recent, lagMove };
+  }).filter(Boolean);
+  if (!rows.length) return;
+  const sortKey = (byId["ppi-sack"] && typeof byId["ppi-sack"].sort === "number") ? byId["ppi-sack"].sort : 119;
+  const body = rows.map(({ a, b, res, recent, lagMove }) => {
+    const ok = res.r >= 0.25;
+    const lagTxt = res.lag === 0 ? "같은 달" : `${res.lag}개월 뒤`;
+    // 시차가 L개월이면 최근 L개월의 선물 변화가 국내 지수에 아직 덜 반영됐을 몫이다. 기울기는 월별 변화율의 회귀 기울기.
+    const read = !ok ? "과거 5년 동안 함께 움직인 정도가 낮아 선물로 미리 보기 어렵습니다."
+      : res.lag === 0 ? "같은 달에 함께 움직여, 선물로 미리 볼 수 있는 몫은 적습니다."
+      : lagMove === null ? `선물 움직임이 국내 지수에 보통 ${lagTxt} 나타납니다.`
+      : `최근 ${res.lag}개월 선물 변화(${pctText(lagMove)})가 국내 지수에 아직 덜 반영됐을 수 있습니다. 과거 관계로는 앞으로 ${res.lag}개월 동안 약 ${pctText(lagMove * res.beta)} 정도입니다.`;
+    return `<tr><td>${esc(a.displayName)} → ${esc(b.displayName)}</td><td>${ok ? lagTxt : "–"}</td>
+      <td>${strength(res.r)} <span class="os">(${res.r.toFixed(2)})</span></td>
+      <td class="${pctCls(recent)}">${recent === null ? "–" : pctText(recent)}</td><td class="ll-read">${esc(read)}</td></tr>`;
+  }).join("");
+  pushCard(sortKey, `
+    <div class="card span2" id="leadLag">
+      <div class="card-head"><h3>선행 관계: 중국 선물 → 국내 물가지수</h3></div>
+      <div class="m-note" style="margin:2px 0 8px;">부자재 단가 협의 시점을 잡기 위한 참고입니다. 월평균의 월별 변화율로 시차 0~4개월을 비교해
+        가장 함께 움직인 시차를 골랐습니다(2021년 이후 ${rows[0].res.n}개월 안팎). 국내 지수는 원화 판매가격이라 환율도 함께 영향을 줍니다.</div>
+      <div class="ll-wrap"><table class="sf-table ll-table">
+        <tr><th>선행 → 따라오는 지표</th><th>시차</th><th>함께 움직인 정도</th><th>선물 최근 3개월</th><th>읽는 법</th></tr>
+        ${body}
+      </table></div>
+      <div class="card-src">출처: 대련상품거래소(DCE) 선물, 한국은행 ECOS 생산자물가지수. 과거 관계가 앞으로도 같다는 보장은 없습니다.</div>
+    </div>`);
+})();
+
 // ---- 원화로 바꿔 보기 ---------------------------------------------------------------------
 // 달러나 위안 금액을 넣으면 최근, 1주 전, 1개월 전, 3개월 전, 1년 전 환율로 바꾼 원화 금액을 나란히 보여 준다.
 // 넣은 금액은 이 화면에서만 계산한다(저장하거나 보내지 않는다). 원/달러 카드 바로 뒤에 둔다.
@@ -3329,6 +3433,122 @@ if (NEWS_OUTAGE) {
     b.textContent = open ? "접기" : `나머지 ${card.querySelectorAll(".news-extra").length}건 더 보기`;
   });
 }
+
+// ---- 원가 영향 계산 ------------------------------------------------------------------------
+// 월 사용량을 넣으면 단가 변화 × 사용량으로 한 달·한 분기 원가가 얼마나 달라졌는지 계산한다(경영진 보고용 숫자).
+// 사용량은 사내 자료라 이 브라우저(localStorage)에만 저장하고 저장소·메일·서버로 보내지 않는다. 이 페이지는 공개다.
+// 원화 환산은 오늘 환율(위안은 PP·PE 카드의 원화 환산 기준, 달러는 원/달러 카드)로 한다. 환율 변화 자체의 영향은 따로 세지 않는다.
+(function costImpact() {
+  const sec = document.getElementById("secCost"), box = document.getElementById("costBox");
+  if (!sec || !box) return;
+  const byId = {};
+  (PRICES || []).forEach(c => { byId[c.id] = c; });
+  const usd = byId.usdkrw && byId.usdkrw.points && byId.usdkrw.points.length ? byId.usdkrw.points[byId.usdkrw.points.length - 1].value : null;
+  const ITEMS = [
+    { id: "pp", label: "PP (폴리프로필렌, DCE 선물)", unit: "톤", fx: c => c.krwRate || null },
+    { id: "pe", label: "PE (LLDPE, DCE 선물)", unit: "톤", fx: c => c.krwRate || null },
+    { id: "kcl", label: "KCl (염화칼륨)", unit: "톤", fx: () => usd },
+    { id: "kcci-sea", label: "해상운임 부산→동남아", unit: "FEU", fx: () => usd }
+  ].filter(x => byId[x.id] && (byId[x.id].points || []).length > 1 && x.fx(byId[x.id]));
+  // 내륙운송료: 다음 조정이 인상·인하면 그 변동, 동결이면 유류세 인하 종료 시나리오의 변동을 쓴다.
+  const sf = SAFE_FREIGHT;
+  let sfRows = null, sfWhen = "";
+  if (sf && sf.base && sf.base.verdict !== "동결" && (sf.base.impact || []).length) { sfRows = sf.base.impact; sfWhen = `${sfSpan(sf.window.applyLabel)} 적용분(${sf.base.verdict} 예상)`; }
+  else if (sf && sf.scenario && sf.scenario.trigger && (sf.scenario.trigger.impact || []).length) { sfRows = sf.scenario.trigger.impact; sfWhen = `유류세 인하 종료 시 ${sfSpan(sf.scenario.trigger.applyLabel)} 적용분`; }
+  if (!ITEMS.length && !sfRows) return;
+  const PERIODS = [{ k: "1M", label: "1개월", days: 30 }, { k: "3M", label: "3개월", days: 91 }, { k: "1Y", label: "1년", days: 365 }];
+  const STORE = "work-cost-usage-v1";
+  let state = { period: "3M", usage: {} };
+  try { const s = JSON.parse(localStorage.getItem(STORE) || "null"); if (s && typeof s === "object") state = Object.assign(state, s); } catch (e) { /* 기억 못 해도 계산은 된다 */ }
+  const save = () => { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) { /* 저장 못 해도 화면은 그대로 */ } };
+  // 기간 시작에 가장 가까운 값(월간 계열은 그 달)과 지금 값을 비교한다.
+  const changeOf = (pts, days) => {
+    const last = pts[pts.length - 1], lastD = parseLabel(String(last.label));
+    if (!lastD) return null;
+    const cut = lastD.getTime() - days * 86400000;
+    let k = pts.length - 1;
+    while (k > 0 && (parseLabel(String(pts[k].label)) || lastD).getTime() > cut) k--;
+    if (k + 1 < pts.length - 1) { const a = parseLabel(String(pts[k].label)).getTime(), b = parseLabel(String(pts[k + 1].label)).getTime(); if (Math.abs(b - cut) < Math.abs(cut - a)) k++; }
+    return { now: last.value, then: pts[k].value, thenLabel: String(pts[k].label) };
+  };
+  const won = v => {
+    const a = Math.abs(v), s = v > 0 ? "+" : v < 0 ? "−" : "";
+    if (a >= 1e8) return `${s}${(a / 1e8).toFixed(a >= 1e10 ? 0 : 2).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")}억 원`;
+    if (a >= 1e4) return `${s}${Math.round(a / 1e4).toLocaleString("ko-KR")}만 원`;
+    return `${s}${Math.round(a).toLocaleString("ko-KR")}원`;
+  };
+  const num = v => { const n = Number(String(v || "").replace(/[^\d.]/g, "")); return isFinite(n) ? n : 0; };
+  function compute() {
+    const pd = PERIODS.find(p => p.k === state.period) || PERIODS[1];
+    const rows = ITEMS.map(it => {
+      const c = byId[it.id], ch = changeOf(c.points, pd.days), fx = it.fx(c);
+      if (!ch || !ch.then) return null;
+      const u = num(state.usage[it.id]);
+      const unitKrw = ch.now * fx, diffKrw = (ch.now - ch.then) * fx;
+      return { id: it.id, label: it.label, unit: it.unit, u, unitKrw, pct: (ch.now / ch.then - 1) * 100, monthly: u * diffKrw, thenLabel: ch.thenLabel };
+    }).filter(Boolean);
+    const sfOut = (sfRows || []).map(r => {
+      const id = "sf-" + r.name, u = num(state.usage[id]);
+      return { id, label: `내륙운송 ${r.name} (20FT 왕복)`, unit: "회", u, unitKrw: r.rate, pct: r.changePct, monthly: u * r.change, sf: true };
+    });
+    return { pd, rows, sfOut, total: rows.concat(sfOut).reduce((a, r) => a + r.monthly, 0) };
+  }
+  function summaryText() {
+    const { pd, rows, sfOut, total } = compute();
+    const used = rows.concat(sfOut).filter(r => r.u > 0);
+    if (!used.length) return "사용량을 넣으면 원가 영향 문장을 만듭니다.";
+    return `원가 영향(최근 ${pd.label} 단가 변화 기준, 오늘 환율 환산): 월 ${won(total)}, 분기 ${won(total * 3)}. ` +
+      used.map(r => `${r.label.replace(/ \(.*\)$/, "")} ${won(r.monthly)}`).join(", ") + "." +
+      (sfOut.some(r => r.u > 0) ? ` 내륙운송료는 ${sfWhen} 기준입니다.` : "");
+  }
+  function render() {
+    const { pd, rows, sfOut, total } = compute();
+    const line = r => `<tr><td>${esc(r.label)}</td>
+        <td class="num"><input class="cost-in" data-cost="${esc(r.id)}" inputmode="decimal" autocomplete="off" value="${r.u ? esc(String(r.u)) : ""}" placeholder="0" aria-label="${esc(r.label)} 월 사용량"> ${esc(r.unit)}</td>
+        <td class="num">${fmtNum(Math.round(r.unitKrw))}원</td>
+        <td class="num ${pctCls(r.pct)}">${pctText(r.pct)}</td>
+        <td class="num ${pctCls(r.monthly)}" data-out="${esc(r.id)}">${r.u ? won(r.monthly) : "–"}</td></tr>`;
+    box.innerHTML = `
+      <div class="cost-bar">
+        <span>단가 변화 기준</span>
+        <div class="range-btns" role="group" aria-label="기간">${PERIODS.map(p => `<button type="button" data-cperiod="${p.k}" class="${p.k === pd.k ? "on" : ""}">${p.label}</button>`).join("")}</div>
+        <button type="button" class="ops-btn" id="costCopy">📋 결과 복사</button>
+      </div>
+      <div class="cost-wrap"><table class="sf-table cost-table">
+        <tr><th>품목</th><th class="num">월 사용량</th><th class="num">지금 단가(원 환산)</th><th class="num">${pd.label} 단가 변화</th><th class="num">월 원가 영향</th></tr>
+        ${rows.map(line).join("")}
+        ${sfOut.length ? `<tr><td colspan="5" class="os" style="padding-top:8px;">내륙운송료: ${esc(sfWhen)}의 노선별 변동</td></tr>` + sfOut.map(line).join("") : ""}
+        <tr class="cost-total"><td>합계</td><td></td><td></td><td></td><td class="num ${pctCls(total)}" id="costTotal">${total ? `월 ${won(total)} · 분기 ${won(total * 3)}` : "–"}</td></tr>
+      </table></div>
+      <div class="m-note">넣은 사용량은 이 브라우저에만 저장되고 저장소·메일·서버로 보내지 않습니다. 원화 환산은 오늘 환율로 했고, 환율 변화 자체의 영향은 따로 세지 않았습니다.
+        PP·PE는 중국 선물 가격이라 실제 구매 단가와 수준은 다르지만 방향과 폭을 가늠하는 데 씁니다.</div>`;
+  }
+  sec.hidden = false;
+  render();
+  box.addEventListener("input", e => {
+    const inp = e.target.closest("[data-cost]");
+    if (!inp) return;
+    state.usage[inp.dataset.cost] = inp.value.replace(/[^\d.]/g, "");
+    save();
+    // 입력 중에는 표를 다시 그리지 않고 결과 칸만 바꾼다(커서가 튀지 않게).
+    const { rows, sfOut, total } = compute();
+    rows.concat(sfOut).forEach(r => { const o = box.querySelector(`[data-out="${CSS.escape(r.id)}"]`); if (o) { o.textContent = r.u ? won(r.monthly) : "–"; o.className = `num ${pctCls(r.monthly)}`; } });
+    const tEl = document.getElementById("costTotal");
+    if (tEl) { tEl.textContent = total ? `월 ${won(total)} · 분기 ${won(total * 3)}` : "–"; tEl.className = `num ${pctCls(total)}`; }
+  });
+  box.addEventListener("click", e => {
+    const b = e.target.closest("[data-cperiod]");
+    if (b) { state.period = b.dataset.cperiod; save(); render(); return; }
+    if (e.target.closest("#costCopy")) opsCopy(e.target.closest("#costCopy"), summaryText);
+  });
+  const nav = document.getElementById("jumpNav");
+  if (nav && !nav.querySelector('a[href="#secCost"]')) {
+    const a = document.createElement("a");
+    a.href = "#secCost";
+    a.textContent = "원가 영향";
+    nav.insertBefore(a, nav.querySelector('a[href="#secCompare"]') || nav.querySelector('a[href="#secTop"]') || nav.querySelector('a[href="#secNews"]'));
+  }
+})();
 </script>
 </body>
 </html>

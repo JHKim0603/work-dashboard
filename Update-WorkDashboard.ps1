@@ -2001,33 +2001,8 @@ function Format-Won {
 # carry a lookaround instead (포커(?!스), (?<!포)토토, (?<!분)야동, 머니상(?!승)). The same day a
 # Calgary Roughnecks casino page with no keyword in its title was live on the page - that is
 # what the source list is for. Each blocked title is logged so a wrong block shows up in the run.
-function Test-SpamHeadline {
-    param([string]$title, [string]$source)
-    # 언론사 페이지의 빈 틀 글자가 제목 자리에 그대로 오는 일이 있다(2026-10-30 알파벳 'META_TITLE_QUOTE').
-    # 대문자·숫자를 밑줄로 이은 한 단어나 빈 제목은 기사 제목이 아니므로 스팸처럼 거른다.
-    if ([string]::IsNullOrWhiteSpace($title) -or $title.Trim() -cmatch '^[A-Z0-9]+(_[A-Z0-9]+)+$') {
-        $script:spamBlocked++
-        Write-Host "    (제목 아님 차단: $source | $title)"
-        return $true
-    }
-
-    $haystack = "$title $source"
-    foreach ($word in $spamKeywords) {
-        if ($haystack -match $word) {
-            $script:spamBlocked++
-            Write-Host "    (스팸 차단 '$word': $source | $title)"
-            return $true
-        }
-    }
-    foreach ($bad in $spamSources) {
-        if ($source -and $source -match $bad) {
-            $script:spamBlocked++
-            Write-Host "    (스팸 차단 '$bad': $source | $title)"
-            return $true
-        }
-    }
-    return $false
-}
+# Test-SpamHeadline 은 work-dashboard·stockdashboard 가 함께 쓰는 news-filter.ps1 에 있다(위 목록을 그대로 쓴다).
+. (Join-Path $PSScriptRoot "news-filter.ps1")
 
 # Scores a headline for "is this worth stopping on today".
 #
@@ -2488,6 +2463,35 @@ foreach ($l in $sseLanes) {
     ) | Where-Object { $_.label }
     $laneHistory = @(Merge-HistorySeries -store $historyStore -key $l.id -points $lanePoints)
     $l | Add-Member -NotePropertyName points -NotePropertyValue $laneHistory -Force
+}
+
+# 한국은행 물가지수(월 1회 발표)는 받은 계열을 통째로 'ecos-<id>' 에 남겨 두고, 조회가 실패한 날은 그 기록으로 카드를 만든다.
+# 2026-10-31(토)·11-08(일) 오전 회차에서 ECOS 가 다섯 계열 모두 30초 시간 초과로 끝나 '수집 실패 카드 3개 초과' 점검이
+# 그 회차 배포를 막았다. 한 달에 한 번 바뀌는 값이라 어제 받은 계열을 그대로 써도 화면이 틀리지 않는다.
+# Merge-HistorySeries 의 2년 자르기를 거치지 않도록 직접 넣는다(평년 비교에 5년치가 필요하다).
+foreach ($e in @($ecosSeries)) {
+    $kept = @{}
+    foreach ($p in @($e.points)) { $kept[[string]$p.label] = $p.value }
+    $historyStore["ecos-$($e.id)"] = $kept
+}
+$ecosArrived = @($ecosSeries | ForEach-Object { [string]$_.id })
+foreach ($cfg in @($config.ecosSeries)) {
+    if (-not $cfg -or $ecosArrived -contains [string]$cfg.Id) { continue }
+    $cached = $historyStore["ecos-$($cfg.Id)"]
+    if (-not $cached -or $cached.Keys.Count -lt 2) { continue }
+    $pts = @($cached.Keys | Sort-Object | ForEach-Object { [PSCustomObject]@{ label = $_; value = $cached[$_] } })
+    Write-Warning "ECOS $($cfg.Id): 오늘 조회 실패 - 저장해 둔 계열($($pts.Count)개월, 마지막 $($pts[-1].label))로 표시"
+    $ecosSeries += [PSCustomObject]@{
+        id          = $cfg.Id
+        displayName = $cfg.DisplayName
+        unit        = $cfg.Unit
+        note        = $cfg.Note
+        source      = "한국은행 ECOS (오늘 응답이 없어 저장해 둔 값)"
+        currency    = ""
+        points      = $pts
+        newsQuery   = $cfg.NewsQuery
+        cached      = $true
+    }
 }
 
 Write-HistoryStore -store $historyStore
@@ -4141,6 +4145,121 @@ $priceSectionHtml = (@($priceSectionRows | Sort-Object sort | Group-Object { [ma
 $dashboardUrl = "https://jhkim0603.github.io/work-dashboard/"
 $updateUrl = "https://github.com/JHKim0603/work-dashboard/actions/workflows/update-dashboard.yml"
 
+# --- 주간 보고(월요일 메일) -----------------------------------------------------------------
+# 페이지 [주간 보고 복사](template.html 의 weeklyReportText)와 같은 글을 만든다. 월요일 메일 맨 위에 붙여, 버튼을 누르지 않아도
+# 메일에서 그대로 복사해 보고에 쓸 수 있게 한다. 두 곳의 규칙을 바꿀 때는 함께 바꾼다.
+function Format-ReportPct { param($v) if ($null -eq $v) { return "–" }; $s = if ($v -gt 0) { "+" } elseif ($v -lt 0) { "-" } else { "" }; "$s$([math]::Abs([double]$v).ToString('0.0'))%" }
+function Get-JosaRo {
+    param([string]$w)
+    $t = $w.Trim(); if (-not $t) { return "로" }
+    $c = [int][char]$t[$t.Length - 1] - 0xAC00
+    if ($c -lt 0 -or $c -gt 11171) { return "로" }
+    $jong = $c % 28
+    if ($jong -and $jong -ne 8) { "으로" } else { "로" }
+}
+function Get-PrevChangePct {
+    # 마지막 값보다 6일 이상(월간 25일 이상) 앞선 가장 최근 값과 비교한다. 너무 오래된 값(주간 15일, 월간 45일 넘게)은 쓰지 않는다.
+    param($pts, [bool]$monthly)
+    $pts = @($pts); if ($pts.Count -lt 2) { return $null }
+    $toD = { param($l) $s = [string]$l; if ($s -match '^\d{4}-\d{2}$') { $s += "-01" }; [DateTime]$d = Get-Date; if ([DateTime]::TryParse($s, [ref]$d)) { $d } else { $null } }
+    $lastD = & $toD $pts[-1].label; if (-not $lastD) { return $null }
+    $minGap = if ($monthly) { 25 } else { 6 }; $maxGap = if ($monthly) { 45 } else { 15 }
+    for ($i = $pts.Count - 2; $i -ge 0; $i--) {
+        $di = & $toD $pts[$i].label; if (-not $di) { continue }
+        $gap = ($lastD - $di).TotalDays
+        if ($gap -lt $minGap) { continue }
+        if ($gap -gt $maxGap -or -not $pts[$i].value) { return $null }
+        return ([double]$pts[-1].value / [double]$pts[$i].value - 1) * 100
+    }
+    $null
+}
+function Get-WeeklyReportText {
+    if (-not $opsSummary) { return "" }
+    $dows = "일월화수목금토"
+    $lines = New-Object System.Collections.ArrayList
+    [void]$lines.Add("[물류 참고지표 주간 요약] $($nowKst.Month)/$($nowKst.Day)($($dows[[int]$nowKst.DayOfWeek])) 기준")
+    [void]$lines.Add("")
+    if ($opsSummary.headline) { [void]$lines.AddRange(@("■ 요약", "$($opsSummary.headline.title).", [string]$opsSummary.headline.text, "")) }
+    $rowsById = @{}; foreach ($r in @($opsSummary.rows)) { $rowsById[[string]$r.id] = $r }
+    $tileByKey = @{}; foreach ($t in @($opsSummary.tiles)) { $tileByKey[[string]$t.key] = $t }
+    $seriesOf = {
+        param($id)
+        if ($id -eq "scfi") { if ($scfi) { return @($scfi.points) } else { return @() } }
+        $lane = @($sseLanes | Where-Object { $_.id -eq $id })[0]
+        if ($lane) { return @($lane.points) }
+        $c = @($priceCards | Where-Object { [string]$_.id -eq $id })[0]
+        if ($c) { @($c.points) } else { @() }
+    }
+    [void]$lines.Add("■ 분야별 (지금 값, 전주 대비)")
+    foreach ($cat in @($opsSummary.categories)) {
+        $items = @($cat.items)
+        if ($items -contains "safe-freight") {
+            $sf = $safeFreight
+            if (-not $sf -or -not $sf.base) { continue }
+            $parts = @()
+            if ($sf.pending -and $sf.pending.effective -and $sf.applied) { $pe = [DateTime]$sf.pending.effective; $parts += "$($pe.Month)/$($pe.Day)부터 $($sf.pending.verdict)된 운임 적용" }
+            $df = [double]$sf.base.diff; $ds = if ($df -gt 0) { "+" } elseif ($df -lt 0) { "-" } else { "" }
+            $parts += "다음 조정($($sf.window.applyLabel)) $($sf.base.verdict) 예상(기준 대비 $ds$([math]::Abs($df).ToString('#,0.#'))원)"
+            if ($sf.scenario -and $sf.scenario.trigger) { $parts += "유류세 인하 종료 시 $($sf.scenario.trigger.applyLabel) $($sf.scenario.trigger.verdict) 예상" }
+            [void]$lines.Add("- $($cat.title): $($parts -join ', ')")
+            continue
+        }
+        $rows = @($items | ForEach-Object { $rowsById[[string]$_] } | Where-Object { $_ -and $null -ne $_.value })
+        if (-not $rows.Count) { continue }
+        $leadId = [string]@($config.opsSummary.categories | Where-Object { $_.key -eq $cat.key })[0].lead
+        $rows = @($rows | Sort-Object { if ([string]$_.id -eq $leadId) { 0 } else { 1 } })
+        $parts = foreach ($r in $rows) {
+            $pts = @(& $seriesOf ([string]$r.id))
+            $monthly = $pts.Count -gt 0 -and ([string]$pts[-1].label).Length -eq 7
+            $ch = Get-PrevChangePct $pts $monthly
+            $notes = @()
+            if ($null -ne $ch) { $notes += "$(if ($monthly) { '전월' } else { '전주' }) $(Format-ReportPct $ch)" }
+            if ($r.since) { $notes += [string]$r.since.short }
+            elseif ($r.rangeName -eq "1년" -and ($r.band -eq "최고" -or $r.band -eq "최저")) { $notes += "1년 중 $($r.band)" }
+            if ($r.streak -and $r.streak.short) { $notes += [string]$r.streak.short }
+            if ($r.changed -and $r.prevTrend) { $notes += "지난주 $($r.prevTrend)에서 $($r.trend)$(Get-JosaRo ([string]$r.trend)) 바뀜" }
+            $n = $notes -join ", "
+            $num = [double]$r.value
+            $raw = "$($r.currency)$($num.ToString('#,0.##'))"
+            $u = [string]$r.unit
+            $unitTxt = if (-not $u -or $u -eq "pt" -or $u -eq "USD") { "" } elseif ($r.currency -and $u -match '^(위안|USD|달러)/') { $u -replace '^[^/]+', '' } else { $u }
+            $val = if ($r.krw) { "톤당 약 $([math]::Round([double]$r.krw / 10000).ToString('#,0'))만원($raw$(if ($n) { ', ' + $n }))" }
+                   elseif ($u -eq "원/USD") { "$([math]::Round($num).ToString('#,0'))원$(if ($n) { " ($n)" })" }
+                   else { "$raw$unitTxt$(if ($n) { " ($n)" })" }
+            "$(if ($r.short) { $r.short } else { $r.name }) $val"
+        }
+        $t = $tileByKey[[string]$cat.key]
+        [void]$lines.Add("- $($cat.title)$(if ($t) { ' ' + $t.word }): $(@($parts) -join ', ')")
+    }
+    $sched = @($schedule | Where-Object { $_.kind -ne "발표" -and $_.dDay -ge 0 -and $_.dDay -le 31 })
+    if ($sched.Count) {
+        [void]$lines.AddRange(@("", "■ 다가오는 일정"))
+        foreach ($x in $sched) {
+            $dt = [DateTime]$x.date
+            $extra = if ($x.note -and $x.kind -eq "정책" -and $x.note -match '예상') { "($($x.note))" } else { "" }
+            [void]$lines.Add("- $($dt.Month)/$($dt.Day)($($dows[[int]$dt.DayOfWeek])) $($x.title)$extra")
+        }
+    }
+    [void]$lines.AddRange(@("", "상승과 하락은 1개월과 3개월 변화를 지표마다 평소 움직임과 비교해 자동으로 정합니다. 대시보드: $($opsSummary.dashboardUrl)"))
+    $lines -join "`n"
+}
+$weeklyHtml = ""
+# 글은 매번 만들어 실행 기록에 남기고(문구 점검용), 메일에는 월요일에만 붙인다.
+$weeklyText = Get-WeeklyReportText
+if ($weeklyText) { Write-Host "주간 보고 글 ($($weeklyText.Length)자):"; $weeklyText -split "`n" | ForEach-Object { Write-Host "  | $_" } }
+if ($nowKst.DayOfWeek -eq [DayOfWeek]::Monday -or $env:FORCE_WEEKLY_REPORT -eq "1") {
+    if ($weeklyText) {
+        $wEnc = [System.Net.WebUtility]::HtmlEncode($weeklyText) -replace "`n", "<br>"
+        $weeklyHtml = @"
+<div style="margin:0 0 16px;padding:12px 15px;background:#ffffff;border:1px solid #e1e0d9;border-left:4px solid #2a78d6;border-radius:6px;">
+  <div style="font-size:12px;font-weight:700;color:#2a78d6;margin-bottom:6px;">주간 보고 (월요일 메일에만 · 그대로 복사해 쓰면 됩니다)</div>
+  <div style="font-size:12.5px;line-height:1.65;color:#0b0b0b;">$wEnc</div>
+</div>
+"@
+        Write-Host "  주간 보고 글을 메일에 붙임 ($($weeklyText.Length)자)"
+    }
+}
+
 # The color-scheme meta pair says this mail is designed for light and only light. Without it,
 # Gmail's and Apple Mail's dark modes decide for themselves which colours to invert, and they
 # invert backgrounds more eagerly than text - which is how a card ends up dark grey with the
@@ -4163,6 +4282,7 @@ $emailHtml = @"
     <a href="$dashboardUrl" style="display:inline-block;background:#2a78d6;color:#ffffff;font-size:13px;font-weight:bold;text-decoration:none;padding:10px 18px;border-radius:6px;">📋 대시보드 열기 →</a>
     <a href="$updateUrl" style="display:inline-block;margin-left:8px;background:#ffffff;color:#2a78d6;border:1px solid #cfe0f5;font-size:13px;font-weight:bold;text-decoration:none;padding:9px 16px;border-radius:6px;">🔄 지금 업데이트</a>
   </div>
+  $weeklyHtml
   $holidayHtml
   $failureHtml
   $opsHtml
