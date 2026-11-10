@@ -2084,12 +2084,15 @@ function openDetail(id) {
         이 계수는 11/1 실제 인하폭(178km 구간 −6,900원, 400km 구간 −15,400원)에 맞춘 값입니다.
         인건비와 물가를 반영하는 연간 운임 재산정은 포함하지 않았습니다.</div>`;
   } else if (c.isPortSupply) {
-    body += `<div class="m-section-title">지표 (최근 7일 ${esc(c.window)}, 4주 평균 ${esc(c.baseWindow)})</div>
+    body += `<div class="m-section-title">지표 (조달률 최근 2주 ${esc(c.window)}, 혼잡 최근 1주 ${esc(c.jamWindow || c.window)})</div>
       ${psMetricTable(c)}
-      <div class="m-section-title">날마다 본 추이 (그날까지 7일)</div>
+      <div class="m-section-title">컨테이너 크기별 조달률 (최근 2주, 참고)</div>
+      <div class="m-note">20피트와 40피트는 따로 모자랄 수 있습니다. 판정에는 아직 넣지 않았습니다.</div>
+      ${psSizeTable(c)}
+      <div class="m-section-title">날마다 본 추이</div>
       ${(c.series || []).map(s => psSeriesChart(s, "modal-ps-" + s.id, CH)).join("")}
-      <div class="m-section-title">선사별</div>
-      <div class="m-note">픽업은 예약한 선사의 컨테이너로 합니다. 항만 전체가 괜찮아도 한 선사가 빈 컨테이너를 들이지 않으면 그 선사 컨테이너는 귀해집니다.</div>
+      <div class="m-section-title">선사별 (참고)</div>
+      <div class="m-note">판정에는 넣지 않습니다. 선사는 빈 컨테이너를 배 한 척에 몰아 들여오는 일이 많아, 2주 단위로는 배 한두 척에 따라 크게 출렁입니다.</div>
       ${psLineTables(c, 15)}
       <div class="m-section-title">판정 기준</div>
       <div class="m-note">${(c.rules || []).map(esc).join("<br>")}<br>${esc(c.footnote || "")}</div>`;
@@ -2560,7 +2563,7 @@ function psVerdictHtml(ps) {
   const check = (ps.checklist || []).length && ps.level >= 1
     ? `<details class="ps-check"><summary>픽업 점검 체크리스트</summary><ul>${ps.checklist.map(c => `<li>${esc(c)}</li>`).join("")}</ul></details>` : "";
   return `<div class="sf-next ${cls}">
-      <div class="sf-next-q">컨테이너 픽업, 지금 어떤가요? <span style="font-weight:400;">(최근 7일 ${esc(ps.window)})</span></div>
+      <div class="sf-next-q">컨테이너 픽업, 지금 어떤가요? <span style="font-weight:400;">(조달률 최근 2주 ${esc(ps.window)})</span></div>
       <div class="sf-next-a"><span class="sf-verdict ${cls}">${esc(ps.word)}</span>${esc(ps.answer)}</div>
       ${(ps.read || []).map(t => `<div class="sf-next-read">${esc(t)}</div>`).join("")}
       ${ps.cost ? `<div class="sf-next-read"><b class="warn">${esc(ps.cost)}</b></div>` : ""}
@@ -2571,20 +2574,32 @@ function psVerdictHtml(ps) {
 }
 function psMetricTable(ps) {
   return `<table class="sf-table">
-      <tr><th>지표</th><th>최근 7일</th><th>4주 평균</th><th>판정</th></tr>
-      ${(ps.metrics || []).map(m => `<tr><td>${esc(m.name)}</td><td>${esc(m.cur)}</td><td>${esc(m.base)}</td><td class="${PS_CLS[m.level] || ""}">${esc(m.word)}</td></tr>`).join("")}
+      <tr><th>지표</th><th>최근</th><th>4주 평균</th><th>판정</th></tr>
+      ${(ps.metrics || []).map(m => `<tr><td>${esc(m.name)}${m.period ? ` <span class="os">(${esc(m.period)})</span>` : ""}</td><td>${esc(m.cur)}</td><td>${esc(m.base)}</td><td class="${PS_CLS[m.level] || ""}">${esc(m.word)}</td></tr>`).join("")}
     </table>`;
 }
 function psTeu(v) { return (v === null || v === undefined) ? "–" : Math.round(v).toLocaleString("ko-KR"); }
 function psLineTables(ps, n) {
-  return (ps.ports || []).filter(p => (p.lines || []).length).map(p => `
-      <div class="sf-sub">${esc(p.name)} 선사별 빈 컨테이너 반입 (최근 2주, TEU)</div>
+  return (ps.lineTables || []).filter(p => (p.lines || []).length).map(p => `
+      <div class="sf-sub">${esc(p.name)} 선사별 (최근 2주 수출이 많은 순서, TEU)</div>
       <table class="sf-table">
-        <tr><th>선사</th><th>직전 2주</th><th>최근 2주</th><th>변화</th><th>수출 적컨</th><th>상태</th></tr>
-        ${p.lines.slice(0, n).map(l => `<tr><td>${esc(l.name)}</td><td>${psTeu(l.eInPrev)}</td><td>${psTeu(l.eIn)}</td>
-          <td>${l.chgPct === null || l.chgPct === undefined ? "–" : (l.chgPct > 0 ? "+" : l.chgPct < 0 ? "−" : "") + Math.abs(l.chgPct) + "%"}</td>
-          <td>${psTeu(l.fOut)}</td><td class="${PS_CLS[l.level] || ""}">${esc(l.word)}</td></tr>`).join("")}
+        <tr><th>선사</th><th>수출 적컨</th><th>비중</th><th>빈 컨테이너 반입<br>직전 2주</th><th>최근 2주</th><th>변화</th></tr>
+        ${p.lines.slice(0, n).map(l => `<tr><td>${esc(l.name)}</td><td>${psTeu(l.fOut)}</td><td>${l.share === null || l.share === undefined ? "–" : l.share.toFixed(1) + "%"}</td>
+          <td>${psTeu(l.eInPrev)}</td><td>${psTeu(l.eIn)}</td>
+          <td>${l.chgPct === null || l.chgPct === undefined ? "–" : (l.chgPct > 0 ? "+" : l.chgPct < 0 ? "−" : "") + Math.abs(l.chgPct) + "%"}</td></tr>`).join("")}
       </table>`).join("");
+}
+// 크기별 조달률(참고). 크기별 기록이 그 기간 수출의 95%를 넘게 채워져야 숫자를 보인다.
+function psSizeTable(ps) {
+  const rows = ps.sizeCover || [];
+  if (!rows.length) return "";
+  const pct = v => (v === null || v === undefined) ? "–" : Math.round(v) + "%";
+  return `<table class="sf-table">
+      <tr><th>항구</th><th>전체</th><th>20피트</th><th>40피트</th></tr>
+      ${rows.map(r => `<tr><td>${esc(r.name)}</td><td>${pct(r.all)}</td>${r.ready
+        ? `<td>${pct(r.c20)}</td><td>${pct(r.c40)}</td>`
+        : `<td colspan="2" class="os">자료 모으는 중 (${Math.round(r.filled || 0)}%)</td>`}</tr>`).join("")}
+    </table>`;
 }
 function psSeriesChart(s, chartId, dims) {
   if (!s || !s.points || s.points.length < 3) return "";
@@ -2610,7 +2625,6 @@ if (PORT_SUPPLY) {
         </div>
         <div>
           ${psMetricTable(ps)}
-          ${psLineTables(ps, 5)}
         </div>
       </div>
       <div class="card-src">${esc(ps.footnote)}</div>
