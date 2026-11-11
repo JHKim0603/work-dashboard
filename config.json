@@ -295,50 +295,16 @@
     "fuelTaxCut": { "until": "2026-11-30", "dieselWon": 145,
     "addVat": true, "label": "유류세 인하(경유 25%)" }
   },
-  "//portSupply": "항만 혼잡·공컨 수급(부산신항, 부산북항, 울산). 해양수산부 선박운항정보와 외항컨테이너 반출입을 배 한 척 단위로 받아 port-history.json 에 keepDays 일 남깁니다. 항구(areas)마다 따로 판정합니다(ar 은 부산이면 '신항'·'북항', 울산은 '울산', jam 은 혼잡을 체류시간(stay)으로 볼지 정박지 대기 비율(anch)로 볼지). 빈 컨테이너 조달률은 최근 coverDays 일 값이 coverWarnPct 미만이면 주의, coverShortPct 미만이면 부족입니다(그 전 baseDays 일 평균은 참고로만 보입니다). 체류시간과 대기 비율은 최근 windowDays 일을 그 전 baseDays 일 평균과 비교해, 체류시간이 stayWarnRatio/stayJamRatio 배를 넘거나 대기 비율이 anchWarnPp/anchJamPp %p 넘게 높으면 주의/혼잡입니다. 선사별 빈 컨테이너 반입(최근 lineDays 일과 그 전 같은 기간)은 참고 표로만 보이고 판정에 넣지 않습니다. nearPort 의 조달률이 낮으면 내륙운송료 표의 farRoute 와 nearRoute 운임 차이를 함께 보입니다. maxGateCallsPerRun, maxSecondsPerRun 은 한 실행에서 반출입 조회에 쓰는 상한이고, maxRefillCallsPerRun, maxRefillSecondsPerRun 은 크기별 기록이 없는 예전 배를 다시 받는 데 쓰는 상한입니다. 처음 기록을 채울 때는 로컬에서 환경 변수 PORT_BACKFILL_DAYS=42 로 한 번 실행합니다.",
-  "portSupply": {
-    "ports": [
-      { "code": "020", "key": "busan", "name": "부산항", "short": "부산" },
-      { "code": "820", "key": "ulsan", "name": "울산항", "short": "울산" }
-    ],
-    "areas": [
-      { "key": "busan-new", "port": "020", "ar": "신항", "name": "부산신항", "jam": "stay" },
-      { "key": "busan-north", "port": "020", "ar": "북항", "name": "부산북항", "jam": "anch" },
-      { "key": "ulsan", "port": "820", "ar": "울산", "name": "울산", "jam": "stay" }
-    ],
-    "keepDays": 50,
-    "refetchDays": 4,
-    "coverDays": 14,
-    "windowDays": 7,
-    "baseDays": 28,
-    "lineDays": 14,
-    "coverWarnPct": 85,
-    "coverShortPct": 80,
-    "stayWarnRatio": 1.15,
-    "stayJamRatio": 1.3,
-    "anchWarnPp": 3,
-    "anchJamPp": 6,
-    "nearPort": "울산",
-    "farRoute": "부산신항",
-    "nearRoute": "울산신항",
-    "cardSeries": "ulsan-cover",
-    "maxGateCallsPerRun": 150,
-    "maxSecondsPerRun": 90,
-    "maxRefillCallsPerRun": 100,
-    "maxRefillSecondsPerRun": 60,
-    "checklist": ["바닥 파손과 들뜸", "벽과 지붕의 구멍, 녹", "누수 흔적(안에서 문을 닫고 빛이 새는지)", "냄새, 오염, 이전 화물 찌꺼기", "도어 고무 패킹과 잠금장치", "CSC 안전승인판 유효기간"]
-  },
   "//opsSummary": "페이지 맨 위 '물류 운영 핵심 지표' 요약판과 메일 요약표에 넣을 지표와 순서입니다. 가격 카드 id(cardOrder 와 같은 이름), CCFI 항로는 sseLanes 의 Id(예: ccfi-sea), 내륙운송료는 safe-freight 를 씁니다. 없는 id 는 건너뜁니다. 경향(상승 추세 등)은 최근 4주·13주(월간 지표는 1·3개월) 변화율을 지표마다 평소 변동폭과 비교해 자동으로 판정합니다.",
   "opsSummary": {
     "title": "물류 운영 핵심 지표",
-    "items": ["scfi", "kcci", "kcci-sea", "drybulk", "safe-freight", "port-supply", "pp", "pe", "usdkrw", "brent", "D047", "B027"],
+    "items": ["scfi", "kcci", "kcci-sea", "drybulk", "safe-freight", "pp", "pe", "usdkrw", "brent", "D047", "B027"],
     "//categories": "요약판 맨 위 분야별 타일과 요약표 묶음입니다. 분야 판정은 들어 있는 지표의 경향(상승·하락)을 세어 정하고, 타일에는 lead 지표의 값과 3개월 변화를 보입니다. safe-freight 가 든 분야는 내륙운송료 판정을 보입니다.",
     "//role": "main 은 물류팀이 주로 보는 분야(해상운임, 내륙운송료, 부자재)로 요약판에서 크게, ref 는 참고 지표(환율, 유가)로 작게 보입니다. meaning 은 타일 아래 '우리 비용에 주는 뜻' 한 줄입니다(up, down, flat, mixed). 원재료(KCl)는 물류팀이 주로 볼 내용이 아니라 요약에서 뺐습니다(2026-11-06).",
     "categories": [
       { "key": "freight", "title": "해상운임", "items": ["kcci-sea", "scfi", "kcci", "drybulk"], "lead": "kcci-sea", "role": "main",
         "meaning": { "up": "수출입 운송비 부담이 커지고 있습니다.", "down": "수출입 운송비 부담이 줄고 있습니다.", "flat": "운송비에 큰 변화가 없습니다.", "mixed": "항로마다 움직임이 다릅니다." } },
       { "key": "inland", "title": "내륙운송료", "items": ["safe-freight"], "lead": "safe-freight", "role": "main" },
-      { "key": "port", "title": "항만·공컨", "items": ["port-supply"], "lead": "port-supply", "role": "main" },
       { "key": "packaging", "title": "부자재(PP·PE)", "items": ["pp", "pe"], "lead": "pp", "role": "main",
         "meaning": { "up": "포장 부자재 원가 부담이 커지고 있습니다.", "down": "포장 부자재 원가 부담이 줄고 있습니다.", "flat": "포장 부자재 원가에 큰 변화가 없습니다.", "mixed": "PP와 PE의 움직임이 다릅니다." } },
       { "key": "fx", "title": "환율", "items": ["usdkrw"], "lead": "usdkrw", "role": "ref",
@@ -352,7 +318,7 @@
   },
   "//cardGroups": "가격 카드를 묶어 보여 줄 구역입니다. 구역 순서와 이름, 들어갈 카드 id 를 정합니다. 구역 안의 순서는 cardOrder 를 따르고, 메일도 같은 구역으로 나뉩니다. 어느 구역에도 없는 카드는 맨 뒤 '기타 지표'에 붙습니다.",
   "cardGroups": [
-    { "title": "운임·물류비", "items": ["scfi", "ccfi-lanes", "kcci", "kcci-sea", "drybulk", "D047", "safe-freight", "port-supply", "B027"] },
+    { "title": "운임·물류비", "items": ["scfi", "ccfi-lanes", "kcci", "kcci-sea", "drybulk", "D047", "safe-freight", "B027"] },
     { "title": "부자재(PP·PE)", "items": ["pp", "pe", "ppi-pp-resin", "ppi-pe-resin", "imp-pp", "imp-pe", "ppi-pe-film", "ppi-sack"] },
     { "title": "환율·국제유가", "items": ["usdkrw", "brent", "wti"] },
     { "title": "원재료·전력(참고)", "items": ["kcl", "naoh", "power", "ppi-inorg"] }
@@ -370,7 +336,6 @@
     "naoh",
     "D047",
     "safe-freight",
-    "port-supply",
     "B027",
     "pp",
     "pe",
@@ -388,8 +353,7 @@
   "mailCompactCards": ["ppi-pp-resin", "ppi-pe-resin", "imp-pp", "imp-pe", "ppi-pe-film", "ppi-sack"],
   "//cardAbout": "카드 id별 상세 설명. [상세] 화면 맨 위에 '지표 설명'으로 표시됩니다. 카드가 어느 소스에서 왔든 id만 맞으면 붙으므로 설명은 여기 한 곳에서만 관리합니다. 각 항목은 무엇을 나타내는 값인지, 업무와 어떤 관련이 있는지, 볼 때 유의할 점 순서로 씁니다. 문단을 나누려면 \n 을 넣습니다. 화면에 그대로 나가므로 사내 문서 문체(-습니다)로 씁니다.",
   "cardAbout": {
-    "port-supply": "부산신항, 부산북항, 울산에서 컨테이너 픽업이 어려워지는지를 항구마다 따로 판정합니다. 빈 컨테이너가 귀할수록 데포가 상태가 덜 좋은 컨테이너까지 내주고, 교체를 요청해도 바꿔 줄 컨테이너가 없습니다. 터미널이 붐비면 반출입이 늦어집니다.\n빈 컨테이너 조달률은 그 항구에서 수출에 쓸 수 있게 된 빈 컨테이너(들어온 빈 컨테이너와 비워진 수입 컨테이너에서 다시 나간 빈 컨테이너를 뺀 것)를 수출 적컨과 견준 값입니다. 최근 2주 값이 85% 아래면 주의, 80% 아래면 부족이고, 기준 아래로 내려간 지 며칠째인지 함께 적습니다. 100%보다 낮으면 모자란 만큼 다른 곳에서 가져와야 합니다.\n부산은 신항과 북항을 나눠 봅니다. 2026년 10월 말~11월 초에 신항은 1주 조달률이 62%까지 떨어졌지만, 같은 기간 북항은 88% 아래로 내려간 적이 없습니다.\n선사별 표는 참고용입니다. 선사는 빈 컨테이너를 배 한 척에 몰아 들여오는 일이 많아 2주 단위로는 크게 출렁이므로 판정에 넣지 않습니다.\n이 지표는 천공이나 부식이 있는 불량 컨테이너를 직접 세지 않습니다. 공공 자료에는 컨테이너 상태 정보가 없고, 회사 불량 기록과 맞춰 본 적도 없습니다. 빈 컨테이너가 오래 모자라면 데포의 상태 좋은 컨테이너가 바닥나 불량 컨테이너가 나오기 쉽다는 업계 경험에 기대어, 픽업 점검을 강화할 시점을 알리는 용도로 쓰시기 바랍니다.\n해양수산부 공공데이터(선박운항정보, 외항컨테이너 반출입)를 배 한 척 단위로 받아 계산합니다. 데포 재고나 터미널 게이트 대기시간을 직접 잰 값은 아닙니다.",
-    "kcci":"한국해양진흥공사가 매주 월요일 발표하는 부산항 출발 컨테이너 운임 종합지수입니다. 미주, 유럽, 중동, 아시아 등 13개 항로의 운임을 항로별 비중으로 가중평균합니다. 공표 운임과 선사·포워더 패널이 제출한 실제 계약 운임을 함께 반영합니다.\n상하이 출발인 SCFI·CCFI보다 국내 수출 물류비의 흐름에 가깝습니다. 다만 수입 운임(베트남→국내)은 포함하지 않습니다.",
+    "kcci": "한국해양진흥공사가 매주 월요일 발표하는 부산항 출발 컨테이너 운임 종합지수입니다. 미주, 유럽, 중동, 아시아 등 13개 항로의 운임을 항로별 비중으로 가중평균합니다. 공표 운임과 선사·포워더 패널이 제출한 실제 계약 운임을 함께 반영합니다.\n상하이 출발인 SCFI·CCFI보다 국내 수출 물류비의 흐름에 가깝습니다. 다만 수입 운임(베트남→국내)은 포함하지 않습니다.",
     "kcci-sea": "부산항에서 동남아로 가는 40피트 컨테이너 1개의 운임(달러)입니다. 한국해양진흥공사 KCCI의 동남아 항로 값입니다.\n동남아 수출 물류비를 볼 때 참고합니다. 같은 지역이라도 베트남에서 국내로 들어오는 수입 운임과는 수준이 다를 수 있으므로 방향을 참고하시기 바랍니다.",
     "usdkrw": "원화와 미국 달러의 교환 비율입니다. 이 페이지의 원자재와 운임은 대부분 달러나 위안으로 표시되므로, 실제 원화 지급액은 환율에 따라 달라집니다. 원자재 가격이 내려도 환율이 오르면 원화 기준 지급액은 줄지 않을 수 있습니다.\n환율 상승은 원화 약세를 뜻하며 수입 단가를 높이는 요인입니다.",
     "wti": "미국 서부텍사스산 원유(WTI) 선물 가격입니다. 미국 내륙의 원유 수급을 주로 반영합니다. 원유는 나프타를 거쳐 PP와 PE의 원료가 되므로, 수지 가격보다 먼저 방향을 보여 주는 경우가 많습니다. 브렌트유와의 가격 차이는 지역별 수급 차이를 나타냅니다.",
@@ -419,7 +383,6 @@
     "drybulk": "벌크선 운임 BDI 건화물 해운",
     "D047": "경유 가격 주유소 유류세",
     "safe-freight": "화물차 안전운임제",
-    "port-supply": "부산항 컨테이너 터미널 혼잡",
     "B027": "휘발유 가격 주유소 유류세",
     "power": "산업용 전기요금 차등요금제"
   },

@@ -173,13 +173,12 @@ jobs:
       - name: Commit history and delivery marker
         continue-on-error: true
         run: |
-          if [[ -n "$(git status --porcelain data-history.json .last-digest mailed-labels.json typhoon-tracks.json port-history.json)" ]]; then
+          if [[ -n "$(git status --porcelain data-history.json .last-digest mailed-labels.json typhoon-tracks.json)" ]]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             # mailed-labels.json only exists once a mail has gone out, and git add fails on a
             # pathspec that matches nothing.
-            # port-history.json: 부산·울산 컨테이너선별 반출입 기록(최근 45일). 실행마다 새 배만 더해 묻는다.
-            for f in data-history.json .last-digest mailed-labels.json typhoon-tracks.json port-history.json; do
+            for f in data-history.json .last-digest mailed-labels.json typhoon-tracks.json; do
               if [[ -e "$f" ]]; then git add "$f"; fi
             done
             git commit -m "chore: accumulate price history $(date -u +%Y-%m-%d)"

@@ -793,14 +793,6 @@
   .sf-next-read b { color: var(--ink-primary); font-variant-numeric: tabular-nums; }
   .sf-next-read .up { color: var(--bad); }
   .sf-next-read .down { color: var(--good); }
-  /* 항만 혼잡·공컨 수급: 내륙운송료 카드의 틀을 그대로 쓰고 '주의'(주황)만 더한다. 높음은 빨강, 평소는 회색. */
-  .sf-next.warn { border-left-color: var(--warn); }
-  .sf-verdict.warn { color: var(--warn); border-color: currentColor; }
-  .sf-table td.warn { color: var(--warn); font-weight: 700; }
-  .sf-next-read .warn { color: var(--warn); }
-  .ps-check { margin-top: 6px; font-size: 13px; color: var(--ink-secondary); }
-  .ps-check summary { cursor: pointer; font-weight: 650; color: var(--ink-primary); }
-  .ps-check ul { margin: 4px 0 0; padding-left: 18px; line-height: 1.6; }
   .sfg { margin: 4px 0 2px; }
   .sfg-row { position: relative; height: 18px; font-size: 12px; }
   .sfg-row span { position: absolute; top: 1px; transform: translateX(-50%); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -1127,7 +1119,6 @@ const CHART_EVENTS = __CHART_EVENTS_JSON__;
 const NEXT_RELEASE = __NEXT_RELEASE_JSON__;
 const evsFor = id => (CHART_EVENTS || []).filter(e => !e.ids || !e.ids.length || e.ids.indexOf(id) >= 0);
 const SAFE_FREIGHT = __SAFE_FREIGHT_JSON__;
-const PORT_SUPPLY = __PORT_SUPPLY_JSON__;
 const OPS_SUMMARY = __OPS_SUMMARY_JSON__;
 const FX_CALC = __FX_CALC_JSON__;
 const NEWS_OUTAGE = __NEWS_OUTAGE__;
@@ -1993,12 +1984,8 @@ function openDetail(id) {
   if (c.isSafeFreight) {
     body += `<div class="m-section-title" ${firstTitle}>다음 조정 예상</div>${sfNextHtml(c)}`;
   }
-  // 항만·공컨도 판정이 가장 궁금한 내용이라 지표 설명보다 먼저 보인다.
-  if (c.isPortSupply) {
-    body += `<div class="m-section-title" ${firstTitle}>지금 판정</div>${psVerdictHtml(c)}`;
-  }
   if (c.about) {
-    body += `<div class="m-section-title"${c.isSafeFreight || c.isPortSupply ? "" : " " + firstTitle}>지표 설명</div>
+    body += `<div class="m-section-title"${c.isSafeFreight ? "" : " " + firstTitle}>지표 설명</div>
       <div class="m-about">${esc(c.about)}</div>`;
   }
 
@@ -2083,19 +2070,6 @@ function openDetail(id) {
         운임 변동액은 운임표 구간거리(편도 km) ÷ ${sfWon(c.kmPerLiter)} × 유가 변동으로 계산한 근사치입니다.
         이 계수는 11/1 실제 인하폭(178km 구간 −6,900원, 400km 구간 −15,400원)에 맞춘 값입니다.
         인건비와 물가를 반영하는 연간 운임 재산정은 포함하지 않았습니다.</div>`;
-  } else if (c.isPortSupply) {
-    body += `<div class="m-section-title">지표 (조달률 최근 2주 ${esc(c.window)}, 혼잡 최근 1주 ${esc(c.jamWindow || c.window)})</div>
-      ${psMetricTable(c)}
-      <div class="m-section-title">컨테이너 크기별 조달률 (최근 2주, 참고)</div>
-      <div class="m-note">20피트와 40피트는 따로 모자랄 수 있습니다. 판정에는 아직 넣지 않았습니다.</div>
-      ${psSizeTable(c)}
-      <div class="m-section-title">날마다 본 추이</div>
-      ${(c.series || []).map(s => psSeriesChart(s, "modal-ps-" + s.id, CH)).join("")}
-      <div class="m-section-title">선사별 (참고)</div>
-      <div class="m-note">판정에는 넣지 않습니다. 선사는 빈 컨테이너를 배 한 척에 몰아 들여오는 일이 많아, 2주 단위로는 배 한두 척에 따라 크게 출렁입니다.</div>
-      ${psLineTables(c, 15)}
-      <div class="m-section-title">판정 기준</div>
-      <div class="m-note">${(c.rules || []).map(esc).join("<br>")}<br>${esc(c.footnote || "")}</div>`;
   } else if (c.lanes && c.lanes.length) {
     body += `${subLine(c)}
       <div class="m-section-title">항로별 현황 (${esc(c.lanes[0].currentDate)} 기준, 전주 대비)</div>` +
@@ -2554,83 +2528,6 @@ if (SAFE_FREIGHT) {
     </div>`);
 }
 
-// ---- 항만 혼잡·공컨 수급 ----------------------------------------------------------------------
-// 생성 스크립트(Get-PortSupply)가 판정과 문장을 다 만들어 보낸다. 여기서는 내륙운송료 카드와 같은 틀로 그리기만 한다.
-// 단계 0 평소(회색), 1 주의(주황), 2 높음(빨강).
-const PS_CLS = ["flat", "warn", "up"];
-function psVerdictHtml(ps) {
-  const cls = PS_CLS[ps.level] || "flat";
-  const check = (ps.checklist || []).length && ps.level >= 1
-    ? `<details class="ps-check"><summary>픽업 점검 체크리스트</summary><ul>${ps.checklist.map(c => `<li>${esc(c)}</li>`).join("")}</ul></details>` : "";
-  return `<div class="sf-next ${cls}">
-      <div class="sf-next-q">컨테이너 픽업, 지금 어떤가요? <span style="font-weight:400;">(조달률 최근 2주 ${esc(ps.window)})</span></div>
-      <div class="sf-next-a"><span class="sf-verdict ${cls}">${esc(ps.word)}</span>${esc(ps.answer)}</div>
-      ${(ps.read || []).map(t => `<div class="sf-next-read">${esc(t)}</div>`).join("")}
-      ${ps.cost ? `<div class="sf-next-read"><b class="warn">${esc(ps.cost)}</b></div>` : ""}
-      ${ps.typhoon ? `<div class="sf-next-read"><b class="up">${esc(ps.typhoon)}</b></div>` : ""}
-      ${ps.stale ? `<div class="sf-next-read"><b class="warn">${esc(ps.stale)}</b></div>` : ""}
-      ${check}
-    </div>`;
-}
-function psMetricTable(ps) {
-  return `<table class="sf-table">
-      <tr><th>지표</th><th>최근</th><th>4주 평균</th><th>판정</th></tr>
-      ${(ps.metrics || []).map(m => `<tr><td>${esc(m.name)}${m.period ? ` <span class="os">(${esc(m.period)})</span>` : ""}</td><td>${esc(m.cur)}</td><td>${esc(m.base)}</td><td class="${PS_CLS[m.level] || ""}">${esc(m.word)}</td></tr>`).join("")}
-    </table>`;
-}
-function psTeu(v) { return (v === null || v === undefined) ? "–" : Math.round(v).toLocaleString("ko-KR"); }
-function psLineTables(ps, n) {
-  return (ps.lineTables || []).filter(p => (p.lines || []).length).map(p => `
-      <div class="sf-sub">${esc(p.name)} 선사별 (최근 2주 수출이 많은 순서, TEU)</div>
-      <table class="sf-table">
-        <tr><th>선사</th><th>수출 적컨</th><th>비중</th><th>빈 컨테이너 반입<br>직전 2주</th><th>최근 2주</th><th>변화</th></tr>
-        ${p.lines.slice(0, n).map(l => `<tr><td>${esc(l.name)}</td><td>${psTeu(l.fOut)}</td><td>${l.share === null || l.share === undefined ? "–" : l.share.toFixed(1) + "%"}</td>
-          <td>${psTeu(l.eInPrev)}</td><td>${psTeu(l.eIn)}</td>
-          <td>${l.chgPct === null || l.chgPct === undefined ? "–" : (l.chgPct > 0 ? "+" : l.chgPct < 0 ? "−" : "") + Math.abs(l.chgPct) + "%"}</td></tr>`).join("")}
-      </table>`).join("");
-}
-// 크기별 조달률(참고). 크기별 기록이 그 기간 수출의 95%를 넘게 채워져야 숫자를 보인다.
-function psSizeTable(ps) {
-  const rows = ps.sizeCover || [];
-  if (!rows.length) return "";
-  const pct = v => (v === null || v === undefined) ? "–" : Math.round(v) + "%";
-  return `<table class="sf-table">
-      <tr><th>항구</th><th>전체</th><th>20피트</th><th>40피트</th></tr>
-      ${rows.map(r => `<tr><td>${esc(r.name)}</td><td>${pct(r.all)}</td>${r.ready
-        ? `<td>${pct(r.c20)}</td><td>${pct(r.c40)}</td>`
-        : `<td colspan="2" class="os">자료 모으는 중 (${Math.round(r.filled || 0)}%)</td>`}</tr>`).join("")}
-    </table>`;
-}
-function psSeriesChart(s, chartId, dims) {
-  if (!s || !s.points || s.points.length < 3) return "";
-  CHART_DATA[chartId] = { points: s.points, currency: "", unit: s.unit, decimals: 1 };
-  return `<div class="sf-sub">${esc(s.title)}</div>
-    <div class="chart-wrap">${priceChartSvg(s.points, chartId, dims)}<div class="ch-tip"></div></div>`;
-}
-
-if (PORT_SUPPLY) {
-  const ps = PORT_SUPPLY;
-  CARD_BY_ID["port-supply"] = Object.assign({}, ps, { isPortSupply: true, points: [] });
-  const main = (ps.series || []).find(s => s.id === ps.cardSeries) || (ps.series || [])[0];
-  pushCard(typeof CARD_SORTS.portSupply === "number" ? CARD_SORTS.portSupply : 900, `
-    <div class="card span2">
-      <div class="card-head">
-        <h3>${esc(ps.displayName)}</h3>
-        <button class="detail-btn" data-detail="port-supply">상세</button>
-      </div>
-      <div class="sf-cols">
-        <div>
-          ${psVerdictHtml(ps)}
-          ${psSeriesChart(main, "ch-port", CH)}
-        </div>
-        <div>
-          ${psMetricTable(ps)}
-        </div>
-      </div>
-      <div class="card-src">${esc(ps.footnote)}</div>
-    </div>`);
-}
-
 (PRICES || []).forEach((c, i) => {
   const html = priceCardHtml(c, i);
   // Ties keep source order, so a card the order list does not name lands where it was.
@@ -2991,10 +2888,6 @@ function weeklyReportText() {
       lines.push(`- ${cat.title}: ${parts.join(", ")}`);
       return;
     }
-    if (items.indexOf("port-supply") >= 0) {
-      if (PORT_SUPPLY && PORT_SUPPLY.weekly) lines.push(`- ${cat.title}: ${PORT_SUPPLY.weekly}`);
-      return;
-    }
     const rows = items.map(id => rowsById[id]).filter(r => r && r.value !== null && r.value !== undefined);
     if (!rows.length) return;
     rows.sort((a, b) => (b.id === cat.lead ? 1 : 0) - (a.id === cat.lead ? 1 : 0));
@@ -3132,7 +3025,7 @@ function hlNewsHtml(h) {
     </tr>`;
   };
   // 분야별로 묶는다. 내륙운송료는 위 타일이 보여 주므로 표에서 뺀다.
-  const tableRows = OPS_SUMMARY.rows.filter(r => r.id !== "safe-freight" && r.id !== "port-supply");
+  const tableRows = OPS_SUMMARY.rows.filter(r => r.id !== "safe-freight");
   const byId = {};
   tableRows.forEach(r => { byId[r.id] = r; });
   const placed = new Set();
@@ -3261,7 +3154,7 @@ function hlNewsHtml(h) {
     return (c && c.points) || [];
   };
   const toT = lbl => { const d = parseLabel(String(lbl)); return d ? d.getTime() : NaN; };
-  const pool = OPS_SUMMARY.rows.filter(r => r.id !== "safe-freight" && r.id !== "port-supply")
+  const pool = OPS_SUMMARY.rows.filter(r => r.id !== "safe-freight")
     .map(r => ({ id: r.id, name: r.short || r.name, pts: seriesOf(r.id).map(p => ({ t: toT(p.label), v: p.value }))
       .filter(p => isFinite(p.t) && typeof p.v === "number" && p.v > 0) }))
     .filter(x => x.pts.length >= 6);

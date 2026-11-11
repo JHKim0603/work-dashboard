@@ -2507,520 +2507,6 @@ if ($config.safeFreight) {
     }
 }
 
-# --- 항만 혼잡·공컨 수급 (부산항·울산항, 해양수산부 공공데이터) ---------------------------------
-# 컨테이너 픽업이 어려워지는지(빈 컨테이너가 귀해지는지, 터미널이 붐비는지)를 '최근 7일'로 본다. 빈 컨테이너가
-# 귀할수록 데포가 상태가 덜 좋은 컨테이너까지 내주고, 교체를 요청해도 바꿔 줄 컨테이너가 없다.
-#
-# 월간 항만 통계(외내항 컨테이너 처리실적)는 6주 늦게 나와, 그사이의 출렁임을 놓친다. 2026-10 울산의 7일 조달률은
-# 10월 중순 120%대에서 10/31 59%까지 떨어졌다가 11/10 96%로 돌아왔는데, 월간 통계로는 9월 79% 하나만 보였다.
-# 그래서 배 한 척 단위의 실시간 자료 두 가지를 이어 붙인다(둘 다 공공데이터포털, 키는 DATA_GO_KR_KEY 하나).
-#   선박운항정보(VsslEtrynd5/Info5): 입출항 선박, 입항 때 계류 장소(이름에 '박지'가 있으면 선석이 차서 기다린 배), 출항 시각
-#   외항컨테이너반출입(CargContnOut3/Info3): 배 한 척 × 선사별 수입·수출 적컨·공컨 개수. 출항 뒤 몇 시간 안에 들어온다.
-# 받은 배는 port-history.json 에 45일치를 남겨, 실행마다 새로 들어온 배와 아직 정리되지 않은 배만 묻는다.
-# 비교 기준은 1년 전이 아니라 최근 4주다(현장의 '평소'는 항로 개편과 계절로 계속 바뀐다).
-$portStorePath = Join-Path $root "port-history.json"
-$portInv = [Globalization.CultureInfo]::InvariantCulture
-
-function ConvertFrom-PortTime { param([string]$s) if (-not $s) { return $null }; [datetime]::ParseExact($s.Substring(0, 16), "yyyy-MM-ddTHH:mm", $portInv) }
-
-function Get-PortLineName {
-    # '고려해운(주)', '(주)에버그린코리아', '주식회사 …' 처럼 회사 표기가 섞여 있어 같은 선사가 두 줄로 갈리지 않게 줄인다.
-    param([string]$name)
-    $n = ($name -replace '\(주\)|주식회사|㈜', '').Trim()
-    if (-not $n) { "기타" } else { $n }
-}
-
-function Get-PortLineShort {
-    # 표에 보일 이름. 부산은 대리점 이름으로 들어와 '오션네트워크익스프레스코리아', '에스엠상선부산영업소'처럼 길다.
-    # 저장은 받은 이름 그대로 두고(나중에 줄이는 규칙을 바꿔도 기록이 갈리지 않게) 보일 때만 줄인다.
-    param([string]$name)
-    $n = $name -replace '(코리아|한국|부산영업소|울산영업소|영업소|부산지점|지점)$', ''
-    if ($n.Length -ge 2) { $n } else { $name }
-}
-
-function Read-PortStore {
-    $store = @{}
-    if (-not (Test-Path $portStorePath)) { return $store }
-    try {
-        $raw = Get-Content -Path $portStorePath -Raw -Encoding UTF8 | ConvertFrom-Json
-        foreach ($s in @($raw.ships)) {
-            if (-not $s -or -not $s.k) { continue }
-            $g = @{}
-            if ($s.g) { foreach ($p in $s.g.PSObject.Properties) { $g[$p.Name] = [double[]]@($p.Value | ForEach-Object { [double]$_ }) } }
-            $store[[string]$s.k] = [ordered]@{ k = [string]$s.k; p = [string]$s.p; n = [string]$s.n; c = [string]$s.c; y = [string]$s.y; co = [string]$s.co
-                in = [string]$s.in; out = [string]$s.out; ib = [string]$s.ib; ob = [string]$s.ob; an = [int]$s.an; ar = [string]$s.ar
-                g = $g; gi = [string]$s.gi; go = [string]$s.go; gt = [string]$s.gt; gf = [int]$s.gf
-                z = $(if ($null -ne $s.z) { [double[]]@($s.z | ForEach-Object { [double]$_ }) } else { $null }) }
-        }
-    } catch { Write-Warning "port-history.json 을 읽지 못해 새로 모읍니다: $($_.Exception.Message)" }
-    $store
-}
-
-function Write-PortStore {
-    # 배 한 척을 한 줄로 쓴다. 선사 순서를 고정해야 같은 내용이 매 실행 다른 파일이 되지 않는다(그러면 실행마다 커밋이 생긴다).
-    param($store, [int]$keepDays)
-    $cut = $nowKst.Date.AddDays(-$keepDays).ToString("yyyy-MM-dd")
-    $rows = foreach ($s in @($store.Values | Where-Object { $_.in -and $_.in.Substring(0, 10) -ge $cut } | Sort-Object { $_.in }, { $_.k })) {
-        $g = [ordered]@{}
-        foreach ($ln in @($s.g.Keys | Sort-Object)) { $g[$ln] = @($s.g[$ln] | ForEach-Object { [math]::Round([double]$_, 1) }) }
-        $o = [ordered]@{}
-        foreach ($f in $s.Keys) { $o[$f] = $s[$f] }
-        $o.g = $g
-        ConvertTo-Json -InputObject $o -Compress -Depth 4
-    }
-    $json = "{`n""ships"": [`n" + (@($rows) -join ",`n") + "`n]`n}`n"
-    if ((Test-Path $portStorePath) -and ([IO.File]::ReadAllText($portStorePath) -eq $json)) { return }
-    [IO.File]::WriteAllText($portStorePath, $json, (New-Object System.Text.UTF8Encoding $false))
-}
-
-function Invoke-PortApi {
-    # 공공데이터포털 호출. 실패 문구에 키가 섞여 나가지 않게 키는 메시지에서 지운다.
-    param([string]$path)
-    $key = [string]$env:DATA_GO_KR_KEY
-    $url = "https://apis.data.go.kr/$path&serviceKey=$([uri]::EscapeDataString($key))"
-    for ($try = 1; $try -le 2; $try++) {
-        try {
-            $r = Invoke-WebRequest -Uri $url -Headers $headers -UseBasicParsing -TimeoutSec 25
-            [xml]$x = [Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray())
-            $code = [string]$x.response.header.resultCode
-            if ($code -and $code -ne "00") { throw "결과 코드 $code $($x.response.header.resultMsg)" }
-            # 쉼표: XmlDocument 는 열거 가능한 객체라 그냥 내보내면 하위 노드로 풀려 나간다.
-            return ,$x
-        } catch {
-            if ($try -eq 2) { throw ($_.Exception.Message.Replace($key, "<KEY>")) }
-            Start-Sleep -Seconds 2
-        }
-    }
-}
-
-function Update-PortStore {
-    # 1) 최근 며칠의 입출항 선박에서 컨테이너선(양·적하 목적)을 골라 저장소에 넣거나 고친다(출항 시각은 나중에 채워진다).
-    # 2) 아직 정리되지 않은 배의 반출입 기록을 묻는다. 출항 36시간 뒤에는 더 바뀌지 않아 '정리됨'으로 두고 다시 묻지 않는다.
-    #    같은 배는 6시간에 한 번만 다시 묻고, 한 실행에서 쓰는 호출 수와 시간에 상한을 둔다(남은 배는 다음 실행이 잇는다).
-    param($store, $cfg)
-    $st = [ordered]@{ vessel = 0; gate = 0; newShips = 0; deferred = 0 }
-    $backfill = [int]("0" + [string]$env:PORT_BACKFILL_DAYS)
-    $span = if ($backfill -gt 0) { $backfill } else { [int]$cfg.refetchDays }
-    $maxGate = if ($backfill -gt 0) { 6000 } else { [int]$cfg.maxGateCallsPerRun }
-    $deadline = (Get-Date).AddSeconds($(if ($backfill -gt 0) { 7200 } else { [int]$cfg.maxSecondsPerRun }))
-    foreach ($port in @($cfg.ports)) {
-        $code = [string]$port.code
-        $sde = $nowKst.Date.AddDays(-$span).ToString("yyyyMMdd"); $ede = $nowKst.Date.ToString("yyyyMMdd")
-        $page = 1; $total = $null; $got = 0
-        do {
-            $x = Invoke-PortApi "1192000/VsslEtrynd5/Info5?prtAgCd=$code&sde=$sde&ede=$ede&pageNo=$page&numOfRows=50"
-            $st.vessel++
-            if ($null -eq $total) { $total = [int]$x.response.body.totalCount }
-            foreach ($it in @($x.response.body.items.item | Where-Object { $_ })) {
-                $got++
-                if ([string]$it.vsslKndNm -notmatch '컨테이너' -or [string]$it.etryptPurpsNm -notmatch '양적하|적하|양하') { continue }
-                $d = @($it.details.detail | Where-Object { $_ })
-                $in = @($d | Where-Object { $_.etryndNm -eq '입항' })[0]; $o = @($d | Where-Object { $_.etryndNm -eq '출항' })[0]
-                if (-not $in -or -not [string]$in.etryptDt) { continue }
-                $k = "$code|$($it.clsgn)|$($it.etryptYear)|$($it.etryptCo)"
-                $s = $store[$k]
-                if (-not $s) {
-                    $s = [ordered]@{ k = $k; p = $code; n = ""; c = [string]$it.clsgn; y = [string]$it.etryptYear; co = [string]$it.etryptCo
-                        in = ""; out = ""; ib = ""; ob = ""; an = 0; ar = ""; g = @{}; gi = ""; go = ""; gt = ""; gf = 0; z = $null }
-                    $store[$k] = $s; $st.newShips++
-                }
-                $s.n = [string]$it.vsslNm
-                $s.in = ([string]$in.etryptDt).Substring(0, 16)
-                if ($o -and [string]$o.tkoffDt) { $s.out = ([string]$o.tkoffDt).Substring(0, 16) }
-                $s.ib = [string]$in.laidupFcltyNm
-                if ($o) { $s.ob = [string]$o.laidupFcltyNm }
-                $s.an = if ($s.ib -match '박지|정박지|묘박') { 1 } else { 0 }
-                $s.ar = if ($code -eq "020") { if ("$($s.ob) $($s.ib)" -match '신항') { "신항" } else { "북항" } } else { [string]$port.short }
-            }
-            $page++
-        } while ($got -lt $total -and $page -le 120)
-    }
-    $nowS = $nowKst.ToString("yyyy-MM-ddTHH:mm")
-    $cands = @($store.Values | Where-Object {
-        -not $_.gf -and $_.in -and (ConvertFrom-PortTime $_.in) -le $nowKst.AddHours(-3) -and
-        (-not $_.gt -or (ConvertFrom-PortTime $_.gt) -le $nowKst.AddHours(-6)) } | Sort-Object { $_.in })
-    $done = 0
-    foreach ($s in $cands) {
-        if ($st.gate -ge $maxGate -or (Get-Date) -gt $deadline) { break }
-        $q = Get-PortGate $s
-        $st.gate += $q.calls
-        $s.g = $q.g; $s.z = $q.z; $s.gi = $q.gi; $s.go = $q.go; $s.gt = $nowS
-        $outD = ConvertFrom-PortTime $s.out
-        if (($outD -and $outD -le $nowKst.AddHours(-36) -and $q.rows -gt 0) -or (ConvertFrom-PortTime $s.in) -le $nowKst.AddDays(-10)) { $s.gf = 1 }
-        $done++
-    }
-    $st.deferred = $cands.Count - $done
-    # 크기별 기록 채우기: 2026-11-11 전에 정리된 배는 크기별 개수(z)가 없다. 정해 둔 예산 안에서 최근 배부터 다시 받는다
-    # (한 실행 100회·60초면 하루 7번 실행으로 이틀이면 다 찬다). 정리 여부(gf)는 그대로 둔다.
-    $refill = @($store.Values | Where-Object { $_.gf -and $null -eq $_.z -and $_.in } | Sort-Object { $_.in } -Descending)
-    $rMax = if ($backfill -gt 0) { 6000 } else { [int]$cfg.maxRefillCallsPerRun }
-    $rDeadline = (Get-Date).AddSeconds($(if ($backfill -gt 0) { 7200 } else { [int]$cfg.maxRefillSecondsPerRun }))
-    $rCalls = 0; $st.refilled = 0
-    foreach ($s in $refill) {
-        if ($rCalls -ge $rMax -or (Get-Date) -gt $rDeadline) { break }
-        $q = Get-PortGate $s
-        $rCalls += $q.calls
-        $s.g = $q.g; $s.z = $q.z; $s.gi = $q.gi; $s.go = $q.go; $s.gt = $nowS
-        $st.refilled++
-    }
-    $st.gate += $rCalls
-    $st.refillLeft = $refill.Count - $st.refilled
-    [PSCustomObject]$st
-}
-
-function Get-PortGate {
-    # 배 한 척의 반출입: 선사별 [수입 적컨, 수입 공컨, 수출 적컨, 수출 공컨](TEU)과 배 전체의 크기별 개수
-    # z = [수입 적컨 20, 수입 공컨 20, 수출 적컨 20, 수출 공컨 20, 수입 적컨 40, 수입 공컨 40, 수출 적컨 40, 수출 공컨 40](40은 40·45피트).
-    param($s)
-    $teuOf = @{ "10Ft" = 0.5; "20Ft" = 1; "35Ft" = 2; "40Ft" = 2; "45Ft" = 2; "Etc" = 1 }
-    $g = @{}; $z = [double[]]@(0, 0, 0, 0, 0, 0, 0, 0); $gi = ""; $go = ""; $rows = 0; $calls = 0; $page = 1; $total = $null
-    $num = { param($v) [double]("0" + [string]$v) }
-    do {
-        $x = Invoke-PortApi "1192000/CargContnOut3/Info3?prtAgCd=$($s.p)&etryptYear=$($s.y)&etryptCo=$($s.co)&clsgn=$([uri]::EscapeDataString($s.c))&pageNo=$page&numOfRows=50"
-        $calls++
-        if ($null -eq $total) { $total = [int]$x.response.body.totalCount }
-        foreach ($it in @($x.response.body.items.item | Where-Object { $_ })) {
-            $rows++
-            $kind = [string]$it.tkinTkoutNm
-            if ($kind -ne "수입" -and $kind -ne "수출") { continue }   # 환적은 이 항만의 수출입 컨테이너 수지와 무관하다
-            $e = 0.0; $f = 0.0
-            foreach ($sz in $teuOf.Keys) { $e += $teuOf[$sz] * (& $num $it."econtn$sz"); $f += $teuOf[$sz] * (& $num $it."fcontn$sz") }
-            $f20 = & $num $it.fcontn20Ft; $e20 = & $num $it.econtn20Ft
-            $f40 = (& $num $it.fcontn40Ft) + (& $num $it.fcontn45Ft); $e40 = (& $num $it.econtn40Ft) + (& $num $it.econtn45Ft)
-            $ln = Get-PortLineName ([string]$it.entrpsNm)
-            if (-not $g.ContainsKey($ln)) { $g[$ln] = [double[]]@(0, 0, 0, 0) }
-            $day = ([string]$it.etryndDt).Substring(0, 10)
-            if ($kind -eq "수입") {
-                $g[$ln][0] += $f; $g[$ln][1] += $e; $z[0] += $f20; $z[1] += $e20; $z[4] += $f40; $z[5] += $e40
-                if (-not $gi -or $day -lt $gi) { $gi = $day }
-            } else {
-                $g[$ln][2] += $f; $g[$ln][3] += $e; $z[2] += $f20; $z[3] += $e20; $z[6] += $f40; $z[7] += $e40
-                if (-not $go -or $day -gt $go) { $go = $day }
-            }
-        }
-        $page++
-    } while ($rows -lt $total -and $page -le 20)
-    [PSCustomObject]@{ g = $g; z = $z; gi = $gi; go = $go; rows = $rows; calls = $calls }
-}
-
-function Get-PortMedian {
-    param($vals)
-    $s = @($vals | Where-Object { $null -ne $_ } | Sort-Object)
-    if (-not $s.Count) { return $null }
-    $m = [int][math]::Floor($s.Count / 2)
-    if ($s.Count % 2) { [double]$s[$m] } else { ([double]$s[$m - 1] + [double]$s[$m]) / 2 }
-}
-
-function Get-PortGateDay {
-    # 배 한 척의 반출입을 셀 날: 수입·수출 기록 중 늦은 날(수출이 있으면 출항일). 자료가 없으면 빈 문자열.
-    param($s)
-    if ([string]$s.go -gt [string]$s.gi) { [string]$s.go } else { [string]$s.gi }
-}
-
-function Get-PortCover {
-    # 빈 컨테이너 조달률 = (공컨 반입 + 수입 적컨 − 공컨 반출) ÷ 수출 적컨. 수입 적컨은 화주가 비운 뒤 수출에 다시 쓰이고,
-    # 모자란 만큼은 다른 항만(울산이면 부산)에서 트럭으로 가져와야 한다.
-    # 날짜는 배 한 척의 수입과 수출을 모두 그 배의 반출입 마지막 날(사실상 출항일, Get-PortGateDay)로 센다. 반출입 자료는 배가 떠난 뒤에
-    # 들어오는데 수입을 입항일로 세면, 아직 항구에 있는 배의 수입이 최근 하루이틀에서 빠져 조달률이 낮게 나왔다(2026-11-10 22시 기록에서
-    # 그날 입항한 부산 배 31척 중 17척이 자료 없음. 그 탓에 부산북항 2주 조달률이 101% 대신 88%로 나왔다).
-    param($ships, [string]$from, [string]$to)
-    $iF = 0.0; $iE = 0.0; $oF = 0.0; $oE = 0.0
-    foreach ($s in $ships) {
-        $d = Get-PortGateDay $s
-        if (-not $d -or $d -lt $from -or $d -gt $to) { continue }
-        foreach ($v in $s.g.Values) { $iF += $v[0]; $iE += $v[1]; $oF += $v[2]; $oE += $v[3] }
-    }
-    $pct = if ($oF -ge 50) { [math]::Round(100 * ($iE + $iF - $oE) / $oF, 1) } else { $null }
-    [PSCustomObject]@{ iF = $iF; iE = $iE; oF = $oF; oE = $oE; pct = $pct }
-}
-
-function Get-PortCongestion {
-    # 대기 비율: 그 기간에 입항한 배 중 정박지(박지)로 먼저 들어온 배의 비율. 체류시간: 그 기간에 출항한 배의 입항~출항 시간 중간값
-    # (출항일 기준이라 아직 항만에 있는 배 때문에 짧게 나오는 일이 없다).
-    # $ships 는 Get-PortSupply 가 시각을 미리 풀어 둔 목록이다(inDay, outDay, stayH).
-    param($ships, [string]$from, [string]$to)
-    $arr = @($ships | Where-Object { $_.inDay -ge $from -and $_.inDay -le $to })
-    $stays = @($ships | Where-Object { $null -ne $_.stayH -and $_.outDay -ge $from -and $_.outDay -le $to -and $_.stayH -gt 0 -and $_.stayH -lt 480 } | ForEach-Object { $_.stayH })
-    [PSCustomObject]@{
-        n = $arr.Count
-        anchPct = $(if ($arr.Count -ge 5) { [math]::Round(100 * @($arr | Where-Object { $_.an }).Count / $arr.Count, 1) } else { $null })
-        stay = $(if ($stays.Count -ge 5) { [math]::Round((Get-PortMedian $stays), 1) } else { $null })
-        stayN = $stays.Count
-    }
-}
-
-function Get-PortSizeCover {
-    # 크기별 조달률(20피트, 40·45피트). 상자 개수로 센다. 그 기간 수출 적컨의 95% 넘게가 크기별 기록이 있는 배에서 나왔을 때만
-    # 계산한다. 크기별 기록은 2026-11-11부터 모으고, 그 전에 정리된 배는 실행마다 조금씩 다시 받아 채운다(Update-PortStore).
-    param($ships, [string]$from, [string]$to)
-    $z = [double[]]@(0, 0, 0, 0, 0, 0, 0, 0); $outAll = 0.0; $outZ = 0.0
-    foreach ($s in $ships) {
-        $d = Get-PortGateDay $s
-        if (-not $d -or $d -lt $from -or $d -gt $to) { continue }
-        $oT = 0.0
-        foreach ($v in $s.g.Values) { $oT += $v[2] }
-        $outAll += $oT
-        if ($null -eq $s.z) { continue }
-        $outZ += $oT
-        for ($i = 0; $i -lt 8; $i++) { $z[$i] += $s.z[$i] }
-    }
-    $ready = $outAll -gt 0 -and ($outZ / $outAll) -ge 0.95
-    $pc = { param($i) if ($ready -and $z[$i + 2] -ge 30) { [math]::Round(100 * ($z[$i] + $z[$i + 1] - $z[$i + 3]) / $z[$i + 2]) } else { $null } }
-    [PSCustomObject]@{ ready = $ready; c20 = (& $pc 0); c40 = (& $pc 4); out20 = $z[2]; out40 = $z[6]
-        filled = $(if ($outAll -gt 0) { [math]::Round(100 * $outZ / $outAll) } else { 0 }) }
-}
-
-function Get-PortSupply {
-    # 판정은 항구(부산신항, 부산북항, 울산)마다 따로 한다. 부산을 하나로 보면 신항이 빠듯하고 북항이 넉넉할 때 서로 가려진다
-    # (2026-10-22~11-07 신항 7일 조달률은 최저 62%까지 내려갔는데, 같은 기간 북항은 88% 아래로 내려간 적이 없다).
-    # 선사별 빈 컨테이너 반입은 참고 표로만 보인다. 전 세계로 수출해 쓰는 선사가 정해져 있지 않고, 선사는 빈 컨테이너를 배 한 척에
-    # 몰아 들여오는 일이 많아 2주 단위 비교가 배 한두 척에 좌우됐다(울산 장금상선 719→118 TEU 는 홍콩 보이저·오사카 보이저 세 번이 빠진 것).
-    param($store, $cfg)
-    $today = $nowKst.Date
-    $fmt = { param([int]$back) $today.AddDays(-$back).ToString("yyyy-MM-dd") }
-    $cWin = [int]$cfg.coverDays; $gWin = [int]$cfg.windowDays; $base = [int]$cfg.baseDays; $lnDays = [int]$cfg.lineDays
-    $wTo = & $fmt 1
-    $cFrom = & $fmt $cWin; $cbFrom = & $fmt ($cWin + $base); $cbTo = & $fmt ($cWin + 1)
-    $gFrom = & $fmt $gWin; $gbFrom = & $fmt ($gWin + $base); $gbTo = & $fmt ($gWin + 1)
-    $lFrom = & $fmt $lnDays; $lPrevFrom = & $fmt (2 * $lnDays); $lPrevTo = & $fmt ($lnDays + 1)
-    # 시각 문자열은 여기서 한 번만 푼다. 아래 일별 추이가 35일 × 배 1,400여 척을 되풀이해 돈다.
-    $all = @($store.Values | Where-Object { $_.in } | ForEach-Object {
-        $inT = ConvertFrom-PortTime $_.in; $outT = ConvertFrom-PortTime $_.out
-        [PSCustomObject]@{ p = $_.p; ar = $_.ar; an = $_.an; in = $_.in; inDay = $_.in.Substring(0, 10)
-            outDay = $(if ($_.out) { $_.out.Substring(0, 10) } else { "" })
-            stayH = $(if ($outT -and $outT -le $nowKst) { ($outT - $inT).TotalHours } else { $null })
-            gi = $_.gi; go = $_.go; g = $_.g; z = $_.z }
-    })
-    if ($all.Count -eq 0) { return $null }
-    $firstDay = (@($all | ForEach-Object { $_.inDay }) | Sort-Object)[0]
-    $words = @{ cover = @("여유", "주의", "부족"); jam = @("평소", "주의", "혼잡"); risk = @("원활", "주의", "높음") }
-    $md = { param([string]$d) "$([int]$d.Substring(5, 2))/$([int]$d.Substring(8, 2))" }
-    # 조달률은 최근 2주 값을 절대 기준으로만 판정하고 4주 평균은 참고로 보인다. 4주 평균보다 떨어진 폭으로도 판정했더니, 10월 초 연휴로
-    # 수출이 적어 평균이 110~120%로 높게 잡힌 동안 90%대에서도 '부족'이 켜졌다(2026-11-11 점검, 지난 22일에 다시 적용해 봄).
-    $coverLevel = {
-        param($cur)
-        if ($null -eq $cur) { return 0 }
-        if ($cur -lt [double]$cfg.coverShortPct) { return 2 }
-        if ($cur -lt [double]$cfg.coverWarnPct) { return 1 }
-        0
-    }
-    $stayLevel = {
-        param($cur, $baseV, $n)
-        if ($null -eq $cur -or $null -eq $baseV -or $baseV -le 0 -or $n -lt 10) { return 0 }
-        $r = [double]$cur / [double]$baseV
-        if ($r -ge [double]$cfg.stayJamRatio) { 2 } elseif ($r -ge [double]$cfg.stayWarnRatio) { 1 } else { 0 }
-    }
-    $anchLevel = {
-        param($cur, $baseV)
-        if ($null -eq $cur -or $null -eq $baseV) { return 0 }
-        $d = [double]$cur - [double]$baseV
-        if ($d -ge [double]$cfg.anchJamPp -and $cur -ge 8) { 2 } elseif ($d -ge [double]$cfg.anchWarnPp -and $cur -ge 5) { 1 } else { 0 }
-    }
-    $pctTxt = { param($v) if ($null -eq $v) { "–" } else { "$(([double]$v).ToString('0', $portInv))%" } }
-    $hTxt = { param($v) if ($null -eq $v) { "–" } else { "$(([double]$v).ToString('0.0', $portInv))시간" } }
-
-    $metrics = New-Object System.Collections.ArrayList
-    $series = New-Object System.Collections.ArrayList
-    $portsOut = New-Object System.Collections.ArrayList
-    $sizeOut = New-Object System.Collections.ArrayList
-    $read = New-Object System.Collections.ArrayList
-    $hl = New-Object System.Collections.ArrayList
-    $tileLines = New-Object System.Collections.ArrayList
-    $weekly = New-Object System.Collections.ArrayList
-    $stateParts = New-Object System.Collections.ArrayList
-    $maxRisk = 0
-    foreach ($area in @($cfg.areas)) {
-        $code = [string]$area.port; $label = [string]$area.name; $aKey = [string]$area.key
-        $as = @($all | Where-Object { $_.p -eq $code -and $_.ar -eq [string]$area.ar })
-        if (-not $as.Count) { continue }
-        # 빈 컨테이너 조달률(최근 2주, 그 전 4주 평균은 참고)
-        $cw = Get-PortCover $as $cFrom $wTo
-        $cb = Get-PortCover $as $cbFrom $cbTo
-        $cl = & $coverLevel $cw.pct
-        [void]$metrics.Add([PSCustomObject]@{ port = $label; name = "$label 빈 컨테이너 조달률"; period = "최근 2주"; cur = (& $pctTxt $cw.pct); base = (& $pctTxt $cb.pct); level = $cl; word = $words.cover[$cl] })
-        # 혼잡(최근 1주): 신항과 울산은 붐비면 배가 오래 머물고, 북항은 붐비면 정박지에서 기다리는 배가 늘어난다.
-        $gw = Get-PortCongestion $as $gFrom $wTo
-        $gb = Get-PortCongestion $as $gbFrom $gbTo
-        $jamRead = @()
-        if ([string]$area.jam -eq "anch") {
-            $jl = & $anchLevel $gw.anchPct $gb.anchPct
-            [void]$metrics.Add([PSCustomObject]@{ port = $label; name = "$label 정박지 대기 비율"; period = "최근 1주"; cur = (& $pctTxt $gw.anchPct); base = (& $pctTxt $gb.anchPct); level = $jl; word = $words.jam[$jl] })
-            if ($jl -ge 1) { $jamRead += "$label 정박지에서 기다린 배가 최근 1주 $(& $pctTxt $gw.anchPct)로 4주 평균($(& $pctTxt $gb.anchPct))보다 많습니다." }
-        } else {
-            $jl = & $stayLevel $gw.stay $gb.stay $gw.stayN
-            [void]$metrics.Add([PSCustomObject]@{ port = $label; name = "$label 선박 체류시간"; period = "최근 1주"; cur = (& $hTxt $gw.stay); base = (& $hTxt $gb.stay); level = $jl; word = $words.jam[$jl] })
-            if ($jl -ge 1 -and $gb.stay) { $jamRead += "$label 선박 체류시간이 최근 1주 $(& $hTxt $gw.stay)으로 4주 평균보다 $([math]::Round(100 * ($gw.stay / $gb.stay - 1)))% 깁니다." }
-        }
-        # 항구 위험도: 조달률 부족, 또는 조달률 주의에 혼잡이 겹치면 높음. 둘 중 하나라도 있으면 주의.
-        $risk = if ($cl -eq 2 -or ($cl -eq 1 -and $jl -ge 1)) { 2 } elseif ($cl -ge 1 -or $jl -ge 1) { 1 } else { 0 }
-        $maxRisk = [math]::Max($maxRisk, $risk)
-        [void]$stateParts.Add("${label}:$risk")
-        # 기준 아래로 내려간 지 며칠째인지: 그날까지 2주 조달률이 이어서 기준 아래인 날 수. 빠듯함이 오래 이어질수록 데포의 상태 좋은
-        # 컨테이너가 바닥나 천공이나 부식이 있는 컨테이너가 나오기 쉽다(업계 경험. 회사 불량 기록이 없어 우리 자료로 확인하지는 못했다).
-        $streak = 0; $streakCap = $false
-        if ($cl -ge 1) {
-            for ($back = 1; $back -le 30; $back++) {
-                $sF = & $fmt ($back + $cWin - 1)
-                if ($sF -lt $firstDay) { break }
-                $c = Get-PortCover $as $sF (& $fmt $back)
-                if ($null -eq $c.pct -or $c.pct -ge [double]$cfg.coverWarnPct) { break }
-                $streak++
-                if ($back -eq 30) { $streakCap = $true }
-            }
-        }
-        $streakTxt = if ($streakCap) { "30일 넘게" } elseif ($streak -ge 1) { "$($streak)일째" } else { "" }
-        # 문장. 한 문장에 한 내용.
-        $coverWhy = if ($null -eq $cw.pct) { "$label 빈 컨테이너 조달률은 최근 2주 수출 물량이 적어 계산하지 않았습니다." }
-            elseif ($cl -ge 1) { "$label 빈 컨테이너 조달률이 최근 2주 $(& $pctTxt $cw.pct)로 기준($($cfg.coverWarnPct)%)보다 낮습니다.$(if ($streakTxt) { " 기준 아래로 내려간 지 ${streakTxt}입니다." })" }
-            else { "$label 빈 컨테이너 조달률은 최근 2주 $(& $pctTxt $cw.pct)입니다(4주 평균 $(& $pctTxt $cb.pct))." }
-        if ($cl -ge 1) { [void]$hl.Add([PSCustomObject]@{ level = $cl; text = $coverWhy }) }
-        foreach ($j in $jamRead) { [void]$hl.Add([PSCustomObject]@{ level = $jl; text = $j }) }
-        foreach ($t in (@($coverWhy) + $jamRead)) { [void]$read.Add($t) }
-        if ($null -ne $cw.pct) { [void]$tileLines.Add("$label 조달률 $(& $pctTxt $cw.pct) $(if ($streakTxt) { "($streakTxt 기준 아래)" } else { "(4주 $(& $pctTxt $cb.pct))" })") }
-        $wk = "$label $($words.risk[$risk])(조달률 $(& $pctTxt $cw.pct)$(if ($streakTxt) { ", $streakTxt 기준 아래" })"
-        foreach ($m in @($metrics | Where-Object { $_.port -eq $label -and $_.name -notlike '*조달률' -and $_.level -ge 1 })) { $wk += ", $($m.name -replace "^$label ", '') $($m.cur)" }
-        [void]$weekly.Add("$wk)")
-        [void]$portsOut.Add([PSCustomObject]@{ key = $aKey; name = $label; short = $label; risk = $risk; word = $words.risk[$risk]
-            coverLevel = $cl; jamLevel = $jl; coverPct = $cw.pct; days = $streak })
-        # 크기별 조달률(참고). 20피트와 40피트는 따로 모자랄 수 있는데, TEU 로 합치면 서로 가려진다.
-        $sc = Get-PortSizeCover $as $cFrom $wTo
-        [void]$sizeOut.Add([PSCustomObject]@{ name = $label; all = $cw.pct; ready = $sc.ready; c20 = $sc.c20; c40 = $sc.c40; filled = $sc.filled })
-        # 일별 추이(최근 5주): 그날까지 2주 조달률, 그날까지 1주 체류시간 또는 대기 비율. 기록 첫날보다 앞을 걸치는 날은 뺀다.
-        $cPts = New-Object System.Collections.ArrayList; $jPts = New-Object System.Collections.ArrayList
-        for ($back = 35; $back -ge 1; $back--) {
-            $to = & $fmt $back
-            $cF = & $fmt ($back + $cWin - 1); $gF = & $fmt ($back + $gWin - 1)
-            if ($cF -ge $firstDay) {
-                $c = Get-PortCover $as $cF $to
-                if ($null -ne $c.pct) { [void]$cPts.Add([PSCustomObject]@{ label = $to; value = $c.pct }) }
-            }
-            if ($gF -ge $firstDay) {
-                $g = Get-PortCongestion $as $gF $to
-                $gv = if ([string]$area.jam -eq "anch") { $g.anchPct } else { $g.stay }
-                if ($null -ne $gv) { [void]$jPts.Add([PSCustomObject]@{ label = $to; value = $gv }) }
-            }
-        }
-        [void]$series.Add([PSCustomObject]@{ id = "$aKey-cover"; title = "$label 빈 컨테이너 조달률 (그날까지 2주)"; unit = "%"; points = @($cPts) })
-        if ([string]$area.jam -eq "anch") {
-            if ($jPts.Count) { [void]$series.Add([PSCustomObject]@{ id = "$aKey-anch"; title = "$label 정박지 대기 비율 (그날까지 1주)"; unit = "%"; points = @($jPts) }) }
-        } else {
-            [void]$series.Add([PSCustomObject]@{ id = "$aKey-stay"; title = "$label 선박 체류시간 (그날까지 1주 중간값)"; unit = "시간"; points = @($jPts) })
-        }
-    }
-    if (-not $portsOut.Count) { return $null }
-
-    # 선사별 빈 컨테이너 반입(참고 표, 판정에 넣지 않음): 항만마다 최근 2주 수출 적컨이 많은 선사 순서.
-    $lineTables = New-Object System.Collections.ArrayList
-    foreach ($port in @($cfg.ports)) {
-        $code = [string]$port.code
-        $ships = @($all | Where-Object { $_.p -eq $code })
-        if (-not $ships.Count) { continue }
-        $byLine = @{}
-        foreach ($s in $ships) {
-            $d = Get-PortGateDay $s
-            if (-not $d) { continue }
-            $inC = $d -ge $lFrom -and $d -le $wTo; $outC = $inC
-            $inP = $d -ge $lPrevFrom -and $d -le $lPrevTo
-            foreach ($raw in $s.g.Keys) {
-                $ln = Get-PortLineShort $raw
-                if (-not $byLine.ContainsKey($ln)) { $byLine[$ln] = [double[]]@(0, 0, 0) }
-                $v = $s.g[$raw]; $b = $byLine[$ln]
-                if ($inC) { $b[0] += $v[1] }
-                if ($inP) { $b[1] += $v[1] }
-                if ($outC) { $b[2] += $v[2] }
-            }
-        }
-        $outTot = 0.0; foreach ($b in $byLine.Values) { $outTot += $b[2] }
-        $lines = @(@(foreach ($ln in $byLine.Keys) {
-            $b = $byLine[$ln]
-            if ($b[0] + $b[1] + $b[2] -lt 20) { continue }
-            [PSCustomObject]@{ name = $ln; eIn = [math]::Round($b[0]); eInPrev = [math]::Round($b[1])
-                chgPct = $(if ($b[1] -ge 30) { [math]::Round(100 * ($b[0] / $b[1] - 1)) } else { $null })
-                fOut = [math]::Round($b[2]); share = $(if ($outTot -gt 0) { [math]::Round(100 * $b[2] / $outTot, 1) } else { $null }) }
-        }) | Sort-Object @{ Expression = { $_.fOut }; Descending = $true } | Select-Object -First 15)
-        if ($lines.Count) { [void]$lineTables.Add([PSCustomObject]@{ name = [string]$port.name; lines = $lines }) }
-    }
-
-    # 기존 데이터와 잇기: 울산에서 빈 컨테이너를 못 구하면 부산에서 가져와야 하고, 그 차이는 내륙운송료 카드의 안전운임 표로 계산된다.
-    # 부산신항도 빠듯하면 거기서 가져오라는 말이 맞지 않아 운임 차이 대신 그 사실을 적는다.
-    $cost = ""
-    $nearA = @($portsOut | Where-Object { $_.name -eq [string]$cfg.nearPort })[0]
-    $farA = @($portsOut | Where-Object { $_.name -eq [string]$cfg.farRoute })[0]
-    if ($nearA -and $nearA.coverLevel -ge 1) {
-        if ($farA -and $farA.coverLevel -ge 1) {
-            $cost = "$($nearA.name)과 $($farA.name) 모두 빈 컨테이너 조달률이 낮습니다."
-        } else {
-            $routes = if ($safeFreight -and $safeFreight.routes) { @($safeFreight.routes) } elseif ($config.safeFreight) { @($config.safeFreight.routes) } else { @() }
-            $far = @($routes | Where-Object { $_.name -eq [string]$cfg.farRoute })[0]; $near = @($routes | Where-Object { $_.name -eq [string]$cfg.nearRoute })[0]
-            if ($far -and $near -and $far.rate -and $near.rate) {
-                $cost = "$($nearA.name)에서 빈 컨테이너를 못 구해 $($far.name)에서 가져오면 20FT 왕복 안전운임이 $(Format-Won $far.rate)원으로 $($near.name)($(Format-Won $near.rate)원)보다 $(Format-Won ([double]$far.rate - [double]$near.rate))원 더 듭니다."
-            }
-        }
-    }
-    # 태풍이 입항 항만 근처를 지나면 입항이 밀리고 터미널이 한꺼번에 붐빈다.
-    $typhoonLine = ""
-    if ($typhoon -and @($typhoon.active).Count) {
-        $near = @($typhoon.active | Where-Object { [string]$_.arrivalHub -match ((@($cfg.ports | ForEach-Object { [string]$_.short })) -join '|') })
-        if ($near.Count) {
-            $t0 = $near[0]
-            $typhoonLine = "태풍 $($t0.name)의 경로가 $($t0.arrivalHub)$(if ($t0.arrivalKm) { " $([math]::Round([double]$t0.arrivalKm))km 안을" } else { " 근처를" }) 지납니다. 입항 지연과 터미널 혼잡이 생길 수 있습니다."
-            $maxRisk = [math]::Max($maxRisk, 1)
-        }
-    }
-    $lastIn = (@($all | ForEach-Object { $_.in }) | Sort-Object)[-1]
-    $stale = if ($lastIn -and $lastIn.Substring(0, 10) -lt (& $fmt 2)) { "입출항 자료가 $(& $md $lastIn.Substring(0, 10)) 입항분까지만 들어와 있습니다. 판정이 늦을 수 있습니다." } else { "" }
-    $answer = switch ($maxRisk) { 2 { "빈 컨테이너가 귀하거나 항만이 붐빕니다." } 1 { "일부에서 빠듯해지는 신호가 있습니다." } default { "평소 수준입니다." } }
-    $meaning = switch ($maxRisk) {
-        2 { "빈 컨테이너가 모자랍니다. 이럴 때는 천공이나 부식이 있는 컨테이너가 들어오기 쉬우니 픽업 때 점검을 강화하시기 바랍니다." }
-        1 { "일부 항구에서 빈 컨테이너가 빠듯하거나 붐비기 시작했습니다. 픽업 때 컨테이너 상태를 확인하시기 바랍니다." }
-        default { "빈 컨테이너 수급과 항만 흐름이 평소 수준입니다." } }
-    # 카드 그래프는 가장 빠듯한 항구의 조달률 추이
-    $worst = @($portsOut | Sort-Object @{ Expression = { $_.risk }; Descending = $true }, @{ Expression = { if ($null -eq $_.coverPct) { 999 } else { [double]$_.coverPct } } })[0]
-    $ruleLines = @(
-        "빈 컨테이너 조달률 = (공컨 반입 + 수입 적컨 − 공컨 반출) ÷ 수출 적컨(환적 제외), 최근 2주. $($cfg.coverWarnPct)% 미만이면 주의, $($cfg.coverShortPct)% 미만이면 부족입니다. 4주 평균은 참고로만 보입니다.",
-        "선박 체류시간(최근 1주에 출항한 배의 입항~출항 중간값)이 4주 평균의 $([math]::Round(100 * ([double]$cfg.stayWarnRatio - 1)))% 넘게 길면 주의, $([math]::Round(100 * ([double]$cfg.stayJamRatio - 1)))% 넘게 길면 혼잡입니다.",
-        "정박지 대기 비율(최근 1주에 입항한 배 중 박지로 먼저 들어온 배)이 4주 평균보다 $($cfg.anchWarnPp)%p 넘게 높으면 주의, $($cfg.anchJamPp)%p 넘게 높으면 혼잡입니다.",
-        "조달률이 기준 아래면 기준 아래로 내려간 지 며칠째인지 함께 적습니다. 빠듯함이 길어질수록 상태 좋은 컨테이너가 바닥나기 쉽습니다.",
-        "항구별 위험도: 조달률 부족, 또는 조달률 주의에 혼잡이 겹치면 높음입니다. 둘 중 하나라도 있으면 주의입니다. 전체 판정은 세 곳 중 가장 높은 쪽입니다.",
-        "이 판정은 불량 컨테이너를 직접 세지 않습니다. 공공 자료에는 컨테이너 상태 정보가 없고, 회사 불량 기록과 맞춰 본 적도 없습니다. 빈 컨테이너가 모자란 때와 그 기간을 알려 픽업 점검을 강화할 시점을 잡는 용도입니다.",
-        "선사별 표는 참고용이며 판정에 넣지 않습니다. 선사는 빈 컨테이너를 배 한 척에 몰아 들여오는 일이 많아 2주 단위로는 크게 출렁입니다."
-    )
-    [PSCustomObject]@{
-        id = "port-supply"; displayName = "항만 혼잡·공컨 수급"
-        level = $maxRisk; word = $words.risk[$maxRisk]; tone = @("flat", "mixed", "up")[$maxRisk]; answer = $answer; meaning = $meaning
-        window = "$(& $md $cFrom)~$(& $md $wTo)"; jamWindow = "$(& $md $gFrom)~$(& $md $wTo)"; baseWindow = "$(& $md $cbFrom)~$(& $md $cbTo)"
-        read = @($read); cost = $cost; typhoon = $typhoonLine; stale = $stale
-        metrics = @($metrics); ports = @($portsOut); lineTables = @($lineTables); sizeCover = @($sizeOut); series = @($series)
-        cardSeries = $(if ($worst) { "$($worst.key)-cover" } else { [string]$cfg.cardSeries })
-        highlights = @($hl | Sort-Object level -Descending | Select-Object -First 2 | ForEach-Object { $_.text })
-        tileLines = @($tileLines | Select-Object -First 3); weekly = ($weekly -join ", ")
-        state = (@($stateParts) -join "|")
-        checklist = @($cfg.checklist); rules = $ruleLines
-        footnote = "출처: 해양수산부 선박운항정보·외항컨테이너반출입(공공데이터포털). 조달률은 최근 2주 $(& $md $cFrom)~$(& $md $wTo)(4주 평균 $(& $md $cbFrom)~$(& $md $cbTo)), 혼잡은 최근 1주 $(& $md $gFrom)~$(& $md $wTo)입니다. 조달률은 환적을 뺀 수출입 컨테이너로 계산합니다."
-        ships = $all.Count
-    }
-}
-
-$portSupply = $null
-if ($config.portSupply) {
-    Write-Host "Updating 항만 혼잡·공컨 수급..."
-    $portStore = Read-PortStore
-    if ($env:DATA_GO_KR_KEY) {
-        try {
-            $pst = Update-PortStore $portStore $config.portSupply
-            Write-Host "  입출항 조회 $($pst.vessel)회, 반출입 조회 $($pst.gate)회, 새 배 $($pst.newShips)척, 다음 실행으로 넘긴 배 $($pst.deferred)척"
-        } catch { Write-Warning "항만 자료 조회 실패 - 저장해 둔 기록으로 판정합니다: $($_.Exception.Message)" }
-    } else {
-        Write-Warning "DATA_GO_KR_KEY 미설정 - 항만 자료는 저장해 둔 기록으로만 판정합니다."
-    }
-    Write-PortStore $portStore ([int]$config.portSupply.keepDays)
-    try {
-        $portSupply = Get-PortSupply $portStore $config.portSupply
-        if ($portSupply) { Write-Host "  판정 $($portSupply.word) ($(($portSupply.ports | ForEach-Object { "$($_.short) $($_.word)" }) -join ', ')), 저장된 배 $($portSupply.ships)척" }
-        if ($pst -and $pst.refilled) { Write-Host "  크기별 기록 다시 받기: $($pst.refilled)척, 남은 배 $($pst.refillLeft)척" }
-    } catch { Write-Warning "항만 혼잡·공컨 판정 실패: $($_.Exception.Message)" }
-}
-
 # Published annually and already carrying its own decades of history, so unlike pump prices or
 # SCFI this one needs no accumulation - it comes back whole on every fetch.
 Write-Host "Fetching 산업용 전기요금..."
@@ -3251,16 +2737,6 @@ function Get-OpsSummaryRow {
         }
         return [PSCustomObject]$row
     }
-    # 항만 혼잡·공컨 수급은 값 하나가 아니라 판정이라, 내륙운송료처럼 타일과 자기 카드로 보이고 표에는 들어가지 않는다.
-    if ($id -eq "port-supply") {
-        if (-not $portSupply) { return $null }
-        $row.name = $portSupply.displayName
-        $row.label = "최근 2주 $($portSupply.window)"
-        $row.trend = $portSupply.word
-        $row.tone = $portSupply.tone
-        $row.note = (@($portSupply.ports | ForEach-Object { "$($_.short) $($_.word)" }) -join ", ")
-        return [PSCustomObject]$row
-    }
     if ($id -eq "scfi") {
         if (-not $scfi) { return $null }
         $row.name = "SCFI 컨테이너 운임"; $row.value = $scfi.current; $row.unit = "pt"; $row.label = $scfi.currentDate
@@ -3328,8 +2804,6 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
     $groupLabel = @{ up = "상승"; down = "하락"; mixed = "방향 전환"; flat = "보합" }
     foreach ($r in $opsRows) {
         if ($r.trend -eq "수집 실패" -or $r.trend -eq "기록 부족") { continue }
-        # 항만·공컨의 색은 가격 방향이 아니라 위험 단계라 '상승·하락' 묶음에 넣지 않는다.
-        if ($r.id -eq "port-supply") { continue }
         $k = if ($groups.Contains([string]$r.tone)) { [string]$r.tone } else { "flat" }
         $groups[$k] += $r.name
     }
@@ -3401,7 +2875,7 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
         [void]$opsHighlights.Add([PSCustomObject]@{ tag = $tag; text = $text; id = $id })
     }
     $moves = @(foreach ($r in $opsRows) {
-        if (-not $r.trend -or $r.trend -eq "수집 실패" -or $r.trend -eq "기록 부족" -or $r.id -eq "safe-freight" -or $r.id -eq "port-supply") { continue }
+        if (-not $r.trend -or $r.trend -eq "수집 실패" -or $r.trend -eq "기록 부족" -or $r.id -eq "safe-freight") { continue }
         $sS = if ($null -ne $r.shortPct -and $r.thrS) { [math]::Abs([double]$r.shortPct) / [double]$r.thrS } else { 0 }
         $sL = if ($null -ne $r.longPct -and $r.thrL) { [math]::Abs([double]$r.longPct) / [double]$r.thrL } else { 0 }
         $extreme = ($r.rangeName -eq "1년") -and ($r.band -eq "최고" -or $r.band -eq "최저")
@@ -3461,10 +2935,6 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
             Add-Highlight "내륙운송료" "유류세 인하가 $($u.Month)/$($u.Day)에 끝나면 내륙운송료 $($sf.scenario.trigger.applyLabel)분은 $($sf.scenario.trigger.verdict)$(Get-Josa $sf.scenario.trigger.verdict '이' '가') 예상됩니다."
         }
     }
-    # 항만·공컨: 선사 급감, 조달률 하락, 부산 혼잡 가운데 심한 것 두 줄까지. 평소 수준이면 아무것도 넣지 않는다.
-    if ($portSupply) {
-        foreach ($t in @($portSupply.highlights)) { Add-Highlight "항만·공컨" $t "port-supply" }
-    }
     if ($typhoon -and @($typhoon.active).Count -gt 0) {
         $tn = (@($typhoon.active | ForEach-Object { $_.name }) -join ", ")
         $anyDirect = @($typhoon.active | Where-Object { $_.impact -eq "direct" }).Count -gt 0
@@ -3493,13 +2963,6 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
             $sfMean = switch ($sf.base.verdict) { "인상" { "다음 조정에서 운임이 오를 것으로 보입니다." } "인하" { "다음 조정에서 운임이 내릴 것으로 보입니다." } default { "다음 조정에서 운임이 바뀌지 않을 것으로 보입니다." } }
             [PSCustomObject]@{ key = [string]$cat.key; title = [string]$cat.title; tone = $tone; word = "$($sf.base.verdict) 예상"
                 detail = "safe-freight"; lead = $null; change = $null; count = ""; lines = @($lines); role = [string]$cat.role; meaning = $sfMean; second = $null }
-            continue
-        }
-        if ($items -contains "port-supply") {
-            if (-not $portSupply) { continue }
-            [PSCustomObject]@{ key = [string]$cat.key; title = [string]$cat.title; tone = $portSupply.tone; word = $portSupply.word
-                detail = "port-supply"; lead = $null; change = $null; count = ""; lines = @($portSupply.tileLines); role = [string]$cat.role
-                meaning = $portSupply.meaning; second = $null }
             continue
         }
         $rows = @($opsRows | Where-Object { $items -contains [string]$_.id -and $_.trend -and $_.trend -ne "수집 실패" -and $_.trend -ne "기록 부족" })
@@ -3787,13 +3250,6 @@ if ($opsSummary) {
         }
         Add-Brief "내륙운송료" ($t2 -join " ")
     }
-    # 항만·공컨: 평소 수준이면 한 문장, 신호가 있으면 그 문장들과 부산에서 가져올 때의 추가 운송비까지.
-    if ($portSupply) {
-        $tP = if ($portSupply.level -eq 0) { @("부산신항, 부산북항, 울산의 빈 컨테이너 수급과 항만 흐름은 평소 수준입니다.") }
-            else { @($portSupply.highlights) + @($(if ($portSupply.cost) { $portSupply.cost })) }
-        if ($portSupply.typhoon) { $tP += $portSupply.typhoon }
-        Add-Brief "항만·공컨" (@($tP | Where-Object { $_ }) -join " ")
-    }
     $t3 = @()
     $samePos = $pp -and $pe -and -not $pp.since -and -not $pe.since -and (& $posTxt $pp) -and ([string]$pp.position -eq [string]$pe.position)
     foreach ($pair in @(@{ r = $pp; n = "PP" }, @{ r = $pe; n = "PE" })) {
@@ -3844,10 +3300,6 @@ $sfSort = Get-CardSort "safe-freight"
 if ($safeFreight -and $config.cardAbout.'safe-freight') {
     $safeFreight | Add-Member -NotePropertyName about -NotePropertyValue $config.cardAbout.'safe-freight' -Force
 }
-$psSort = Get-CardSort "port-supply"
-if ($portSupply -and $config.cardAbout.'port-supply') {
-    $portSupply | Add-Member -NotePropertyName about -NotePropertyValue $config.cardAbout.'port-supply' -Force
-}
 if ($scfi -and $config.cardAbout.scfi) {
     $scfi | Add-Member -NotePropertyName about -NotePropertyValue $config.cardAbout.scfi -Force
 }
@@ -3863,7 +3315,6 @@ $newsQueries = @(
     foreach ($c in $priceCards) { if ($c.newsQuery) { $c.newsQuery } else { $config.priceNewsQueries.($c.id) } }
     if ($scfi) { $config.priceNewsQueries.scfi }
     if ($safeFreight) { $config.priceNewsQueries.'safe-freight' }
-    if ($portSupply) { $config.priceNewsQueries.'port-supply' }
     foreach ($mat in $config.materials) { $mat.NewsQueries }
 )
 Invoke-Prefetch -urls @($newsQueries | Where-Object { $_ } | ForEach-Object { Get-NewsUri -query $_ })
@@ -3891,13 +3342,6 @@ if ($safeFreight) {
         $safeFreight | Add-Member -NotePropertyName news -NotePropertyValue @(Get-NewsHeadlines -query $q -max 5) -Force
     }
 }
-if ($portSupply) {
-    $q = $config.priceNewsQueries.'port-supply'
-    if ($q) {
-        Write-Host "  - $($portSupply.displayName)"
-        $portSupply | Add-Member -NotePropertyName news -NotePropertyValue @(Get-NewsHeadlines -query $q -max 5) -Force
-    }
-}
 
 # 왜 움직였나. Perplexity·구글 금융의 시장 요약처럼 지금 주목할 점의 가격·흐름 줄 아래에 그 지표 카드의 최근 7일 안
 # 기사 제목을 하나 붙인다(주간 지표가 많아 7일로 본다). 이미 받은 카드 뉴스를 쓰므로 AI 를 부르지 않는다.
@@ -3909,7 +3353,7 @@ if ($opsSummary) {
     foreach ($h in @($opsSummary.highlights)) {
         if (-not $h.id -or $hlSeenId.ContainsKey([string]$h.id)) { continue }
         $hlSeenId[[string]$h.id] = $true
-        $src = if ($h.id -eq "scfi") { $scfi } elseif ($h.id -eq "safe-freight") { $safeFreight } elseif ($h.id -eq "port-supply") { $portSupply } else { @($priceCards | Where-Object { [string]$_.id -eq [string]$h.id })[0] }
+        $src = if ($h.id -eq "scfi") { $scfi } elseif ($h.id -eq "safe-freight") { $safeFreight } else { @($priceCards | Where-Object { [string]$_.id -eq [string]$h.id })[0] }
         if (-not $src -or -not $src.news) { continue }
         $nw = @($src.news | Where-Object { $_ -and $_.title -and [string]$_.date -ge $hlNewsCut -and -not $hlSeenLink.ContainsKey([string]$_.link) })[0]
         if (-not $nw) { continue }
@@ -3960,11 +3404,10 @@ $pricesJson = ConvertTo-JsonOrNull -InputObject @($priceCards) -Depth 6
 $scfiJson = ConvertTo-JsonOrNull -InputObject $scfi -Depth 4
 $sseLanesJson = ConvertTo-JsonOrNull -InputObject @($sseLanes) -Depth 4
 $laneAboutJson = ConvertTo-JsonOrNull -InputObject $laneAbout -Depth 2
-$sortsJson = ConvertTo-Json -InputObject ([PSCustomObject]@{ scfi = $scfiSort; lanes = $laneSort; safeFreight = $sfSort; portSupply = $psSort;fuel = (Get-CardSort "D047"); kcl = (Get-CardSort "kcl") }) -Depth 2 -Compress
+$sortsJson = ConvertTo-Json -InputObject ([PSCustomObject]@{ scfi = $scfiSort; lanes = $laneSort; safeFreight = $sfSort; fuel = (Get-CardSort "D047"); kcl = (Get-CardSort "kcl") }) -Depth 2 -Compress
 $cardGroupsJson = ConvertTo-Json -InputObject @(@($cardGroups | ForEach-Object { [PSCustomObject]@{ title = [string]$_.title } })) -Depth 3 -Compress
 if (-not $cardGroupsJson -or $cardGroupsJson -eq "null") { $cardGroupsJson = "[]" }
 $safeFreightJson = ConvertTo-JsonOrNull -InputObject $safeFreight -Depth 8
-$portSupplyJson = ConvertTo-JsonOrNull -InputObject $portSupply -Depth 8
 $hasFuelKey = if ($env:OPINET_API_KEY) { "true" } else { "false" }
 # A failed KCl fetch used to just not append a card, so the page came back one card shorter
 # with nothing saying so - indistinguishable from "we never tracked potash". Say it instead.
@@ -3983,8 +3426,6 @@ $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
 $output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__CARD_GROUPS_JSON__", $cardGroupsJson).Replace("__SCHEDULE_JSON__", $scheduleJson).Replace("__CHART_EVENTS_JSON__", $chartEventsJson).Replace("__NEXT_RELEASE_JSON__", $nextReleaseJson).Replace("__SAFE_FREIGHT_JSON__", $safeFreightJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__OPS_SUMMARY_JSON__", $opsSummaryJson).Replace("__FX_CALC_JSON__", $fxCalcJson).Replace("__NEWS_OUTAGE__", $(if ($newsOutage) { "true" } else { "false" })).Replace("__FETCHED_AT__", $fetchedAt)
-
-$output = $output.Replace("__PORT_SUPPLY_JSON__", $portSupplyJson)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8
@@ -4617,7 +4058,7 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
     $opsRowMap = [ordered]@{}
     foreach ($r in $opsSummary.rows) {
         # 내륙운송료는 위 타일이 보여 주므로 표에서 뺀다(변화율 칸이 모두 비어 표에서 어색했다).
-        if ($r.id -eq "safe-freight" -or $r.id -eq "port-supply") { continue }
+        if ($r.id -eq "safe-freight") { continue }
         $val = if ($null -ne $r.value) { "$($r.currency)$(Format-PriceValue $r.value)" } else { "" }
         $tc = $toneColor[[string]$r.tone]
         if (-not $tc) { $tc = "#6e6c66" }
@@ -4672,24 +4113,6 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
     $($opsRowHtml -join "")
   </table>
   <div style="font-size:10.5px;color:#898781;margin-top:8px;">1개월, 3개월, 1년 칸은 지금 값과 그만큼 전 값의 차이입니다. 빨강은 비용 상승, 초록은 비용 하락이며, 배경색은 평소보다 크게 움직인 칸입니다.</div>
-</div>
-"@
-}
-
-# 항만 혼잡·공컨 수급. 요약판 바로 아래 한 상자: 판정, 근거 문장, 지표 표, 급감 선사, 부산에서 가져올 때의 운송비,
-# 주의 이상이면 픽업 점검 항목. 메일이 Gmail 잘림 기준(102KB)에 가까워 칸 스타일은 표에 한 번만 건다.
-$portMailHtml = ""
-if ($portSupply) {
-    $ps = $portSupply
-    $lvColor = @("#6e6c66", "#a15c00", "#b3221f")
-    $pc = $lvColor[[int]$ps.level]
-    # 지표 표는 페이지 카드에 있다. 메일에는 판정 문장만 싣는다(메일이 Gmail 잘림 기준에 가깝다).
-    $readMail = @(@($ps.read) + @($ps.cost, $ps.typhoon, $ps.stale) | Where-Object { $_ } | ForEach-Object { Get-HtmlText $_ })
-    $checkMail = if ($ps.level -ge 1 -and @($ps.checklist).Count) { "<br><b>픽업 점검</b>: $((@($ps.checklist) | ForEach-Object { Get-HtmlText $_ }) -join ' / ')" } else { "" }
-    $portMailHtml = @"
-<div style="margin:0 0 16px;padding:12px 15px;background:#ffffff;border:1px solid #e1e0d9;border-left:4px solid $pc;border-radius:8px;">
-  <div style="font-size:12px;font-weight:700;color:#0b0b0b;">$($ps.displayName) <font color=$pc>$($ps.word)</font> <font size=1 color=#898781>조달률 최근 2주 $($ps.window)</font></div>
-  <div style="font-size:12.5px;color:#3d3b37;line-height:1.6;margin-top:4px;">$($readMail -join '<br>')$checkMail</div>
 </div>
 "@
 }
@@ -4781,10 +4204,6 @@ function Get-WeeklyReportText {
             [void]$lines.Add("- $($cat.title): $($parts -join ', ')")
             continue
         }
-        if ($items -contains "port-supply") {
-            if ($portSupply -and $portSupply.weekly) { [void]$lines.Add("- $($cat.title): $($portSupply.weekly)") }
-            continue
-        }
         $rows = @($items | ForEach-Object { $rowsById[[string]$_] } | Where-Object { $_ -and $null -ne $_.value })
         if (-not $rows.Count) { continue }
         $leadId = [string]@($config.opsSummary.categories | Where-Object { $_.key -eq $cat.key })[0].lead
@@ -4867,14 +4286,13 @@ $emailHtml = @"
   $holidayHtml
   $failureHtml
   $opsHtml
-  $portMailHtml
   $highlightHtml
   $typhoonHtml
   $(Get-EmailSection "날씨" ($weatherRowsHtml -join "`n"))
   $priceSectionHtml
   $(Get-EmailSection "수급 뉴스" ($materialsHtml -join "`n"))
   <div style="margin-top:16px;font-size:11px;color:#898781;line-height:1.6;">
-    출처: 날씨 Open-Meteo, 공휴일 Nager.Date, 해외 휴무 Google 캘린더, 태풍 GDACS, 환율과 국제유가 Yahoo Finance, 국내 유가 오피넷, KCl World Bank, 운임지수 Shanghai Shipping Exchange, 항만·공컨 해양수산부(공공데이터포털, 환적 제외), 뉴스 Google 뉴스. 업무 참고용 요약입니다.<br>
+    출처: 날씨 Open-Meteo, 공휴일 Nager.Date, 해외 휴무 Google 캘린더, 태풍 GDACS, 환율과 국제유가 Yahoo Finance, 국내 유가 오피넷, KCl World Bank, 운임지수 Shanghai Shipping Exchange, 뉴스 Google 뉴스. 업무 참고용 요약입니다.<br>
     자세한 내용은 <a href="$dashboardUrl" style="color:#2a78d6;">대시보드</a>에서 확인하세요.
   </div>
 </div>
@@ -4969,29 +4387,11 @@ if ($safeFreight) {
     }
 }
 
-# 항만·공컨: 지난 메일과 비교해 항구(부산신항, 부산북항, 울산)의 위험이 '높음'으로 올라선 날에만 올린다.
-# 판정은 며칠씩 이어지므로 '새로 바뀐 날' 게이트 없이 올리면 그동안 매일 제목을 차지한다. 기록이 없는 첫 메일은 올리지 않는다.
-$psState = $null
-if ($portSupply) {
-    $psState = [string]$portSupply.state
-    if ($mailedLabels.ContainsKey("port-supply")) {
-        $prevState = [string]$mailedLabels["port-supply"]
-        $prevLv = @{}
-        foreach ($part in ($prevState -split '\|')) { if ($part -match '^([^:]+):(\d)$') { $prevLv[$matches[1]] = [int]$matches[2] } }
-        foreach ($p in @($portSupply.ports)) {
-            if ($p.risk -eq 2 -and (-not $prevLv.ContainsKey($p.short) -or $prevLv[$p.short] -lt 2)) {
-                $why = if ($p.coverLevel -ge 1) { "공컨 부족" } else { "혼잡" }
-                [void]$wdHighlights.Add([PSCustomObject]@{ text = "$($p.short) $why 위험 높음"; priority = 83 })
-            }
-        }
-    }
-}
-
 # 흐름 전환(Mintec 의 추세 전환 알림 방식). 지난 메일에 실린 방향과 비교해, 상승 또는 하락으로 새로 바뀐 날에만 올린다.
 # 기록이 없는 첫 메일은 올리지 않는다. 1주 전 판정과 비교하는 페이지 표시와 달리 메일은 '지난 메일'이 기준이라 한 번만 뜬다.
 if ($opsSummary) {
     foreach ($r in @($opsSummary.rows)) {
-        if (-not $r.tone -or $r.id -eq "safe-freight" -or $r.id -eq "port-supply" -or $r.trend -eq "수집 실패" -or $r.trend -eq "기록 부족") { continue }
+        if (-not $r.tone -or $r.id -eq "safe-freight" -or $r.trend -eq "수집 실패" -or $r.trend -eq "기록 부족") { continue }
         $tk = "trend-$($r.id)"
         if ($mailedLabels.ContainsKey($tk) -and $mailedLabels[$tk] -ne [string]$r.tone -and ($r.tone -eq "up" -or $r.tone -eq "down")) {
             $dirWord = if ($r.tone -eq "up") { "상승" } else { "하락" }
@@ -5038,10 +4438,9 @@ foreach ($c in $priceCards) {
 }
 if ($scfi -and $scfi.currentDate) { $nextMailed["scfi"] = [string]$scfi.currentDate }
 if ($sfState) { $nextMailed["safe-freight"] = $sfState }
-if ($psState) { $nextMailed["port-supply"] = $psState }
 if ($opsSummary) {
     foreach ($r in @($opsSummary.rows)) {
-        if ($r.tone -and $r.id -ne "safe-freight" -and $r.id -ne "port-supply" -and $r.trend -ne "수집 실패" -and $r.trend -ne "기록 부족") { $nextMailed["trend-$($r.id)"] = [string]$r.tone }
+        if ($r.tone -and $r.id -ne "safe-freight" -and $r.trend -ne "수집 실패" -and $r.trend -ne "기록 부족") { $nextMailed["trend-$($r.id)"] = [string]$r.tone }
     }
 }
 $nextMailedOrdered = [ordered]@{}
@@ -5062,7 +4461,7 @@ $problems = New-Object System.Collections.Generic.List[string]
 
 $renderedHtml = Get-Content -Path $outPath -Raw -Encoding UTF8
 
-foreach ($token in @("__WEATHER_JSON__", "__PRICES_JSON__", "__MATERIALS_JSON__", "__FETCHED_AT__", "__FX_CALC_JSON__", "__PORT_SUPPLY_JSON__")) {
+foreach ($token in @("__WEATHER_JSON__", "__PRICES_JSON__", "__MATERIALS_JSON__", "__FETCHED_AT__", "__FX_CALC_JSON__")) {
     if ($renderedHtml -like "*$token*") { $problems.Add("템플릿 치환 누락: $token") }
 }
 
