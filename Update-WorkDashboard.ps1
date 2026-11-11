@@ -2772,7 +2772,7 @@ function Get-PortSizeCover {
 
 function Get-PortSupply {
     # 판정은 항구(부산신항, 부산북항, 울산)마다 따로 한다. 부산을 하나로 보면 신항이 빠듯하고 북항이 넉넉할 때 서로 가려진다
-    # (2026-10-30~11-05 신항 7일 조달률 59~71%, 같은 기간 북항 100~109%).
+    # (2026-10-22~11-07 신항 7일 조달률은 최저 62%까지 내려갔는데, 같은 기간 북항은 88% 아래로 내려간 적이 없다).
     # 선사별 빈 컨테이너 반입은 참고 표로만 보인다. 전 세계로 수출해 쓰는 선사가 정해져 있지 않고, 선사는 빈 컨테이너를 배 한 척에
     # 몰아 들여오는 일이 많아 2주 단위 비교가 배 한두 척에 좌우됐다(울산 장금상선 719→118 TEU 는 홍콩 보이저·오사카 보이저 세 번이 빠진 것).
     param($store, $cfg)
@@ -2855,19 +2855,33 @@ function Get-PortSupply {
         $risk = if ($cl -eq 2 -or ($cl -eq 1 -and $jl -ge 1)) { 2 } elseif ($cl -ge 1 -or $jl -ge 1) { 1 } else { 0 }
         $maxRisk = [math]::Max($maxRisk, $risk)
         [void]$stateParts.Add("${label}:$risk")
+        # 기준 아래로 내려간 지 며칠째인지: 그날까지 2주 조달률이 이어서 기준 아래인 날 수. 빠듯함이 오래 이어질수록 데포의 상태 좋은
+        # 컨테이너가 바닥나 천공이나 부식이 있는 컨테이너가 나오기 쉽다(업계 경험. 회사 불량 기록이 없어 우리 자료로 확인하지는 못했다).
+        $streak = 0; $streakCap = $false
+        if ($cl -ge 1) {
+            for ($back = 1; $back -le 30; $back++) {
+                $sF = & $fmt ($back + $cWin - 1)
+                if ($sF -lt $firstDay) { break }
+                $c = Get-PortCover $as $sF (& $fmt $back)
+                if ($null -eq $c.pct -or $c.pct -ge [double]$cfg.coverWarnPct) { break }
+                $streak++
+                if ($back -eq 30) { $streakCap = $true }
+            }
+        }
+        $streakTxt = if ($streakCap) { "30일 넘게" } elseif ($streak -ge 1) { "$($streak)일째" } else { "" }
         # 문장. 한 문장에 한 내용.
         $coverWhy = if ($null -eq $cw.pct) { "$label 빈 컨테이너 조달률은 최근 2주 수출 물량이 적어 계산하지 않았습니다." }
-            elseif ($cl -ge 1) { "$label 빈 컨테이너 조달률이 최근 2주 $(& $pctTxt $cw.pct)로 기준($($cfg.coverWarnPct)%)보다 낮습니다. 수출에 쓴 만큼 빈 컨테이너가 들어오지 않았습니다." }
+            elseif ($cl -ge 1) { "$label 빈 컨테이너 조달률이 최근 2주 $(& $pctTxt $cw.pct)로 기준($($cfg.coverWarnPct)%)보다 낮습니다.$(if ($streakTxt) { " 기준 아래로 내려간 지 ${streakTxt}입니다." })" }
             else { "$label 빈 컨테이너 조달률은 최근 2주 $(& $pctTxt $cw.pct)입니다(4주 평균 $(& $pctTxt $cb.pct))." }
         if ($cl -ge 1) { [void]$hl.Add([PSCustomObject]@{ level = $cl; text = $coverWhy }) }
         foreach ($j in $jamRead) { [void]$hl.Add([PSCustomObject]@{ level = $jl; text = $j }) }
         foreach ($t in (@($coverWhy) + $jamRead)) { [void]$read.Add($t) }
-        if ($null -ne $cw.pct) { [void]$tileLines.Add("$label 조달률 $(& $pctTxt $cw.pct) (4주 $(& $pctTxt $cb.pct))") }
-        $wk = "$label $($words.risk[$risk])(조달률 $(& $pctTxt $cw.pct)"
+        if ($null -ne $cw.pct) { [void]$tileLines.Add("$label 조달률 $(& $pctTxt $cw.pct) $(if ($streakTxt) { "($streakTxt 기준 아래)" } else { "(4주 $(& $pctTxt $cb.pct))" })") }
+        $wk = "$label $($words.risk[$risk])(조달률 $(& $pctTxt $cw.pct)$(if ($streakTxt) { ", $streakTxt 기준 아래" })"
         foreach ($m in @($metrics | Where-Object { $_.port -eq $label -and $_.name -notlike '*조달률' -and $_.level -ge 1 })) { $wk += ", $($m.name -replace "^$label ", '') $($m.cur)" }
         [void]$weekly.Add("$wk)")
         [void]$portsOut.Add([PSCustomObject]@{ key = $aKey; name = $label; short = $label; risk = $risk; word = $words.risk[$risk]
-            coverLevel = $cl; jamLevel = $jl; coverPct = $cw.pct })
+            coverLevel = $cl; jamLevel = $jl; coverPct = $cw.pct; days = $streak })
         # 크기별 조달률(참고). 20피트와 40피트는 따로 모자랄 수 있는데, TEU 로 합치면 서로 가려진다.
         $sc = Get-PortSizeCover $as $cFrom $wTo
         [void]$sizeOut.Add([PSCustomObject]@{ name = $label; all = $cw.pct; ready = $sc.ready; c20 = $sc.c20; c40 = $sc.c40; filled = $sc.filled })
@@ -2957,8 +2971,8 @@ function Get-PortSupply {
     $stale = if ($lastIn -and $lastIn.Substring(0, 10) -lt (& $fmt 2)) { "입출항 자료가 $(& $md $lastIn.Substring(0, 10)) 입항분까지만 들어와 있습니다. 판정이 늦을 수 있습니다." } else { "" }
     $answer = switch ($maxRisk) { 2 { "빈 컨테이너가 귀하거나 항만이 붐빕니다." } 1 { "일부에서 빠듯해지는 신호가 있습니다." } default { "평소 수준입니다." } }
     $meaning = switch ($maxRisk) {
-        2 { "빈 컨테이너가 귀할수록 상태가 나쁜 컨테이너가 나오기 쉽습니다. 픽업 때 확인이 필요합니다." }
-        1 { "일부 항구에서 빈 컨테이너가 빠듯하거나 붐비기 시작했습니다." }
+        2 { "빈 컨테이너가 모자랍니다. 이럴 때는 천공이나 부식이 있는 컨테이너가 들어오기 쉬우니 픽업 때 점검을 강화하시기 바랍니다." }
+        1 { "일부 항구에서 빈 컨테이너가 빠듯하거나 붐비기 시작했습니다. 픽업 때 컨테이너 상태를 확인하시기 바랍니다." }
         default { "빈 컨테이너 수급과 항만 흐름이 평소 수준입니다." } }
     # 카드 그래프는 가장 빠듯한 항구의 조달률 추이
     $worst = @($portsOut | Sort-Object @{ Expression = { $_.risk }; Descending = $true }, @{ Expression = { if ($null -eq $_.coverPct) { 999 } else { [double]$_.coverPct } } })[0]
@@ -2966,7 +2980,9 @@ function Get-PortSupply {
         "빈 컨테이너 조달률 = (공컨 반입 + 수입 적컨 − 공컨 반출) ÷ 수출 적컨(환적 제외), 최근 2주. $($cfg.coverWarnPct)% 미만이면 주의, $($cfg.coverShortPct)% 미만이면 부족입니다. 4주 평균은 참고로만 보입니다.",
         "선박 체류시간(최근 1주에 출항한 배의 입항~출항 중간값)이 4주 평균의 $([math]::Round(100 * ([double]$cfg.stayWarnRatio - 1)))% 넘게 길면 주의, $([math]::Round(100 * ([double]$cfg.stayJamRatio - 1)))% 넘게 길면 혼잡입니다.",
         "정박지 대기 비율(최근 1주에 입항한 배 중 박지로 먼저 들어온 배)이 4주 평균보다 $($cfg.anchWarnPp)%p 넘게 높으면 주의, $($cfg.anchJamPp)%p 넘게 높으면 혼잡입니다.",
+        "조달률이 기준 아래면 기준 아래로 내려간 지 며칠째인지 함께 적습니다. 빠듯함이 길어질수록 상태 좋은 컨테이너가 바닥나기 쉽습니다.",
         "항구별 위험도: 조달률 부족, 또는 조달률 주의에 혼잡이 겹치면 높음입니다. 둘 중 하나라도 있으면 주의입니다. 전체 판정은 세 곳 중 가장 높은 쪽입니다.",
+        "이 판정은 불량 컨테이너를 직접 세지 않습니다. 공공 자료에는 컨테이너 상태 정보가 없고, 회사 불량 기록과 맞춰 본 적도 없습니다. 빈 컨테이너가 모자란 때와 그 기간을 알려 픽업 점검을 강화할 시점을 잡는 용도입니다.",
         "선사별 표는 참고용이며 판정에 넣지 않습니다. 선사는 빈 컨테이너를 배 한 척에 몰아 들여오는 일이 많아 2주 단위로는 크게 출렁입니다."
     )
     [PSCustomObject]@{
