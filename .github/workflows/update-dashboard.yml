@@ -76,6 +76,11 @@ jobs:
             if cmp -s news-filter.ps1 /tmp/sibling-news-filter.ps1; then echo "news-filter.ps1 matches stockdashboard"
             else echo "::warning::news-filter.ps1 differs from stockdashboard - 두 저장소의 공통 파일을 같게 맞추세요"; fi
           else echo "stockdashboard 의 news-filter.ps1 을 받지 못해 비교를 건너뜁니다"; fi
+          # 메일 그림 스크립트도 두 저장소가 같은 파일을 쓴다.
+          if curl -fsSL "https://raw.githubusercontent.com/JHKim0603/stockdashboard/master/mail_charts.py" -o /tmp/sibling-mail-charts.py; then
+            if cmp -s mail_charts.py /tmp/sibling-mail-charts.py; then echo "mail_charts.py matches stockdashboard"
+            else echo "::warning::mail_charts.py differs from stockdashboard - 두 저장소의 공통 파일을 같게 맞추세요"; fi
+          fi
 
       - name: Generate dashboard.html
         shell: pwsh

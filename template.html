@@ -206,7 +206,8 @@
     display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center;
     cursor: default;
   }
-  .week-day .wd-label { font-size: 11.5px; color: var(--ink-muted); font-weight: 600; white-space: nowrap; }
+  /* 휴대폰에서 '11/12(목)'이 옆 칸과 겹쳐 요일 앞에서 줄을 바꿀 수 있게 했다(<wbr>). 글씨는 12px. */
+  .week-day .wd-label { font-size: 12px; color: var(--ink-muted); font-weight: 600; white-space: normal; word-break: keep-all; text-align: center; line-height: 1.25; }
   .week-day .wd-label.today { color: var(--accent); }
   .week-day .wd-icon { font-size: 15px; line-height: 1; }
   .wd-bar-track {
@@ -220,7 +221,7 @@
   .week-day .wd-min { font-size: 12px; color: var(--ink-muted); }
   /* Colouring every day accent-blue meant a 3% chance looked exactly as urgent as 96%, so the
      strip read as "rain all week" at a glance. Only a plannable chance gets the accent. */
-  .week-day .wd-rain { font-size: 11.5px; color: var(--ink-muted); white-space: nowrap; }
+  .week-day .wd-rain { font-size: 12px; color: var(--ink-muted); white-space: nowrap; }
   .week-day .wd-rain.likely { color: var(--accent); font-weight: 700; }
   .week-day .wd-adv { width: 13px; height: 13px; border-radius: 50%; font-size: 10px; line-height: 13px; }
   .week-day .wd-adv.warn { background: var(--warn-wash); color: var(--warn); }
@@ -273,7 +274,7 @@
     background: var(--gridline); padding: 1px 6px; border-radius: 999px;
   }
   .typhoon-row .imp {
-    display: inline-block; font-size: 11.5px; font-weight: 700; padding: 1px 6px;
+    display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 6px;
     border-radius: 4px; margin-right: 4px; vertical-align: 1px;
   }
   /* Amber, not red: the storm data is fine, it is our confidence in the verdict that is thin. */
@@ -884,7 +885,7 @@
   .news-item.flagged a { color: var(--ink-primary); font-weight: 650; }
   .news-item.flagged a:hover { color: var(--accent); }
   .news-reason {
-    display: inline-block; font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
+    display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .02em;
     background: var(--ink-primary); color: var(--surface); padding: 1px 7px; border-radius: 4px;
     margin-bottom: 4px;
   }
@@ -1087,8 +1088,8 @@
        number it qualifies instead of in a block nobody reads at the bottom. -->
   <div class="footnote">
     출처: 날씨 Open-Meteo, 공휴일 Nager.Date, 태풍 GDACS, 환율과 국제유가 Yahoo Finance,
-    수지 DCE·CZCE, 운임지수 Shanghai Shipping Exchange, KCl World Bank,
-    국내 유가 오피넷, 전기요금 EPSIS, 물가지수 한국은행, 뉴스 Google 뉴스<br>
+    합성수지 선물 대련·정저우 상품거래소(DCE·CZCE), 운임지수 상하이해운거래소(SCFI·CCFI)와 한국해양진흥공사(KCCI), KCl World Bank,
+    국내 유가 오피넷, 전기요금 EPSIS, 물가지수 한국은행, 수입 단가 관세청, 뉴스 Google 뉴스<br>
     각 카드의 [상세]에서 지표 설명과 판단 근거를 확인할 수 있습니다. 모든 값은 업무 참고용입니다.
   </div>
 
@@ -1253,7 +1254,7 @@ if (!WEATHER || WEATHER.length === 0) {
         : `<span class="wd-adv" aria-hidden="true"></span>`;
       return `
         <div class="week-day" title="${esc(d.date)} ${esc(d.desc)} ${d.minC}~${d.maxC}°C, 강수확률 ${d.chanceOfRain}%">
-          <span class="wd-label${d.date === todayStr ? " today" : ""}">${esc(label)}</span>
+          <span class="wd-label${d.date === todayStr ? " today" : ""}">${esc(label).replace("(", "<wbr>(")}</span>
           <span class="wd-icon">${weatherIcon(d.desc)}</span>
           <span class="wd-max">${d.maxC}°</span>
           <div class="wd-bar-track"><div class="wd-bar" style="top:${topPct.toFixed(1)}%;bottom:${botPct.toFixed(1)}%"></div></div>
@@ -1352,17 +1353,17 @@ if (!HOLIDAY) {
         <span class="dday">${dOf(hero.date) <= 0 ? "오늘" : `D-${dOf(hero.date)}`}</span>
         <span class="hol-name">${esc(hero.title)}</span>
       </div>
-      <div class="hol-range">${esc(hero.date === hero.end ? fmt(hero.date) : `${fmt(hero.date)}~${fmt(hero.end)}`)} · ${esc(hero.kind)}${hero.note ? ` · ${esc(hero.note)}` : ""}</div>
-      <div class="hol-next">다음 연휴 <b>${esc(names)}</b> ${esc(rangeText)}, ${HOLIDAY.days}일 · ${dDayText}</div>`
+      <div class="hol-range">${esc(hero.date === hero.end ? fmt(hero.date) : `${fmt(hero.date)}~${fmt(hero.end)}`)}, ${esc(hero.kind)}${hero.note ? `, ${esc(hero.note)}` : ""}</div>
+      <div class="hol-next">다음 연휴 <b>${esc(names)}</b> ${esc(rangeText)}, ${HOLIDAY.days}일(${dDayText})</div>`
     : `<div class="hol-head">
         <span class="dday">${dDayText}</span>
         ${holHtml}
       </div>
-      <div class="hol-range">${HOLIDAY.startDate.slice(0, 4)}. ${esc(rangeText)}, <span class="hol-len">${HOLIDAY.days}일 연휴</span></div>`;
+      <div class="hol-range">${HOLIDAY.startDate.slice(0, 4)}년 ${esc(rangeText)}, <span class="hol-len">${HOLIDAY.days}일 연휴</span></div>`;
   holidaySection.innerHTML = `
     <div class="holiday-card">
       ${heroHtml}
-      <div class="upcoming-label">다가오는 일정 · 2주 안 ${nIn2w}건</div>
+      <div class="upcoming-label">다가오는 일정(2주 안 ${nIn2w}건)</div>
       <div class="upcoming-list">${upcoming || `<div class="empty-note">예정된 일정이 없습니다.</div>`}</div>
       ${moreNote}
       ${foreignHtml}
@@ -2637,7 +2638,7 @@ function fxCalcHtml() {
           `<button type="button" data-ccy="${esc(c.code)}" class="${i ? "" : "on"}">${esc(c.name)}</button>`).join("")}</div>
       </div>
       <div class="m-note">최근과 차이는 최근 금액에서 그때 금액을 뺀 값입니다. +이면 지금 환율로 원화가 더 듭니다.
-        넣은 금액은 이 화면에서만 계산하고 저장하거나 보내지 않습니다.</div>
+        넣은 금액은 계산에만 쓰고 저장하지 않습니다.</div>
       </div><div>
       <table class="sf-table"><thead><tr><th>기준일</th><th>환율(원)</th><th>원화 금액(원)</th><th>최근과 차이(원)</th></tr></thead><tbody id="fxcBody"></tbody></table>
       </div></div>
@@ -3517,10 +3518,10 @@ if (NEWS_OUTAGE) {
       <div class="cost-wrap"><table class="sf-table cost-table">
         <tr><th>품목</th><th class="num">월 사용량</th><th class="num">지금 단가(원 환산)</th><th class="num">${pd.label} 단가 변화</th><th class="num">월 원가 영향</th></tr>
         ${rows.map(line).join("")}
-        ${sfOut.length ? `<tr><td colspan="5" class="os" style="padding-top:8px;">내륙운송료: ${esc(sfWhen)}의 노선별 변동</td></tr>` + sfOut.map(line).join("") : ""}
-        <tr class="cost-total"><td>합계</td><td></td><td></td><td></td><td class="num ${pctCls(total)}" id="costTotal">${total ? `월 ${won(total)} · 분기 ${won(total * 3)}` : "–"}</td></tr>
+        ${sfOut.length ? `<tr><th>내륙운송료(${esc(sfWhen)})</th><th class="num">월 운행</th><th class="num">지금 운임</th><th class="num">예상 변동</th><th class="num">월 원가 영향</th></tr>` + sfOut.map(line).join("") : ""}
+        <tr class="cost-total"><td>합계</td><td></td><td></td><td></td><td class="num ${pctCls(total)}" id="costTotal">${total ? `월 ${won(total)}, 분기 ${won(total * 3)}` : "–"}</td></tr>
       </table></div>
-      <div class="m-note">넣은 사용량은 이 브라우저에만 저장되고 저장소·메일·서버로 보내지 않습니다. 원화 환산은 오늘 환율로 했고, 환율 변화 자체의 영향은 따로 세지 않았습니다.
+      <div class="m-note">넣은 사용량은 이 PC의 브라우저에만 저장됩니다. 원화 환산은 오늘 환율로 했고, 환율 변화 자체의 영향은 따로 세지 않았습니다.
         PP·PE는 중국 선물 가격이라 실제 구매 단가와 수준은 다르지만 방향과 폭을 가늠하는 데 씁니다.</div>`;
   }
   sec.hidden = false;
@@ -3534,7 +3535,7 @@ if (NEWS_OUTAGE) {
     const { rows, sfOut, total } = compute();
     rows.concat(sfOut).forEach(r => { const o = box.querySelector(`[data-out="${CSS.escape(r.id)}"]`); if (o) { o.textContent = r.u ? won(r.monthly) : "–"; o.className = `num ${pctCls(r.monthly)}`; } });
     const tEl = document.getElementById("costTotal");
-    if (tEl) { tEl.textContent = total ? `월 ${won(total)} · 분기 ${won(total * 3)}` : "–"; tEl.className = `num ${pctCls(total)}`; }
+    if (tEl) { tEl.textContent = total ? `월 ${won(total)}, 분기 ${won(total * 3)}` : "–"; tEl.className = `num ${pctCls(total)}`; }
   });
   box.addEventListener("click", e => {
     const b = e.target.closest("[data-cperiod]");

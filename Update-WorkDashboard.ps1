@@ -2052,7 +2052,7 @@ function Get-NewsImportance {
     [PSCustomObject]@{
         score  = $score
         flag   = ($score -ge $cfg.threshold)
-        reason = (($labels | Select-Object -Unique) -join " · ")
+        reason = (($labels | Select-Object -Unique) -join "·")
     }
 }
 
@@ -3277,6 +3277,9 @@ if ($opsSummary) {
     # 환율과 유가는 각자 판정과 같은 기간으로 쓴다('참고로 …', '같은 기간 …'은 뺐다).
     if ($fx) { $hlText += (Get-TrendSentence $fx "원/달러 환율은") }
     if ($br) { $hlText += (Get-TrendSentence $br "국제유가(브렌트)는") }
+    # 결론 문단이 이미 말한 지표(메일의 주목할 점에서 같은 문장을 되풀이하지 않는 데 쓴다)
+    $hlIds = @(@($fr, $pp, $pe, $fx, $br) | Where-Object { $_ } | ForEach-Object { [string]$_.id })
+    $opsSummary | Add-Member -NotePropertyName headlineIds -NotePropertyValue $hlIds -Force
     $opsSummary | Add-Member -NotePropertyName headline -NotePropertyValue ([PSCustomObject]@{ tone = $hlTone; title = $hlTitle; text = (@($hlText | Where-Object { $_ }) -join " ") }) -Force
 
     # 브리핑(요약판 [자세히], 주간 보고): 분야별 두세 문장.
@@ -4055,20 +4058,32 @@ if ($missingCards.Count -gt 0) {
 # on should not depend on scrolling that far. Nothing is duplicated away: these still appear in
 # their own card below.
 # 메일의 지금 주목할 점. 관련 기사는 2줄까지만 붙인다(긴 뉴스 주소가 줄마다 수백 바이트라 90KB 경고선에 가깝다).
+# 결론 문단이 이미 말한 지표(해상운임, PP·PE, 환율, 유가)와 내륙운송료 줄은 같은 문장을 되풀이하지 않고 관련 기사만 남긴다
+# (2026-11-12 점검: 결론과 주목할 점 다섯 줄이 같은 내용이었다).
 $mailHlNews = 0
-$mailHlLines = @(if ($opsSummary) {
+$mailHlLines = New-Object System.Collections.ArrayList
+$mailNewsLines = New-Object System.Collections.ArrayList
+if ($opsSummary) {
+    $covered = @($opsSummary.headlineIds)
     foreach ($h in @($opsSummary.highlights)) {
-        $line = "· <font color=#6e6c66>[$($h.tag)]</font> $($h.text)"
-        if ($h.news -and $mailHlNews -lt 2) {
+        $isCovered = ($h.id -and $covered -contains [string]$h.id) -or ([string]$h.tag -eq "내륙운송료")
+        $newsHtml = ""
+        if ($h.news -and $mailHlNews -lt 3) {
             $mailHlNews++
             $nd = [string]$h.news.date
             $ndTxt = if ($nd -match '^\d{4}-(\d{2})-(\d{2})$') { "$([int]$matches[1])/$([int]$matches[2])" } else { "" }
             $nMeta = (@([string]$h.news.source, $ndTxt) | Where-Object { $_ }) -join ", "
-            $line += "<br>&nbsp;&nbsp;&nbsp;<font size=2 color=#6e6c66>관련 기사: <a href='$([System.Net.WebUtility]::HtmlEncode([string]$h.news.link))' style='color:#52514e;'>$([System.Net.WebUtility]::HtmlEncode([string]$h.news.title))</a> ($([System.Net.WebUtility]::HtmlEncode($nMeta)))</font>"
+            $newsHtml = "<a href='$([System.Net.WebUtility]::HtmlEncode([string]$h.news.link))' style='color:#52514e;'>$([System.Net.WebUtility]::HtmlEncode([string]$h.news.title))</a> <span style='color:#898781;'>($([System.Net.WebUtility]::HtmlEncode($nMeta)))</span>"
         }
-        $line
+        if ($isCovered) {
+            if ($newsHtml) { [void]$mailNewsLines.Add("· <font color=#6e6c66>[$($h.tag)]</font> $newsHtml") }
+        } else {
+            $line = "· <font color=#6e6c66>[$($h.tag)]</font> $($h.text)"
+            if ($newsHtml) { $line += "<br>&nbsp;&nbsp;&nbsp;<span style='font-size:12.5px;color:#6e6c66;'>관련 기사: $newsHtml</span>" }
+            [void]$mailHlLines.Add($line)
+        }
     }
-})
+}
 $highlights = @($materials | ForEach-Object { $_.news } | Where-Object { $_ -and $_.flag } |
     Sort-Object score -Descending | Select-Object -First 3)
 
@@ -4209,8 +4224,8 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
   $headlineMailHtml
   <!--MAIL_CHARTS-->
   <!--FALLBACK_START-->$tileHtml<!--FALLBACK_END-->
-  <div style="font-size:12px;font-weight:700;color:#0b0b0b;">지금 주목할 점</div>
-  <div style="font-size:12.5px;color:#0b0b0b;margin:4px 0 10px;line-height:1.6;">$($mailHlLines -join '<br>')</div>
+  $(if ($mailHlLines.Count) { "<div style='font-size:12px;font-weight:700;color:#0b0b0b;'>지금 주목할 점</div><div style='font-size:12.5px;color:#0b0b0b;margin:4px 0 10px;line-height:1.6;'>$($mailHlLines -join '<br>')</div>" })
+  $(if ($mailNewsLines.Count) { "<div style='font-size:12px;font-weight:700;color:#0b0b0b;'>움직임 관련 기사</div><div style='font-size:12.5px;color:#0b0b0b;margin:4px 0 10px;line-height:1.6;'>$($mailNewsLines -join '<br>')</div>" })
   <table width="100%" cellpadding=4 cellspacing=0 style="margin-top:6px;font-size:12.5px;color:#0b0b0b;">
     <tr style="font-size:12px;color:#898781;"><td>지표</td><td align=right>현재</td><td align=right>1개월</td><td align=right>3개월</td><td align=right>1년</td><td align=right>1개월 뒤 예상</td></tr>
     $($opsRowHtml -join "")
@@ -4355,7 +4370,7 @@ if ($nowKst.DayOfWeek -eq [DayOfWeek]::Monday -or $env:FORCE_WEEKLY_REPORT -eq "
         $wEnc = [System.Net.WebUtility]::HtmlEncode($weeklyText) -replace "`n", "<br>"
         $weeklyHtml = @"
 <div style="margin:0 0 16px;padding:12px 15px;background:#ffffff;border:1px solid #e1e0d9;border-left:4px solid #2a78d6;border-radius:6px;">
-  <div style="font-size:12px;font-weight:700;color:#2a78d6;margin-bottom:6px;">주간 보고 (월요일 메일에만 · 그대로 복사해 쓰면 됩니다)</div>
+  <div style="font-size:12px;font-weight:700;color:#2a78d6;margin-bottom:6px;">주간 보고 <span style="font-weight:400;color:#6e6c66;">월요일 메일에만 싣습니다. 그대로 복사해 보고에 쓸 수 있습니다.</span></div>
   <div style="font-size:12.5px;line-height:1.65;color:#0b0b0b;">$wEnc</div>
 </div>
 "@
@@ -4400,7 +4415,7 @@ $emailHtml = @"
   $(Get-EmailSection "날씨" ($weatherRowsHtml -join "`n"))
   $(Get-EmailSection "수급 뉴스" ($materialsHtml -join "`n"))
   <div style="margin-top:16px;font-size:12px;color:#898781;line-height:1.6;">
-    출처: 날씨 Open-Meteo, 공휴일 Nager.Date, 해외 휴무 Google 캘린더, 태풍 GDACS, 환율과 국제유가 Yahoo Finance, 국내 유가 오피넷, KCl World Bank, 운임지수 Shanghai Shipping Exchange, 뉴스 Google 뉴스. 업무 참고용 요약입니다.<br>
+    출처: 날씨 Open-Meteo, 공휴일 Nager.Date, 해외 휴무 Google 캘린더, 태풍 GDACS, 환율과 국제유가 Yahoo Finance, 국내 유가 오피넷, 운임지수 상하이해운거래소·한국해양진흥공사, 합성수지 선물 대련·정저우 상품거래소, 물가지수 한국은행, 수입 단가 관세청, KCl World Bank, 뉴스 Google 뉴스. 업무 참고용 요약입니다.<br>
     자세한 내용은 <a href="$dashboardUrl" style="color:#2a78d6;">대시보드</a>에서 확인하세요.
   </div>
 </div>
