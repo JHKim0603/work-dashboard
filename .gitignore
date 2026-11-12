@@ -11,3 +11,4 @@ secrets.local.json
 
 # 진단용으로 내려받는 배포본 스냅샷
 live.html
+mail-charts/

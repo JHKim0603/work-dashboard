@@ -4105,6 +4105,7 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
 <div style="margin:16px 0;padding:13px 15px;background:#ffffff;border:1px solid #e1e0d9;border-radius:8px;">
   <div style="font-size:12px;font-weight:700;color:#0b0b0b;margin-bottom:4px;">$($opsSummary.title)</div>
   $headlineMailHtml
+  <!--MAIL_CHARTS-->
   $tileHtml
   <div style="font-size:12px;font-weight:700;color:#0b0b0b;">지금 주목할 점</div>
   <div style="font-size:12.5px;color:#0b0b0b;margin:4px 0 10px;line-height:1.6;">$($mailHlLines -join '<br>')</div>
@@ -4266,6 +4267,9 @@ if ($nowKst.DayOfWeek -eq [DayOfWeek]::Monday -or $env:FORCE_WEEKLY_REPORT -eq "
 # near-black heading still sitting on it. Declaring one scheme opts the message out of that
 # guesswork. Kept as a PowerShell comment rather than an HTML one: every byte inside the
 # heredoc is mailed, and this mail is at 78% of the size Gmail clips at.
+# 메일 그림: <!--MAIL_CHARTS--> 자리에 워크플로의 mail_charts.py 가 결론 바로 아래 그림 두 장(핵심 지표 6개월 흐름,
+# 내륙운송료)을 끼운다(첨부 그림을 cid 로 부름). 그림을 못 만들면 주석 그대로 남아 글로만 나간다.
+# 가격 카드 목록($priceSectionHtml)은 그림과 요약표가 대신해 메일에서 뺐다(2026-11-12 사용자 결정, 메일에서 가장 긴 부분).
 $emailHtml = @"
 <!DOCTYPE html>
 <html lang="ko">
@@ -4289,7 +4293,6 @@ $emailHtml = @"
   $highlightHtml
   $typhoonHtml
   $(Get-EmailSection "날씨" ($weatherRowsHtml -join "`n"))
-  $priceSectionHtml
   $(Get-EmailSection "수급 뉴스" ($materialsHtml -join "`n"))
   <div style="margin-top:16px;font-size:11px;color:#898781;line-height:1.6;">
     출처: 날씨 Open-Meteo, 공휴일 Nager.Date, 해외 휴무 Google 캘린더, 태풍 GDACS, 환율과 국제유가 Yahoo Finance, 국내 유가 오피넷, KCl World Bank, 운임지수 Shanghai Shipping Exchange, 뉴스 Google 뉴스. 업무 참고용 요약입니다.<br>

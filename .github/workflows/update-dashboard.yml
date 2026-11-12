@@ -126,6 +126,15 @@ jobs:
             echo "last delivery was '${last:-never}', today is $today KST - sending"
           fi
 
+      # 메일 그림: 대시보드와 같은 자료로 그래프 PNG 를 만들고 메일 본문 자리표시에 끼운다(mail_charts.py).
+      # 우분투 실행 환경에는 한글 글꼴이 없어 나눔고딕을 설치한다. 실패해도 메일은 그림 없이 글로 나간다.
+      - name: Draw mail charts
+        if: steps.mailgate.outputs.send == 'true'
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq > /dev/null && sudo apt-get install -y -qq fonts-nanum > /dev/null && fc-cache -f > /dev/null
+          python3 mail_charts.py work
+
       # Non-blocking: the published dashboard is the primary output, so a mail failure
       # (missing/expired Gmail secret, SMTP outage) must not stop the Pages deploy below.
       - name: Send email summary
@@ -142,6 +151,8 @@ jobs:
           to: jhyupkim@unid.co.kr
           from: 업무 참고자료 Dashboard <${{ secrets.GMAIL_USERNAME }}>
           html_body: file://email-summary.html
+          # 첨부 그림은 파일 이름이 cid 가 되어 본문의 <img src="cid:파일이름"> 자리에 보인다.
+          attachments: mail-charts/*.png
 
       # mailed-labels.json is what the next mail's subject judges "new since last time" against.
       # Promoted here, only after a confirmed send, for the same reason as the marker: the other
