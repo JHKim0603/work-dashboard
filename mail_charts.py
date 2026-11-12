@@ -24,6 +24,7 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parent
 OUT = ROOT / "mail-charts"
 MARKER = "<!--MAIL_CHARTS-->"
+# 그림이 들어가면 지우는 부분: <!--FALLBACK_START--> … <!--FALLBACK_END-->
 
 INK, INK2, MUTED, GRID = "#0b0b0b", "#52514e", "#6e6c66", "#e1e0d9"
 # GitHub 실행 환경(우분투)에는 워크플로가 fonts-nanum 을 설치한다. 내 PC(윈도우)에서는 맑은 고딕.
@@ -227,7 +228,7 @@ def stock_stages(page):
         g.append(text(TR + 12, y + 18, f"−{x['ddNow']:.1f}%", 13, INK, 700))
         g.append(text(TR + 72, y + 18, f"{lv}단계" if lv else "단계 전", 13, ACC if lv else MUTED, 700 if lv else 400))
         nxt = next((s for s in steps if s > x["ddNow"]), None)
-        if nxt is not None:
+        if nxt is not None and nxt - x["ddNow"] <= 5:   # 곧 다음 단계인 종목만(모두 적으면 휴대폰에서 붐볐다)
             g.append(text(R, y + 18, f"다음 단계까지 {nxt - x['ddNow']:.1f}%", 12, MUTED, anchor="end"))
     yb = TOP + RH * len(rows) + 4
     for v in range(0, axis_max + 1, 20):
@@ -355,6 +356,9 @@ def main():
                 print(f"그림 찍기 실패: {chart['file']}")
     if done:
         mail = mail.replace(MARKER, "".join(block(c, width) for c in done), 1)
+        # 그림이 대신하는 부분(업무: 타일 줄, 주식: 매수 단계 상자·공포탐욕 상자)은 그림이 들어갔을 때만 지운다.
+        # 그림을 못 만든 날은 그대로 남아 메일이 글로 같은 내용을 전한다.
+        mail = re.sub(r"<!--FALLBACK_START-->.*?<!--FALLBACK_END-->", "", mail, flags=re.S)
         mail_path.write_text(mail, encoding="utf-8")
     print(f"메일 그림 {len(done)}장 넣음")
 
