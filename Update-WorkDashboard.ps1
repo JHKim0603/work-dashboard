@@ -3264,12 +3264,13 @@ if ($opsSummary) {
             $u = [DateTime]$sf.scenario.until
             $a2 = [string]$sf.scenario.trigger.applyLabel; $v2 = [string]$sf.scenario.trigger.verdict
             if ($a1.Length -gt 6 -and $a2.Length -gt 6 -and $a1.Substring(0, 5) -eq $a2.Substring(0, 5)) { $a2 = $a2.Substring(6) }
-            $p1 = if ($a1) { "$a1분" } else { "다음 조정" }
-            $p2 = if ($a2) { "$a2분은" } else { "그다음 조정은" }
+            # ${a1}분 처럼 중괄호로 감싼다. "$a1분" 은 PowerShell 이 '분'까지 변수 이름으로 읽어 빈칸이 됐다(2026-11-12).
+            $p1 = if ($a1) { "${a1}분" } else { "다음 조정" }
+            $p2 = if ($a2) { "${a2}분은" } else { "그다음 조정은" }
             if ($v2 -eq $v1) { $hlText += "내륙운송료는 $p1 $v1$(Get-Josa $v1 '이' '가') 예상되며, 유류세 인하가 $($u.Month)/$($u.Day)에 끝나도 $p2 $v2$(Get-Josa $v2 '으로' '로') 보입니다." }
             else { $hlText += "내륙운송료는 $p1 $v1, $p2 유류세 인하가 $($u.Month)/$($u.Day)에 끝나면 $v2$(Get-Josa $v2 '이' '가') 예상됩니다." }
         } else {
-            $p1 = if ($a1) { "$a1분" } else { "다음 조정" }
+            $p1 = if ($a1) { "${a1}분" } else { "다음 조정" }
             $hlText += "내륙운송료는 $p1 $v1$(Get-Josa $v1 '이' '가') 예상됩니다."
         }
     }
