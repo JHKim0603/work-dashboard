@@ -3606,6 +3606,26 @@ $weatherRowsHtml = foreach ($w in $weather) {
 $foreignSoon = @($foreignHolidays | Where-Object { $_.dDay -le 30 })
 
 $policySoon = @($schedule | Where-Object { $_.kind -ne "발표" -and $_.dDay -le 14 })
+# --- 메일 모양 하나로(2026-11-13) ---------------------------------------------------------------
+# 상자는 모두 흰 바탕, 회색 테두리, 둥근 모서리. 상태를 알릴 때만 왼쪽 굵은 선에 색을 쓴다(빨강 경보, 주황 주의, 초록 이상 없음).
+# 구역 제목은 상자 밖 같은 자리에 같은 글씨로 두고, 이름과 순서는 대시보드 화면의 구역(핵심 지표, 날씨·일정·태풍, 수급 뉴스)과 같다.
+# 예전에는 연휴 파랑, 태풍 빨강·초록, 눈여겨볼 기사 분홍 바탕에 구역 제목이 상자 안팎으로 섞여 있었다.
+$mailCard = "background:#ffffff;border:1px solid #e1e0d9;border-radius:8px;padding:13px 15px;"
+$mailSub = "font-size:13.5px;font-weight:700;color:#0b0b0b;"
+function Get-MailLabel { param([string]$t) "<div style='margin:22px 0 7px;font-size:12px;font-weight:700;color:#6e6c66;letter-spacing:0.6px;'>$t</div>" }
+# '2026-12-25' → '12/25(금)'. 메일 날짜를 화면과 같은 꼴로.
+function Format-MailMd {
+    param([string]$d)
+    $dt = [DateTime]::MinValue
+    if (-not [DateTime]::TryParseExact($d.Substring(0, [math]::Min(10, $d.Length)), "yyyy-MM-dd", [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$dt)) { return $d }
+    "$($dt.Month)/$($dt.Day)($(@('일', '월', '화', '수', '목', '금', '토')[[int]$dt.DayOfWeek]))"
+}
+function Format-MailRange {
+    param([string]$a, [string]$b)
+    if (-not $b -or $a -eq $b) { return (Format-MailMd $a) }
+    "$(Format-MailMd $a)~$(Format-MailMd $b)"
+}
+
 $holidayHtml = ""
 if ($holiday -or $foreignSoon.Count -gt 0 -or $policySoon.Count -gt 0) {
     $krHtml = ""
@@ -3613,22 +3633,23 @@ if ($holiday -or $foreignSoon.Count -gt 0 -or $policySoon.Count -gt 0) {
         $names = ($holiday.holidayNames | Select-Object -Unique) -join ", "
         $dDayText = if ($holiday.dDay -eq 0) { "오늘부터" } else { "D-$($holiday.dDay)" }
         $krHtml = @"
-  <div style="font-weight:650;font-size:13px;color:#0b0b0b;">가장 빠른 연휴: $($holiday.startDate) ~ $($holiday.endDate) ($($holiday.days)일, $dDayText)</div>
+  <div style="$mailSub">가장 빠른 연휴: $(Format-MailRange $holiday.startDate $holiday.endDate), $($holiday.days)일($dDayText)</div>
   <div style="font-size:12px;color:#52514e;margin-top:4px;">$names</div>
 "@
     }
     $fRows = foreach ($f in $foreignSoon) {
         $dText = if ($f.dDay -le 0) { "진행 중" } else { "D-$($f.dDay)" }
-        "<div style='font-size:12px;color:#3d3b37;margin-top:4px;'><b>$($f.country) $($f.name)</b> $($f.startDate.Substring(5)) ~ $($f.endDate.Substring(5)) ($($f.days)일, $dText) <span style='color:#898781;'>$($f.impact)</span></div>"
+        $fLen = if ([int]$f.days -gt 1) { "$($f.days)일, " } else { "" }
+        "<div style='font-size:12.5px;color:#3d3b37;margin-top:4px;'><b>$($f.country) $($f.name)</b> $(Format-MailRange $f.startDate $f.endDate)($fLen$dText) <span style='color:#898781;'>$($f.impact)</span></div>"
     }
-    $fHtml = if ($fRows) { "<div style='margin-top:9px;padding-top:8px;border-top:1px solid #cfe0f5;font-size:12px;font-weight:700;color:#6e6c66;'>베트남·중국 휴무 (30일 이내)</div>$($fRows -join '')" } else { "" }
+    $fHtml = if ($fRows) { "<div style='margin-top:10px;padding-top:9px;border-top:1px solid #e1e0d9;font-size:12px;font-weight:700;color:#6e6c66;'>베트남·중국 휴무(30일 안)</div>$($fRows -join '')" } else { "" }
     $pRows = foreach ($e in $policySoon) {
         $ed = [DateTime]$e.date
-        "<div style='font-size:12px;color:#3d3b37;margin-top:4px;'><b>$($ed.Month)/$($ed.Day)</b> $($e.title) (D-$($e.dDay))</div>"
+        "<div style='font-size:12.5px;color:#3d3b37;margin-top:4px;'><b>$(Format-MailMd $ed.ToString('yyyy-MM-dd'))</b> $($e.title) (D-$($e.dDay))</div>"
     }
-    if ($pRows) { $fHtml += "<div style='margin-top:9px;padding-top:8px;border-top:1px solid #cfe0f5;font-size:12px;font-weight:700;color:#6e6c66;'>다가오는 일정 (14일 이내)</div>$($pRows -join '')" }
+    if ($pRows) { $fHtml += "<div style='margin-top:10px;padding-top:9px;border-top:1px solid #e1e0d9;font-size:12px;font-weight:700;color:#6e6c66;'>다가오는 일정(14일 안)</div>$($pRows -join '')" }
     $holidayHtml = @"
-<div style="margin:16px 0;padding:12px 14px;background:#eef4fc;border:1px solid #cfe0f5;border-radius:8px;">
+<div style="margin:0 0 10px;$mailCard">
 $krHtml
   $fHtml
 </div>
@@ -3722,8 +3743,8 @@ if ($typhoon) {
 "@
         }
         $typhoonHtml = @"
-<div style="margin:16px 0;padding:13px 15px;background:#fdeeee;border:1px solid #f3caca;border-left:4px solid #b3221f;">
-  <div style="font-weight:700;font-size:14px;color:#b3221f;">⚠ $headline</div>
+<div style="margin:0 0 10px;$mailCard border-left:4px solid #b3221f;">
+  <div style="$mailSub color:#b3221f;">⚠ $headline</div>
   $($activeRows -join "")
   $legendHtml
   $pastBlockHtml
@@ -3731,16 +3752,16 @@ if ($typhoon) {
 "@
     } elseif ($pastRows) {
         $typhoonHtml = @"
-<div style="margin:16px 0;padding:13px 15px;background:#f1f6f1;border:1px solid #cfe3cf;border-left:4px solid #0a6b0a;">
-  <div style="font-weight:700;font-size:14px;color:#0a6b0a;">✓ 베트남 인근 활성 태풍 없음, 입고 일정 영향 없음</div>
+<div style="margin:0 0 10px;$mailCard border-left:4px solid #0a6b0a;">
+  <div style="$mailSub color:#0a6b0a;">✓ 베트남 인근 활성 태풍 없음, 입고 일정 영향 없음</div>
   $legendHtml
   $pastBlockHtml
 </div>
 "@
     } else {
         $typhoonHtml = @"
-<div style="margin:16px 0;padding:13px 15px;background:#f1f6f1;border:1px solid #cfe3cf;border-left:4px solid #0a6b0a;">
-  <div style="font-weight:700;font-size:14px;color:#0a6b0a;">✓ 베트남 인근 태풍 활동 없음, 부자재 입고 일정 영향 없음</div>
+<div style="margin:0 0 10px;$mailCard border-left:4px solid #0a6b0a;">
+  <div style="$mailSub color:#0a6b0a;">✓ 베트남 인근 태풍 활동 없음, 부자재 입고 일정 영향 없음</div>
 </div>
 "@
     }
@@ -3750,8 +3771,8 @@ if ($typhoon) {
     # 없는 날의 메일과 구분되지 않았다. 이 섹션이 있는 이유가 입고 지연을 미리 잡는 것이니
     # "확인 못 함"은 "없음"과 반드시 달라 보여야 한다.
     $typhoonHtml = @"
-<div style="margin:16px 0;padding:13px 15px;background:#fdf6e7;border:1px solid #f0dcb4;border-left:4px solid #a15c00;">
-  <div style="font-weight:700;font-size:14px;color:#a15c00;">⚠ 오늘은 태풍 정보를 받지 못했습니다. 태풍이 없다는 뜻은 아닙니다.</div>
+<div style="margin:0 0 10px;$mailCard border-left:4px solid #a15c00;">
+  <div style="$mailSub color:#a15c00;">⚠ 오늘은 태풍 정보를 받지 못했습니다. 태풍이 없다는 뜻은 아닙니다.</div>
   <div style="font-size:12px;color:#52514e;margin-top:5px;">GDACS 사이트가 응답하지 않았습니다. 다음 실행 때 자동으로 다시 조회합니다. 급한 경우 <a href="https://www.gdacs.org/" style="color:#2a78d6;">GDACS</a>에서 직접 확인하시기 바랍니다.</div>
 </div>
 "@
@@ -4045,8 +4066,8 @@ if ($missingCards.Count -gt 0) {
         "<div style='margin-top:6px;font-size:12.5px;color:#0b0b0b;'>· <b>$($m.displayName)</b>: $last</div>"
     }
     $failureHtml = @"
-<div style="margin:16px 0;padding:13px 15px;background:#fdf6e7;border:1px solid #f0dcb4;border-radius:8px;">
-  <div style="font-size:12px;font-weight:700;color:#a15c00;">⚠ 오늘 수집하지 못한 항목 $($missingCards.Count)건</div>
+<div style="margin:10px 0 0;$mailCard border-left:4px solid #a15c00;">
+  <div style="$mailSub color:#a15c00;">⚠ 오늘 수집하지 못한 항목 $($missingCards.Count)건</div>
   $($rows -join "")
   <div style="font-size:12px;color:#898781;margin-top:9px;">자료 제공 사이트가 응답하지 않았거나 형식이 바뀌었을 수 있습니다. 다음 실행 때 자동으로 다시 조회합니다. 같은 상태가 계속되면 점검이 필요합니다.</div>
 </div>
@@ -4097,8 +4118,8 @@ if ($highlights.Count -gt 0) {
         "<div style='margin-top:8px;'>$chip<a href='$(Get-HtmlText $h.link)' style='font-size:13px;font-weight:700;color:#0b0b0b;text-decoration:none;'>$(Get-HtmlText $h.title)</a><div style='font-size:12px;color:#898781;margin-top:2px;'>$meta</div></div>"
     }
     $highlightHtml = @"
-<div style="margin:16px 0;padding:13px 15px;background:#fdeeee;border:1px solid #f3caca;border-radius:8px;">
-  <div style="font-size:12px;font-weight:700;color:#2b2a27;">오늘 눈여겨볼 기사 $($highlights.Count)건</div>
+<div style="margin:0 0 10px;$mailCard">
+  <div style="$mailSub">오늘 눈여겨볼 기사 $($highlights.Count)건</div>
   $($rows -join "")
   <div style="font-size:12px;color:#898781;margin-top:9px;">중요도는 기사 제목의 단어로 자동 분류한 결과입니다. 참고용으로 보시기 바랍니다.</div>
 </div>
@@ -4219,13 +4240,13 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
     $headlineMailHtml = if ($hl) { "<div style='margin:0 0 10px;padding:10px 12px;background:#f4f6f9;border-left:4px solid $hlColor;border-radius:6px;'><div style='font-size:14px;font-weight:700;color:#0b0b0b;'>$(Get-HtmlText $hl.title)</div><div style='font-size:12.5px;color:#3d3b37;line-height:1.6;margin-top:3px;'>$(Get-HtmlText $hl.text)</div></div>" } else { "" }
     $briefMailHtml = if ($briefRows.Count) { "<div style='margin:0 0 10px;padding:10px 12px;background:#eef4fc;border-radius:6px;'><div style='font-size:12px;font-weight:700;color:#0b0b0b;margin-bottom:4px;'>오늘의 브리핑</div><table cellpadding=0 cellspacing=0 style='border-collapse:collapse;'>$($briefRows -join '')</table></div>" } else { "" }
     $opsHtml = @"
-<div style="margin:16px 0;padding:13px 15px;background:#ffffff;border:1px solid #e1e0d9;border-radius:8px;">
-  <div style="font-size:12px;font-weight:700;color:#0b0b0b;margin-bottom:4px;">$($opsSummary.title)</div>
+$(Get-MailLabel "핵심 지표")
+<div style="margin:0;$mailCard">
   $headlineMailHtml
   <!--MAIL_CHARTS-->
   <!--FALLBACK_START-->$tileHtml<!--FALLBACK_END-->
-  $(if ($mailHlLines.Count) { "<div style='font-size:12px;font-weight:700;color:#0b0b0b;'>지금 주목할 점</div><div style='font-size:12.5px;color:#0b0b0b;margin:4px 0 10px;line-height:1.6;'>$($mailHlLines -join '<br>')</div>" })
-  $(if ($mailNewsLines.Count) { "<div style='font-size:12px;font-weight:700;color:#0b0b0b;'>움직임 관련 기사</div><div style='font-size:12.5px;color:#0b0b0b;margin:4px 0 10px;line-height:1.6;'>$($mailNewsLines -join '<br>')</div>" })
+  $(if ($mailHlLines.Count) { "<div style='$mailSub'>지금 주목할 점</div><div style='font-size:12.5px;color:#0b0b0b;margin:4px 0 10px;line-height:1.6;'>$($mailHlLines -join '<br>')</div>" })
+  $(if ($mailNewsLines.Count) { "<div style='$mailSub'>움직임 관련 기사</div><div style='font-size:12.5px;color:#0b0b0b;margin:4px 0 10px;line-height:1.6;'>$($mailNewsLines -join '<br>')</div>" })
   <table width="100%" cellpadding=4 cellspacing=0 style="margin-top:6px;font-size:12.5px;color:#0b0b0b;">
     <tr style="font-size:12px;color:#898781;"><td>지표</td><td align=right>현재</td><td align=right>1개월</td><td align=right>3개월</td><td align=right>1년</td><td align=right>1개월 뒤 예상</td></tr>
     $($opsRowHtml -join "")
@@ -4243,13 +4264,16 @@ if ($newsOutage) {
 function Get-EmailSection {
     # The digest used to be one undivided table running weather straight into prices and then
     # into news, so nothing signalled where one kind of information stopped.
+    # 제목을 비우면 상자만 낸다(같은 구역 안에 이어 붙일 때). 상자 모양은 위 $mailCard 와 같다.
     param($title, $rowsHtml)
     if (-not $rowsHtml -or $rowsHtml.Trim() -eq "") { return "" }
     @"
-<div style="margin:22px 0 7px;font-size:12px;font-weight:700;color:#6e6c66;letter-spacing:0.6px;">$title</div>
-  <table style="width:100%;border-collapse:collapse;background:#ffffff;border:1px solid #e1e0d9;">
+$(if ($title) { Get-MailLabel $title })
+<div style="margin:0 0 10px;background:#ffffff;border:1px solid #e1e0d9;border-radius:8px;overflow:hidden;">
+  <table style="width:100%;border-collapse:collapse;">
     $rowsHtml
   </table>
+</div>
 "@
 }
 
@@ -4295,7 +4319,7 @@ function Get-WeeklyReportText {
     if (-not $opsSummary) { return "" }
     $dows = "일월화수목금토"
     $lines = New-Object System.Collections.ArrayList
-    [void]$lines.Add("[물류 참고지표 주간 요약] $($nowKst.Month)/$($nowKst.Day)($($dows[[int]$nowKst.DayOfWeek])) 기준")
+    [void]$lines.Add("[물류팀 운영 참고지표 주간 요약] $($nowKst.Month)/$($nowKst.Day)($($dows[[int]$nowKst.DayOfWeek])) 기준")
     [void]$lines.Add("")
     if ($opsSummary.headline) { [void]$lines.AddRange(@("■ 요약", "$($opsSummary.headline.title).", [string]$opsSummary.headline.text, "")) }
     $rowsById = @{}; foreach ($r in @($opsSummary.rows)) { $rowsById[[string]$r.id] = $r }
@@ -4369,8 +4393,9 @@ if ($nowKst.DayOfWeek -eq [DayOfWeek]::Monday -or $env:FORCE_WEEKLY_REPORT -eq "
     if ($weeklyText) {
         $wEnc = [System.Net.WebUtility]::HtmlEncode($weeklyText) -replace "`n", "<br>"
         $weeklyHtml = @"
-<div style="margin:0 0 16px;padding:12px 15px;background:#ffffff;border:1px solid #e1e0d9;border-left:4px solid #2a78d6;border-radius:6px;">
-  <div style="font-size:12px;font-weight:700;color:#2a78d6;margin-bottom:6px;">주간 보고 <span style="font-weight:400;color:#6e6c66;">월요일 메일에만 싣습니다. 그대로 복사해 보고에 쓸 수 있습니다.</span></div>
+$(Get-MailLabel "주간 보고")
+<div style="margin:0;$mailCard">
+  <div style="font-size:12px;color:#6e6c66;margin-bottom:6px;">월요일 메일에만 싣습니다. 그대로 복사해 보고에 쓸 수 있습니다.</div>
   <div style="font-size:12.5px;line-height:1.65;color:#0b0b0b;">$wEnc</div>
 </div>
 "@
@@ -4387,7 +4412,7 @@ if ($nowKst.DayOfWeek -eq [DayOfWeek]::Monday -or $env:FORCE_WEEKLY_REPORT -eq "
 # 메일 그림: <!--MAIL_CHARTS--> 자리에 워크플로의 mail_charts.py 가 결론 바로 아래 그림 두 장(핵심 지표 6개월 흐름,
 # 내륙운송료)을 끼운다(첨부 그림을 cid 로 부름). 그림을 못 만들면 주석 그대로 남아 글로만 나간다.
 # 가격 카드 목록($priceSectionHtml)은 그림과 요약표가 대신해 메일에서 뺐다(2026-11-12 사용자 결정, 메일에서 가장 긴 부분).
-# 같은 날 순서도 바꿨다: 결론(요약판)이 맨 위, 그다음 수집 실패·주간 보고·눈여겨볼 기사, 연휴·태풍·날씨·뉴스.
+# 순서와 구역 이름은 화면과 같다(2026-11-13): [핵심 지표] → 수집 실패 → [주간 보고] → [날씨·일정·태풍] 날씨, 일정, 태풍 → [수급 뉴스] 눈여겨볼 기사, 분야별 기사.
 # 예전에는 44일 뒤 연휴 상자가 결론보다 먼저 나와 휴대폰 첫 화면이 연휴 안내였다.
 # 타일 줄은 <!--FALLBACK_START-->…<!--FALLBACK_END--> 로 감싸 그림이 들어가면 mail_charts.py 가 지운다(숫자가 그림·표와 세 번 겹쳤다).
 $emailHtml = @"
@@ -4409,11 +4434,13 @@ $emailHtml = @"
   $opsHtml
   $failureHtml
   $weeklyHtml
-  $highlightHtml
+  $(Get-MailLabel "날씨·일정·태풍")
+  $(Get-EmailSection "" ($weatherRowsHtml -join "`n"))
   $holidayHtml
   $typhoonHtml
-  $(Get-EmailSection "날씨" ($weatherRowsHtml -join "`n"))
-  $(Get-EmailSection "수급 뉴스" ($materialsHtml -join "`n"))
+  $(if ($highlightHtml -or @($materialsHtml).Count) { Get-MailLabel "수급 뉴스" })
+  $highlightHtml
+  $(Get-EmailSection "" ($materialsHtml -join "`n"))
   <div style="margin-top:16px;font-size:12px;color:#898781;line-height:1.6;">
     출처: 날씨 Open-Meteo, 공휴일 Nager.Date, 해외 휴무 Google 캘린더, 태풍 GDACS, 환율과 국제유가 Yahoo Finance, 국내 유가 오피넷, 운임지수 상하이해운거래소·한국해양진흥공사, 합성수지 선물 대련·정저우 상품거래소, 물가지수 한국은행, 수입 단가 관세청, KCl World Bank, 뉴스 Google 뉴스. 업무 참고용 요약입니다.<br>
     자세한 내용은 <a href="$dashboardUrl" style="color:#2a78d6;">대시보드</a>에서 확인하세요.
@@ -4468,6 +4495,9 @@ foreach ($f in @($foreignHolidays | Where-Object { $_.days -ge 3 -and $_.dDay -l
 # 연간까지 제각각이라, 폭만 보면 갱신이 느린 계열이 제 주기 내내 제목을 차지한다. 시점 라벨이
 # 지난 실행과 같다면 값도 그대로이므로 오늘의 소식이 아니다.
 # 기준은 카드마다 config.cardAlertPct 로 바꿀 수 있고, 없으면 5% 다.
+# 제목 알림에 쓸 지표 짧은 이름(요약표의 short). 없으면 카드 이름을 쓴다.
+$subjShort = @{}
+if ($opsSummary) { foreach ($r0 in @($opsSummary.rows)) { if ($r0.short) { $subjShort[[string]$r0.id] = [string]$r0.short } } }
 foreach ($c in $priceCards) {
     $pts = @($c.points)
     if ($pts.Count -lt 2) { continue }
@@ -4477,9 +4507,11 @@ foreach ($c in $priceCards) {
     $lv = $pts[-1].value; $pv = $pts[-2].value
     if (-not $pv) { continue }
     $pctChg = (($lv - $pv) / $pv) * 100
+    # 제목 알림의 지표 이름은 요약표와 같은 짧은 이름, 음수는 화면과 같은 '−'(2026-11-13 메일 형식 통일).
+    $nmS = if ($subjShort.ContainsKey([string]$c.id)) { $subjShort[[string]$c.id] } else { [string]$c.displayName }
     if ([math]::Abs($pctChg) -ge (Get-ChangeAlertPct $c.id)) {
-        $sign = if ($pctChg -ge 0) { "+" } else { "" }
-        [void]$wdHighlights.Add([PSCustomObject]@{ text = "$($c.displayName) $sign$($pctChg.ToString('N1'))%"; priority = [math]::Abs($pctChg) })
+        $sign = if ($pctChg -ge 0) { "+" } else { "−" }
+        [void]$wdHighlights.Add([PSCustomObject]@{ text = "$nmS $sign$([math]::Abs($pctChg).ToString('N1'))%"; priority = [math]::Abs($pctChg) })
     }
     # 기준가(계약·예산 단가)에서 alertPct 이상 벗어난 새 값. 같은 '새 값' 게이트를 거치므로
     # 기준을 넘은 채 머무는 동안 매일 제목을 차지하지는 않는다 - 새 시점이 들어올 때마다 한 번.
@@ -4489,8 +4521,8 @@ foreach ($c in $priceCards) {
         $limit = if ($null -ne $tg.alertPct) { [double]$tg.alertPct } else { 5 }
         if ([math]::Abs($dev) -ge $limit) {
             $tLabel = if ($tg.label) { $tg.label } else { "기준가" }
-            $sign = if ($dev -ge 0) { "+" } else { "" }
-            [void]$wdHighlights.Add([PSCustomObject]@{ text = "$($c.displayName) $tLabel 대비 $sign$($dev.ToString('N1'))%"; priority = 85 })
+            $sign = if ($dev -ge 0) { "+" } else { "−" }
+            [void]$wdHighlights.Add([PSCustomObject]@{ text = "$nmS $tLabel 대비 $sign$([math]::Abs($dev).ToString('N1'))%"; priority = 85 })
         }
     }
 }
@@ -4518,7 +4550,7 @@ if ($opsSummary) {
         $tk = "trend-$($r.id)"
         if ($mailedLabels.ContainsKey($tk) -and $mailedLabels[$tk] -ne [string]$r.tone -and ($r.tone -eq "up" -or $r.tone -eq "down")) {
             $dirWord = if ($r.tone -eq "up") { "상승" } else { "하락" }
-            [void]$wdHighlights.Add([PSCustomObject]@{ text = "흐름 전환 $($r.short) $dirWord"; priority = 78 })
+            [void]$wdHighlights.Add([PSCustomObject]@{ text = "$($r.short) $dirWord 전환"; priority = 78 })
         }
     }
 }
@@ -4526,8 +4558,9 @@ if ($opsSummary) {
 $scfiPrevLabel = Get-BaselineLabel "scfi"
 if ($scfi -and $scfi.changePct -and $scfiPrevLabel -and $scfiPrevLabel -ne [string]$scfi.currentDate `
     -and [math]::Abs($scfi.changePct) -ge (Get-ChangeAlertPct "scfi")) {
-    $sign = if ($scfi.changePct -ge 0) { "+" } else { "" }
-    [void]$wdHighlights.Add([PSCustomObject]@{ text = "SCFI $sign$($scfi.changePct)%"; priority = [math]::Abs($scfi.changePct) })
+    $sign = if ($scfi.changePct -ge 0) { "+" } else { "−" }
+    $nmS = if ($subjShort.ContainsKey("scfi")) { $subjShort["scfi"] } else { "SCFI" }
+    [void]$wdHighlights.Add([PSCustomObject]@{ text = "$nmS $sign$([math]::Abs([double]$scfi.changePct).ToString('N1'))%"; priority = [math]::Abs($scfi.changePct) })
 }
 
 $wdTop = @($wdHighlights | Sort-Object priority -Descending | Select-Object -First 3 -ExpandProperty text)
@@ -4539,7 +4572,7 @@ $emailHtml = [regex]::Replace($emailHtml, '>[ \t]*\r?\n\s*<', '> <')
 
 $utf8NoBom = New-Object System.Text.UTF8Encoding $false
 [System.IO.File]::WriteAllText((Join-Path $root "email-summary.html"), $emailHtml, $utf8NoBom)
-[System.IO.File]::WriteAllText((Join-Path $root "email-subject.txt"), "업무 참고자료 Dashboard - $emailDateStr$wdSubjectSuffix", $utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path $root "email-subject.txt"), "물류팀 운영 참고지표 Dashboard - $emailDateStr$wdSubjectSuffix", $utf8NoBom)
 $emailKb = [math]::Round($utf8NoBom.GetByteCount($emailHtml) / 1KB, 1)
 Write-Host "Email summary written: email-summary.html ($emailKb KB)"
 # Gmail 은 본문이 102KB 를 넘으면 뒷부분을 '[메시지 잘림]'으로 접는다 - 이 메일에서는 맨 아래 수급

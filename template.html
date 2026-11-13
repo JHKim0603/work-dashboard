@@ -16,7 +16,7 @@
 <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
 <!-- Sent to colleagues over KakaoTalk or mail, the link previewed as a bare URL. -->
 <meta property="og:type" content="website">
-<meta property="og:title" content="업무 참고자료 Dashboard">
+<meta property="og:title" content="물류팀 운영 참고지표 Dashboard">
 <meta property="og:description" content="날씨·공휴일·태풍·원자재·물류 가격을 하루 한 번 모아 보는 업무 참고용 대시보드.">
 <meta property="og:locale" content="ko_KR">
 <style>
@@ -2832,7 +2832,7 @@ function reportValue(x, unitFn, notes) {
 function weeklyReportText() {
   const d = FETCHED_AT ? new Date(FETCHED_AT) : new Date();
   const DOW = "일월화수목금토";
-  const lines = [`[물류 참고지표 주간 요약] ${d.getMonth() + 1}/${d.getDate()}(${DOW[d.getDay()]}) 기준`, ""];
+  const lines = [`[물류팀 운영 참고지표 주간 요약] ${d.getMonth() + 1}/${d.getDate()}(${DOW[d.getDay()]}) 기준`, ""];
   const head = OPS_SUMMARY.headline;
   if (head) lines.push("■ 요약", `${head.title}.`, head.text, "");
   const rowsById = {};

@@ -45,6 +45,11 @@ on:
     - cron: '41 4 * * *'
   workflow_dispatch:
     inputs:
+      # stockdashboard 와 같은 옵션(2026-11-13): 메일 없이 페이지만 만들어 검증할 때 false
+      send_email:
+        description: "메일도 보낼지 (검증만 할 때는 false)"
+        type: boolean
+        default: true
       force_email:
         description: "오늘 이미 발송했더라도 메일을 다시 보냄"
         type: boolean
@@ -117,6 +122,11 @@ jobs:
           # scheduler calling the dispatch API to beat GitHub's queue delays would then send on
           # every call, and the once-a-day guarantee would quietly be gone. The force input is
           # what "send it to me now" means now.
+          if [[ "${{ inputs.send_email }}" == "false" ]]; then
+            echo "send=false" >> "$GITHUB_OUTPUT"
+            echo "send_email=false - 검증 실행이므로 보내지 않습니다"
+            exit 0
+          fi
           if [[ "${{ inputs.force_email }}" == "true" ]]; then
             echo "send=true" >> "$GITHUB_OUTPUT"
             echo "force_email requested - sending regardless of marker"
@@ -154,7 +164,7 @@ jobs:
           password: ${{ secrets.GMAIL_APP_PASSWORD }}
           subject: ${{ steps.subject.outputs.text }}
           to: jhyupkim@unid.co.kr
-          from: 업무 참고자료 Dashboard <${{ secrets.GMAIL_USERNAME }}>
+          from: 물류팀 운영 참고지표 Dashboard <${{ secrets.GMAIL_USERNAME }}>
           html_body: file://email-summary.html
           # 첨부 그림은 파일 이름이 cid 가 되어 본문의 <img src="cid:파일이름"> 자리에 보인다.
           attachments: mail-charts/*.png
