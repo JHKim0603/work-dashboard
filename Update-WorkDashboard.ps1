@@ -1730,9 +1730,19 @@ function Get-Forecast {
 # 판정을 미리 계산할 수 있다. 이 블록이 그 계산이다. 실제 고시와 어긋날 수 있는 지점은 카드에
 # 그대로 적는다 - 기준 유가가 추정이면 '추정', 남은 날짜를 채운 가정이 무엇인지까지.
 #
-# 운임 변동액은 연료 몫만 움직인다고 보고 운임표 구간거리(편도 km) ÷ 계수 × 유가 변동으로 근사한다. 고시 운임의
-# 다른 원가(인건비·감가상각 등)는 유가 고시에서 바뀌지 않기 때문이다. 계수(kmPerLiter)는 11월 개정의 실제 변동폭
-# 두 개(178km 구간 −6,900원, 400km 구간 −15,400원, 산정 유가 −141.68원)를 함께 맞춘 값이라 config 에 두었다(3.675).
+# 2026-11-08 고시 원문으로 다시 확인한 것(국토교통부고시 제2026-55호, 8/1 개정 제2026-402호, 11/1 개정 제2026-595호):
+# - 평균유가는 한국석유공사 공시 경유 판매가격(부가세 포함)의 산정 기간 평균이다. 공식 값은 2025년 10~12월 1,601.96원,
+#   2026년 4~6월 1,994.68원, 7~9월 1,852.78원(안전운송원가 고시에 적혀 있다). 이 계산의 7~9월 잠정치 1,853원과 0.22원 차이였다.
+# - 연동 조항은 산정 기간별로 고시에 적혀 있고(1~3월 → 5~7월, 4~6월 → 8~10월, 7~9월 → 11월~2027년 1월), 10~12월 조항은
+#   8/1 개정에서 빠졌다. 그래서 적용 시기는 공식(분기 + 4개월)이 아니라 config 의 linkage 로 정하고, 없는 기간은 '참고 판정'으로 표시한다.
+# - 1~3월은 규칙상 인상 요건(+72.96원)이었는데 위원회가 반영하지 않았다(override). 판정은 규칙 그대로 계산하되 이 선례를 함께 보인다.
+#
+# 운임 변동액은 연료 몫만 움직인다고 보고, 11/1 고시에서 그 노선이 실제 바뀐 금액(refChange, 경유 −141.90원)을 유가 변동 비율대로
+# 늘리거나 줄인다. 세 고시의 거리별 운임표를 비교하면 유가 때문에 바뀐 금액은 거리에 비례하지 않고(10km −1,000원, 89km −6,900원,
+# 400km −15,400원) 모양은 같다(8/1 인상분 대비 11/1 인하분이 1~550km 모두 −0.237배). 예전 방식(왕복 km ÷ 3.675 × 유가 변동)은
+# 89km 구간 하나에만 맞아 62km 는 −4,800원(실제 −5,300원), 10km 는 −800원(실제 −1,000원)으로 작게 나왔다. 그 방식은 refChange 가 없는
+# 노선에만 남긴다. 8/1 인상(경유 +392.72원)은 같은 1원에 운임이 약 1.5배 움직였다. 경유가 1,700원을 넘는 몫은 화물차
+# 유가연동보조금(초과분의 70%)이 메워 주므로, 1,700원 아래 구간까지 걸친 변동은 운임이 더 크게 움직인다.
 function Format-MonthSpan {
     # 읽기 쉬운 표기: "2026년 7~9월", 해를 넘기면 "2026년 11월~2027년 1월". 2026-10-30 에 업무 표 표기("26년 07월~09월")에서
     # 바꿨고, 같은 날 두 자리 연도('27년 2~4월')가 숫자 범위로 읽혀 헷갈린다는 점검 결과로 네 자리로 바꿨다.
@@ -1751,12 +1761,27 @@ function Get-QuarterInfo {
         key        = "$($date.Year)-Q$($q + 1)"
         start      = $start
         end        = $start.AddMonths(3).AddDays(-1)
-        # 산정 기간이 끝난 뒤 두 달째부터 3개월 적용: 1~3월 → 5~7월, 4~6월 → 8~10월,
-        # 7~9월 → 11~1월, 10~12월 → 2~4월 (26년 실제 고시 세 번과 같은 모양)
+        # 기본값: 산정 기간이 끝난 뒤 두 달째부터 3개월 적용(1~3월 → 5~7월, 4~6월 → 8~10월, 7~9월 → 11~1월).
+        # 고시에 조항이 있는 기간은 Set-NoticeWindow 가 조항의 적용 시작 월로 덮어쓴다.
         effective  = $start.AddMonths(4)
         label      = Format-MonthSpan $start                  # 평균유가 산정 기간
         applyLabel = Format-MonthSpan $start.AddMonths(4)     # 안전운임 적용 기간
     }
+}
+
+function Set-NoticeWindow {
+    # config linkage 에 있는 산정 기간이면 적용 시작 월을 고시 조항대로 두고 inNotice 를 붙인다. linkage 가 아예 없으면
+    # 예전처럼 모든 기간을 조항이 있는 것으로 본다. 조항이 없는 기간(2026년 10~12월)은 판정이 '참고'라는 뜻이다.
+    param($q, $cfg)
+    $list = @($cfg.linkage | Where-Object { $_ })
+    $lk = @($list | Where-Object { [string]$_.window -eq $q.key })[0]
+    if ($lk -and [string]$lk.apply -match '^(\d{4})-(\d{2})$') {
+        $eff = New-Object DateTime ([int]$matches[1]), ([int]$matches[2]), 1
+        $q.effective = $eff
+        $q.applyLabel = Format-MonthSpan $eff
+    }
+    $q | Add-Member -NotePropertyName inNotice -NotePropertyValue ([bool]($lk -or $list.Count -eq 0)) -Force
+    $q
 }
 
 function Get-FuelWindowAverage {
@@ -1809,12 +1834,35 @@ function Get-FuelVerdict {
     [PSCustomObject]@{ avg = [double]$avg; base = $baseFuel; diff = $diff; verdict = $verdict }
 }
 
+function Get-FuelThresholdPrice {
+    # 판정이 바뀌는 '남은 날의 평균 경유가'. 월평균이 실측한 날과 남은 날의 평균이라 산정 기간 평균은 남은 날 가격 P 의
+    # 일차식이다: 평균(P) = 기본 가정 평균 + k × (P − 가정값), k = Σ(그달 남은 일수 ÷ 그달 일수) ÷ 3.
+    # 인하는 '이 값 이하', 인상은 '이 값 이상'이 되도록 원 단위로 안쪽으로 맞춘다. 남은 날이 없으면 null.
+    param($w, [double]$projBase, [double]$baseFuel, [double]$threshold)
+    if ($null -eq $w.avg) { return $null }
+    $k = 0.0
+    foreach ($m in @($w.months)) {
+        $n = [double]$m.actualDays + [double]$m.projectedDays
+        if ($n -gt 0 -and $m.projectedDays -gt 0) { $k += [double]$m.projectedDays / $n }
+    }
+    $k = $k / 3
+    if ($k -le 0) { return $null }
+    [PSCustomObject]@{
+        downAt = [math]::Floor($projBase + ($baseFuel - $threshold - [double]$w.avg) / $k)
+        upAt   = [math]::Ceiling($projBase + ($baseFuel + $threshold - [double]$w.avg) / $k)
+        slope  = [math]::Round($k, 4)
+    }
+}
+
 function Get-RouteImpacts {
-    # 고시 운임은 100원 단위라 같은 단위로 맞춘다.
-    param($routes, [double]$fuelDelta, [double]$kmPerLiter)
+    # 고시 운임은 100원 단위라 같은 단위로 맞춘다(부대조항 7: 십 원 단위에서 반올림).
+    # refChange(11/1 고시에서 실제 바뀐 금액)가 있으면 그 금액을 유가 변동 비율대로 늘린다. 없으면 왕복 km ÷ 계수로 근사한다.
+    param($routes, [double]$fuelDelta, [double]$kmPerLiter, $fuelRef = $null)
+    $refDelta = if ($fuelRef -and $fuelRef.delta) { [double]$fuelRef.delta } else { 0 }
     @(foreach ($r in @($routes)) {
         $rate = [double]$r.rate
-        $raw = $rate + ([double]$r.km / $kmPerLiter) * $fuelDelta
+        $raw = if ($refDelta -ne 0 -and $null -ne $r.refChange) { $rate + [double]$r.refChange * $fuelDelta / $refDelta }
+               else { $rate + ([double]$r.km / $kmPerLiter) * $fuelDelta }
         $newRate = [math]::Round($raw / 100, [MidpointRounding]::AwayFromZero) * 100
         $chg = $newRate - $rate
         [PSCustomObject]@{
@@ -1845,12 +1893,29 @@ function Get-SafeFreightOutlook {
         # 평균이다. 동결된 분기(26년 1~3월)는 기준을 바꾸지 않는다.
         $rows = @(foreach ($h in @($cfg.history)) {
             if ([string]$h.window -notmatch '^(\d{4})-Q([1-4])$') { continue }
-            $hq = Get-QuarterInfo (New-Object DateTime ([int]$matches[1]), (([int]$matches[2] - 1) * 3 + 1), 1)
+            $hq = Set-NoticeWindow (Get-QuarterInfo (New-Object DateTime ([int]$matches[1]), (([int]$matches[2] - 1) * 3 + 1), 1)) $cfg
             [PSCustomObject]@{ q = $hq; avg = [double]$h.avg; verdict = [string]$h.verdict
-                note = [string]$h.note; provisional = [bool]$h.provisional; computed = $false }
+                note = [string]$h.note; provisional = [bool]$h.provisional; override = [bool]$h.override; computed = $false }
         })
         if (@($rows | Where-Object { $_.verdict -ne "동결" }).Count -eq 0) { throw "history 에 인상·인하된 산정 기간이 없습니다" }
-        $q = Get-QuarterInfo $rows[-1].q.start.AddMonths(3)
+
+        # 자체 점검: 고시로 확인된 이력을 규칙(±기준, 동결이면 기준 유지)으로 다시 판정한다. 규칙과 다른 기록은 override 로
+        # 적어 둔 것(26년 1~3월)만 통과시키고, 나머지는 config 를 잘못 적은 것으로 보고 경고한다.
+        $checks = @()
+        $ruleBase = $null
+        foreach ($r in $rows) {
+            if ($null -ne $ruleBase -and $r.verdict -ne "새 고시") {
+                $rv = Get-FuelVerdict $r.avg $ruleBase $threshold
+                $checks += [PSCustomObject]@{ window = $r.q.label; avg = $r.avg; base = $ruleBase; diff = $rv.diff
+                    rule = $rv.verdict; actual = $r.verdict; match = ($rv.verdict -eq $r.verdict); override = $r.override }
+                if ($rv.verdict -ne $r.verdict -and -not $r.override) {
+                    Write-Warning "안전운임 이력 점검: $($r.q.label) 규칙 판정은 $($rv.verdict)인데 기록은 $($r.verdict)입니다. config history 를 확인하세요."
+                }
+            }
+            if ($r.verdict -ne "동결") { $ruleBase = $r.avg }
+        }
+
+        $q = Set-NoticeWindow (Get-QuarterInfo $rows[-1].q.start.AddMonths(3)) $cfg
         while ($q.end -lt $today) {
             $w = Get-FuelWindowAverage -daily $daily -quarter $q -today $today -projBase $latest
             # 하루라도 크게 비면 평균이 틀어지므로, 80% 이상 모인 분기만 이어 계산한다.
@@ -1858,8 +1923,8 @@ function Get-SafeFreightOutlook {
             $baseNow = @($rows | Where-Object { $_.verdict -ne "동결" })[-1].avg
             $vd = Get-FuelVerdict $w.avg $baseNow $threshold
             $rows += [PSCustomObject]@{ q = $q; avg = $w.avg; verdict = $vd.verdict
-                note = "대시보드 계산(오피넷 일별 평균의 월평균)"; provisional = $true; computed = $true }
-            $q = Get-QuarterInfo $q.start.AddMonths(3)
+                note = "대시보드 계산(오피넷 일별 평균의 월평균)"; provisional = $true; override = $false; computed = $true }
+            $q = Set-NoticeWindow (Get-QuarterInfo $q.start.AddMonths(3)) $cfg
         }
 
         $changes = @($rows | Where-Object { $_.verdict -ne "동결" })
@@ -1879,13 +1944,15 @@ function Get-SafeFreightOutlook {
         } else { $null }
         $historyOut = @($rows | ForEach-Object {
             [PSCustomObject]@{ window = $_.q.label; applyLabel = $_.q.applyLabel; avg = $_.avg; verdict = $_.verdict
-                note = $_.note; provisional = $_.provisional; computed = $_.computed; effective = $_.q.effective.ToString("yyyy-MM-dd") }
+                note = $_.note; provisional = $_.provisional; override = $_.override; computed = $_.computed
+                inNotice = $_.q.inNotice; effective = $_.q.effective.ToString("yyyy-MM-dd") }
         })
 
         # 진행 중인 분기 (기본 가정: 남은 날은 마지막 값 유지)
-        $cur = Get-QuarterInfo $today
+        $cur = Set-NoticeWindow (Get-QuarterInfo $today) $cfg
         $wBase = Get-FuelWindowAverage -daily $daily -quarter $cur -today $today -projBase $latest
         $base = Get-FuelVerdict $wBase.avg $baseFuel $threshold
+        $turn = Get-FuelThresholdPrice $wBase $latest $baseFuel $threshold
         # 판정 추이(GDPNow 방식). 그날까지 쌓인 값만 넣은 표로 다시 계산해야 하므로 날마다 표를 늘려 간다.
         $evolution = @()
         $partial = @{}
@@ -1898,7 +1965,10 @@ function Get-SafeFreightOutlook {
                 $evolution += [PSCustomObject]@{ date = $k; avg = $we.avg; diff = [math]::Round($we.avg - $baseFuel, 2) }
             }
         }
-        $baseImpact = if ($base.verdict -ne "동결") { Get-RouteImpacts $cfg.routes $base.diff $kmPerLiter } else { @() }
+        $baseImpact = if ($base.verdict -ne "동결") { Get-RouteImpacts $cfg.routes $base.diff $kmPerLiter $cfg.fuelRef } else { @() }
+        # 고시에 조항이 없는 기간(새 연간 고시로 정해질 기간)은 ±기준 없이 평균이 그대로 기준 유가가 될 수 있어,
+        # 연료 몫만 본 운임 변동을 함께 낸다(인건비 등 다른 원가 재산정은 모름).
+        $fuelOnly = if (-not $cur.inNotice -and $null -ne $base.diff) { Get-RouteImpacts $cfg.routes $base.diff $kmPerLiter $cfg.fuelRef } else { @() }
 
         # 시나리오: 유류세 인하가 예정일에 끝나면 다음 날부터 경유가 그만큼 오른다고 본다.
         # 이번 분기에 다 반영되지 않으면(12월 한 달만 오르는 식) 다음 분기 판정까지 이어 본다.
@@ -1907,12 +1977,13 @@ function Get-SafeFreightOutlook {
         if ($tc -and $tc.until -and $tc.dieselWon) {
             $until = [DateTime]::ParseExact([string]$tc.until, "yyyy-MM-dd", [Globalization.CultureInfo]::InvariantCulture)
             if ($until -ge $today) {
-                # dieselWon 은 세금 인하액(경유 145원)이다. 판매가격에는 부가세 10%가 더 붙으므로 addVat 이면 1.1배가 오른다고 본다.
+                # dieselWon 은 판매가격이 오르는 폭이다. 정부 발표 인하폭(경유 145원)은 이미 부가세를 포함한 금액이라 그대로 쓴다.
+                # 부가세가 빠진 세액을 넣었을 때만 addVat 으로 1.1배 한다(2026-11-08 까지 145원에 또 1.1배를 해 159.5원으로 셌다).
                 $taxWon = [double]$tc.dieselWon
                 $won = if ($tc.addVat) { [math]::Round($taxWon * 1.1, 1) } else { $taxWon }
                 $sCur = Get-FuelWindowAverage -daily $daily -quarter $cur -today $today -projBase $latest -stepAfter $until -stepWon $won
                 $sv = Get-FuelVerdict $sCur.avg $baseFuel $threshold
-                $nxt = Get-QuarterInfo $cur.start.AddMonths(3)
+                $nxt = Set-NoticeWindow (Get-QuarterInfo $cur.start.AddMonths(3)) $cfg
                 $sNext = Get-FuelWindowAverage -daily $daily -quarter $nxt -today $today -projBase $latest -stepAfter $until -stepWon $won
                 $nextBase = if ($sv.verdict -ne "동결") { $sCur.avg } else { $baseFuel }
                 $svNext = Get-FuelVerdict $sNext.avg $nextBase $threshold
@@ -1920,10 +1991,10 @@ function Get-SafeFreightOutlook {
                 $trigger = $null
                 if ($sv.verdict -ne "동결") {
                     $trigger = [PSCustomObject]@{ window = $cur.label; applyLabel = $cur.applyLabel; effective = $cur.effective.ToString("yyyy-MM-dd")
-                        verdict = $sv.verdict; diff = $sv.diff; impact = (Get-RouteImpacts $cfg.routes $sv.diff $kmPerLiter) }
+                        verdict = $sv.verdict; diff = $sv.diff; inNotice = $cur.inNotice; impact = (Get-RouteImpacts $cfg.routes $sv.diff $kmPerLiter $cfg.fuelRef) }
                 } elseif ($svNext.verdict -ne "동결") {
                     $trigger = [PSCustomObject]@{ window = $nxt.label; applyLabel = $nxt.applyLabel; effective = $nxt.effective.ToString("yyyy-MM-dd")
-                        verdict = $svNext.verdict; diff = $svNext.diff; impact = (Get-RouteImpacts $cfg.routes $svNext.diff $kmPerLiter) }
+                        verdict = $svNext.verdict; diff = $svNext.diff; inNotice = $nxt.inNotice; impact = (Get-RouteImpacts $cfg.routes $svNext.diff $kmPerLiter $cfg.fuelRef) }
                 }
                 $scenario = [PSCustomObject]@{
                     label     = "$($tc.label) $($until.ToString('M/d', [Globalization.CultureInfo]::InvariantCulture)) 종료 시"
@@ -1932,9 +2003,9 @@ function Get-SafeFreightOutlook {
                     won       = $won
                     taxWon    = $taxWon
                     current   = [PSCustomObject]@{ window = $cur.label; applyLabel = $cur.applyLabel; avg = $sv.avg; diff = $sv.diff; verdict = $sv.verdict
-                        effective = $cur.effective.ToString("yyyy-MM-dd"); months = $sCur.months }
+                        effective = $cur.effective.ToString("yyyy-MM-dd"); months = $sCur.months; inNotice = $cur.inNotice }
                     next      = [PSCustomObject]@{ window = $nxt.label; applyLabel = $nxt.applyLabel; avg = $svNext.avg; diff = $svNext.diff; verdict = $svNext.verdict
-                        effective = $nxt.effective.ToString("yyyy-MM-dd"); base = $nextBase }
+                        effective = $nxt.effective.ToString("yyyy-MM-dd"); base = $nextBase; inNotice = $nxt.inNotice }
                     trigger   = $trigger
                 }
             }
@@ -1948,6 +2019,8 @@ function Get-SafeFreightOutlook {
             rateBasis   = $cfg.rateBasis
             rateFrom    = $cfg.rateFrom
             notice      = $cfg.notice
+            fuelRef     = $cfg.fuelRef
+            checks      = @($checks)
             applied     = $applied
             pending     = $pending
             baseFuel    = $baseFuel
@@ -1957,12 +2030,16 @@ function Get-SafeFreightOutlook {
             latest      = [PSCustomObject]@{ label = $latestLabel; value = $latest }
             window      = [PSCustomObject]@{ key = $cur.key; label = $cur.label; applyLabel = $cur.applyLabel
                 months = $wBase.months; actualDays = $wBase.actualDays; projectedDays = $wBase.projectedDays
-                effective = $cur.effective.ToString("yyyy-MM-dd") }
+                effective = $cur.effective.ToString("yyyy-MM-dd"); inNotice = $cur.inNotice
+                noticeNote = if (-not $cur.inNotice) { [string]$cfg.noLinkageNote } else { "" } }
             evolution   = @($evolution)
             base        = [PSCustomObject]@{ avg = $base.avg; diff = $base.diff; verdict = $base.verdict
-                assumption = "남은 기간은 마지막 값($(Format-Won $latest)원/L)이 유지된다고 가정"; impact = $baseImpact }
+                assumption = "남은 기간은 마지막 값($(Format-Won $latest)원/L)이 유지된다고 가정"; impact = $baseImpact
+                downAt = if ($turn) { $turn.downAt } else { $null }; upAt = if ($turn) { $turn.upAt } else { $null }
+                fuelOnlyImpact = @($fuelOnly) }
             scenario    = $scenario
-            routes      = @($cfg.routes | ForEach-Object { [PSCustomObject]@{ name = $_.name; km = [double]$_.km; rate = [double]$_.rate } })
+            routes      = @($cfg.routes | ForEach-Object { [PSCustomObject]@{ name = $_.name; km = [double]$_.km; rate = [double]$_.rate
+                refChange = if ($null -ne $_.refChange) { [double]$_.refChange } else { $null } } })
             source      = "한국석유공사 오피넷(경유 전국평균), 국토교통부 안전운임 고시"
         }
     } catch {
@@ -2519,7 +2596,18 @@ if ($config.safeFreight) {
     $safeFreight = Get-SafeFreightOutlook -cfg $config.safeFreight -daily $historyStore["fuel-D047"] -today $nowKst.Date
     if ($safeFreight) {
         $sc = if ($safeFreight.scenario -and $safeFreight.scenario.trigger) { " / 시나리오: $($safeFreight.scenario.trigger.window) $($safeFreight.scenario.trigger.verdict)" } else { "" }
-        Write-Host "  $($safeFreight.window.label) 평균 $($safeFreight.base.avg)원, 기준 $($safeFreight.baseFuel)원 대비 $($safeFreight.base.diff)원 → $($safeFreight.base.verdict)$sc"
+        $ref = if ($safeFreight.window.inNotice) { "" } else { " (고시에 조항 없음, 참고)" }
+        Write-Host "  $($safeFreight.window.label) 평균 $($safeFreight.base.avg)원, 기준 $($safeFreight.baseFuel)원 대비 $($safeFreight.base.diff)원 → $($safeFreight.base.verdict)$ref$sc"
+        if ($null -ne $safeFreight.base.downAt) { Write-Host "  남은 $($safeFreight.window.projectedDays)일 평균이 $($safeFreight.base.downAt)원 이하면 인하, $($safeFreight.base.upAt)원 이상이면 인상" }
+        foreach ($ck in @($safeFreight.checks)) {
+            $tag = if ($ck.match) { "규칙대로" } elseif ($ck.override) { "위원회 판단(기록됨)" } else { "불일치!" }
+            Write-Host "  이력 점검 $($ck.window): $($ck.avg) vs $($ck.base) = $($ck.diff) → 규칙 $($ck.rule) / 고시 $($ck.actual) ($tag)"
+        }
+        # 고시에 조항이 없는 기간의 판정·시나리오에는 '(참고)'를 붙인다. 메일·요약·타일 문장이 같은 표시를 쓰도록 여기서 한 번 정한다.
+        $safeFreight | Add-Member -NotePropertyName refTag -NotePropertyValue $(if ($safeFreight.window.inNotice) { "" } else { "(참고)" }) -Force
+        if ($safeFreight.scenario -and $safeFreight.scenario.trigger) {
+            $safeFreight.scenario.trigger | Add-Member -NotePropertyName refTag -NotePropertyValue $(if ($safeFreight.scenario.trigger.inNotice) { "" } else { "(참고)" }) -Force
+        }
     }
 }
 
@@ -2744,12 +2832,12 @@ function Get-OpsSummaryRow {
         $sf = $safeFreight
         $row.name = "컨테이너 내륙운송료"
         $row.label = "적용 $($sf.window.applyLabel)"
-        $row.trend = "$($sf.base.verdict) 예상"
+        $row.trend = "$($sf.base.verdict) 예상$($sf.refTag)"
         $row.tone = if ($sf.base.verdict -eq "인상") { "up" } elseif ($sf.base.verdict -eq "인하") { "down" } else { "flat" }
         $sign = if ($sf.base.diff -gt 0) { "+" } else { "" }
         $row.note = "산정 $($sf.window.label) 평균 $(Format-Won $sf.base.avg)원(기준 대비 $sign$(Format-Won $sf.base.diff)원)"
         if ($sf.scenario -and $sf.scenario.trigger) {
-            $row.note += ", 유류세 인하 종료 시 $($sf.scenario.trigger.applyLabel) $($sf.scenario.trigger.verdict) 예상"
+            $row.note += ", 유류세 인하 종료 시 $($sf.scenario.trigger.applyLabel) $($sf.scenario.trigger.verdict) 예상$($sf.scenario.trigger.refTag)"
         }
         return [PSCustomObject]$row
     }
@@ -2969,10 +3057,10 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
             }
         }
         if ($sf.base.verdict -ne "동결") {
-            Add-Highlight "내륙운송료" "내륙운송료 다음 조정($($sf.window.applyLabel)분)은 $($sf.base.verdict)$(Get-Josa $sf.base.verdict '이' '가') 예상됩니다."
+            Add-Highlight "내륙운송료" "내륙운송료 다음 조정($($sf.window.applyLabel)분)은 $($sf.base.verdict)$(Get-Josa $sf.base.verdict '이' '가') 예상됩니다$($sf.refTag)."
         } elseif ($sf.scenario -and $sf.scenario.trigger -and $sf.scenario.dDay -le 45) {
             $u = [DateTime]$sf.scenario.until
-            Add-Highlight "내륙운송료" "유류세 인하가 $($u.Month)/$($u.Day)에 끝나면 내륙운송료 $($sf.scenario.trigger.applyLabel)분은 $($sf.scenario.trigger.verdict)$(Get-Josa $sf.scenario.trigger.verdict '이' '가') 예상됩니다."
+            Add-Highlight "내륙운송료" "유류세 인하가 $($u.Month)/$($u.Day)에 끝나면 내륙운송료 $($sf.scenario.trigger.applyLabel)분은 $($sf.scenario.trigger.verdict)$(Get-Josa $sf.scenario.trigger.verdict '이' '가') 예상됩니다$($sf.scenario.trigger.refTag)."
         }
     }
     if ($typhoon -and @($typhoon.active).Count -gt 0) {
@@ -2996,9 +3084,9 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
                 if ($pe -ge $nowKst.Date) { $lines += "$($pe.Month)/$($pe.Day)부터 $($sf.pending.verdict) 운임 적용" }
             }
             # 타일은 폭이 좁아 한 줄이 길면 '적용분'이 '적용/분'으로 갈렸다. 판정(동결 예상)은 큰 글자에 있으니 여기는 짧게.
-            $lines += "다음 조정: $($sf.window.applyLabel)분"
+            $lines += "다음 조정: $($sf.window.applyLabel)분$($sf.refTag)"
             if ($sf.scenario -and $sf.scenario.trigger) {
-                $lines += "유류세 인하가 끝나면 $($sf.scenario.trigger.applyLabel)분 $($sf.scenario.trigger.verdict)"
+                $lines += "유류세 인하가 끝나면 $($sf.scenario.trigger.applyLabel)분 $($sf.scenario.trigger.verdict)$($sf.scenario.trigger.refTag)"
             }
             $sfMean = switch ($sf.base.verdict) { "인상" { "다음 조정에서 운임이 오를 것으로 보입니다." } "인하" { "다음 조정에서 운임이 내릴 것으로 보입니다." } default { "다음 조정에서 운임이 바뀌지 않을 것으로 보입니다." } }
             [PSCustomObject]@{ key = [string]$cat.key; title = [string]$cat.title; tone = $tone; word = "$($sf.base.verdict) 예상"
@@ -3114,7 +3202,7 @@ if ($safeFreight) {
         Add-Schedule ([DateTime]$sf.scenario.until) "정책" "유류세 인하 종료 예정" "경유 +$(Format-Won $sf.scenario.won)원 예상"
     }
     $wEnd = ([DateTime]$sf.window.effective).AddMonths(-1).AddDays(-1)
-    Add-Schedule $wEnd "정책" "내륙운송료 $($sf.window.label) 유가 산정 기간 종료" "$($sf.window.applyLabel) 적용분 $($sf.base.verdict) 예상"
+    Add-Schedule $wEnd "정책" "내륙운송료 $($sf.window.label) 유가 산정 기간 종료" "$($sf.window.applyLabel) 적용분 $($sf.base.verdict) 예상$($sf.refTag)"
 }
 foreach ($ev in @($config.scheduleEvents)) {
     if (-not $ev -or -not $ev.date -or -not $ev.title) { continue }
@@ -3267,11 +3355,11 @@ if ($opsSummary) {
             # ${a1}분 처럼 중괄호로 감싼다. "$a1분" 은 PowerShell 이 '분'까지 변수 이름으로 읽어 빈칸이 됐다(2026-11-12).
             $p1 = if ($a1) { "${a1}분" } else { "다음 조정" }
             $p2 = if ($a2) { "${a2}분은" } else { "그다음 조정은" }
-            if ($v2 -eq $v1) { $hlText += "내륙운송료는 $p1 $v1$(Get-Josa $v1 '이' '가') 예상되며, 유류세 인하가 $($u.Month)/$($u.Day)에 끝나도 $p2 $v2$(Get-Josa $v2 '으로' '로') 보입니다." }
-            else { $hlText += "내륙운송료는 $p1 $v1, $p2 유류세 인하가 $($u.Month)/$($u.Day)에 끝나면 $v2$(Get-Josa $v2 '이' '가') 예상됩니다." }
+            if ($v2 -eq $v1) { $hlText += "내륙운송료는 $p1 $v1$(Get-Josa $v1 '이' '가') 예상되며, 유류세 인하가 $($u.Month)/$($u.Day)에 끝나도 $p2 $v2$(Get-Josa $v2 '으로' '로') 보입니다$($sf.refTag)." }
+            else { $hlText += "내륙운송료는 $p1 $v1, $p2 유류세 인하가 $($u.Month)/$($u.Day)에 끝나면 $v2$(Get-Josa $v2 '이' '가') 예상됩니다$($sf.scenario.trigger.refTag)." }
         } else {
             $p1 = if ($a1) { "${a1}분" } else { "다음 조정" }
-            $hlText += "내륙운송료는 $p1 $v1$(Get-Josa $v1 '이' '가') 예상됩니다."
+            $hlText += "내륙운송료는 $p1 $v1$(Get-Josa $v1 '이' '가') 예상됩니다$($sf.refTag)."
         }
     }
     # 환율과 유가는 각자 판정과 같은 기간으로 쓴다('참고로 …', '같은 기간 …'은 뺐다).
@@ -3323,11 +3411,13 @@ if ($opsSummary) {
             if ($pe2 -ge $nowKst.Date) { $t2 += "$($pe2.Month)/$($pe2.Day)부터 $($sf.pending.verdict)된 운임이 적용됩니다." }
         }
         $gap = [math]::Round([math]::Abs([double]$sf.base.diff))
-        $t2 += "다음 조정($($sf.window.applyLabel)분)은 $($sf.base.verdict)$(Get-Josa $sf.base.verdict '이' '가') 예상됩니다."
+        $t2 += "다음 조정($($sf.window.applyLabel)분)은 $($sf.base.verdict)$(Get-Josa $sf.base.verdict '이' '가') 예상됩니다$($sf.refTag)."
         $t2 += "산정 기간 경유 평균이 기준보다 약 ${gap}원 $(if ([double]$sf.base.diff -ge 0) { '높아' } else { '낮아' }) 조정 기준(±$($sf.threshold)원) $(if ([math]::Abs([double]$sf.base.diff) -ge [double]$sf.threshold) { '밖에' } else { '안에' }) 있습니다."
+        if ($null -ne $sf.base.downAt) { $t2 += "남은 기간 경유 평균이 $(Format-Won $sf.base.downAt)원 이하로 내려가야 인하 기준에 닿습니다." }
+        if (-not $sf.window.inNotice) { $t2 += "지금 고시에는 이 기간의 유가연동 조항이 없어 같은 규칙을 적용한 참고 판정이며, 2027년 2월 이후 운임은 새 고시로 정합니다." }
         if ($sf.scenario -and $sf.scenario.trigger) {
             $u = [DateTime]$sf.scenario.until
-            $t2 += "유류세 인하가 $($u.Month)/$($u.Day)에 끝나면 $($sf.scenario.trigger.applyLabel)분은 $($sf.scenario.trigger.verdict)$(Get-Josa $sf.scenario.trigger.verdict '이' '가') 예상됩니다."
+            $t2 += "유류세 인하가 $($u.Month)/$($u.Day)에 끝나면 $($sf.scenario.trigger.applyLabel)분은 $($sf.scenario.trigger.verdict)$(Get-Josa $sf.scenario.trigger.verdict '이' '가') 예상됩니다$($sf.scenario.trigger.refTag)."
         }
         Add-Brief "내륙운송료" ($t2 -join " ")
     }
@@ -3999,7 +4089,14 @@ if ($safeFreight) {
     $vColor = @{ "인상" = "#b3221f"; "인하" = "#0a6b0a"; "동결" = "#6e6c66" }
     function Get-SignedWon { param($v) $d = [double]$v; $s = if ($d -gt 0) { "+" } elseif ($d -lt 0) { "-" } else { "" }; "$s$(Format-Won ([math]::Abs($d)))" }
     $estTag = if ($sf.baseProvisional) { ", 잠정" } else { "" }
-    $baseLine = "<b style='color:$($vColor[$sf.base.verdict]);'>$($sf.window.applyLabel) 적용분 $($sf.base.verdict) 예상</b><br>산정 기간 $($sf.window.label) 평균 $(Format-Won $sf.base.avg)원, 기준 $(Format-Won $sf.baseFuel)원($($sf.baseWindow)$estTag) 대비 $(Get-SignedWon $sf.base.diff)원(조정 기준 ±$(Format-Won $sf.threshold)원)"
+    $baseLine = "<b style='color:$($vColor[$sf.base.verdict]);'>$($sf.window.applyLabel) 적용분 $($sf.base.verdict) 예상$($sf.refTag)</b><br>산정 기간 $($sf.window.label) 평균 $(Format-Won $sf.base.avg)원, 기준 $(Format-Won $sf.baseFuel)원($($sf.baseWindow)$estTag) 대비 $(Get-SignedWon $sf.base.diff)원(조정 기준 ±$(Format-Won $sf.threshold)원)"
+    # 인하가 되려면 남은 날 경유가가 얼마여야 하는지(가장 많이 묻는 질문이라 메일에도 숫자로 적는다).
+    if ($null -ne $sf.base.downAt) {
+        $baseLine += "<br>남은 $($sf.window.projectedDays)일 경유 평균이 <b style='color:#0a6b0a;'>$(Format-Won $sf.base.downAt)원 이하</b>이면 인하, $(Format-Won $sf.base.upAt)원 이상이면 인상입니다(최근 $(Format-Won $sf.latest.value)원)."
+    }
+    if (-not $sf.window.inNotice -and $sf.window.noticeNote) {
+        $baseLine += "<br><span style='font-size:11.5px;color:#6e6c66;'>$($sf.window.noticeNote)</span>"
+    }
     if ($sf.pending -and $sf.applied) {
         $pd = [DateTime]$sf.pending.effective
         $baseLine = "$($pd.Month)/$($pd.Day)부터 $(Format-Won $sf.pending.fuel)원 기준 $($sf.pending.verdict) 운임 적용 예정(현재 $(Format-Won $sf.applied.fuel)원 기준)<br>" + $baseLine
@@ -4009,16 +4106,20 @@ if ($safeFreight) {
     $impactTitle = ""
     if ($sf.base.verdict -ne "동결") {
         $impactRows = @($sf.base.impact)
-        $impactTitle = "$($sf.window.applyLabel) 적용 예상 운임(20FT 왕복)"
+        $impactTitle = "$($sf.window.applyLabel) 적용 예상 운임(20FT 왕복)$($sf.refTag)"
+    } elseif (-not $sf.window.inNotice -and @($sf.base.fuelOnlyImpact).Count) {
+        # 새 연간 고시가 이 기간 평균을 그대로 기준 유가로 쓰면 바뀌는 연료 몫(±기준 없음, 다른 원가 재산정은 별도).
+        $impactRows = @($sf.base.fuelOnlyImpact)
+        $impactTitle = "새 고시가 $($sf.window.label) 평균을 기준 유가로 쓸 때 연료 몫(20FT 왕복, 참고)"
     }
     if ($sf.scenario) {
         $s = $sf.scenario
         $scLine = "$($s.label)(D-$($s.dDay), 경유 +$(Format-Won $s.won)원 가정): "
         if ($s.trigger) {
-            $scLine += "산정 $($s.trigger.window) 평균이 기준 대비 $(Get-SignedWon $s.trigger.diff)원이 되어 <b style='color:$($vColor[$s.trigger.verdict]);'>$($s.trigger.applyLabel) 적용분 $($s.trigger.verdict) 예상</b>"
+            $scLine += "산정 $($s.trigger.window) 평균이 기준 대비 $(Get-SignedWon $s.trigger.diff)원이 되어 <b style='color:$($vColor[$s.trigger.verdict]);'>$($s.trigger.applyLabel) 적용분 $($s.trigger.verdict) 예상$($s.trigger.refTag)</b>"
             if ($impactRows.Count -eq 0) {
                 $impactRows = @($s.trigger.impact)
-                $impactTitle = "유류세 인하 종료 시 $($s.trigger.applyLabel) 적용 예상 운임(20FT 왕복)"
+                $impactTitle = "유류세 인하 종료 시 $($s.trigger.applyLabel) 적용 예상 운임(20FT 왕복)$($s.trigger.refTag)"
             }
         } else {
             $scLine += "산정 $($s.current.window) $(Get-SignedWon $s.current.diff)원, $($s.next.window) $(Get-SignedWon $s.next.diff)원으로 조정 기준 미만"
@@ -4040,7 +4141,7 @@ if ($safeFreight) {
     <div style="font-size:12.5px;color:#0b0b0b;margin-top:5px;">$baseLine</div>
     $scHtml
     $impactHtml
-    <div style="font-size:12px;color:#898781;margin-top:7px;">기준 운임: $($sf.rateBasis). 운임 변동은 운임표 구간거리(편도 km) ÷ $($sf.kmPerLiter) × 유가 변동으로 계산한 근사치입니다(11/1 실제 인하폭에 맞춘 계수).</div>
+    <div style="font-size:12px;color:#898781;margin-top:7px;">기준 운임: $($sf.rateBasis). 운임 변동은 $($sf.fuelRef.label)에서 노선별로 실제 바뀐 금액을 유가 변동 비율대로 늘리거나 줄인 값입니다. 판정은 고시 규칙 그대로이며 위원회가 다르게 정할 수 있습니다(26년 1~3월은 규칙상 인상이었으나 동결).</div>
   </td>
 </tr>
 "@
@@ -4341,8 +4442,9 @@ function Get-WeeklyReportText {
             $parts = @()
             if ($sf.pending -and $sf.pending.effective -and $sf.applied) { $pe = [DateTime]$sf.pending.effective; $parts += "$($pe.Month)/$($pe.Day)부터 $($sf.pending.verdict)된 운임 적용" }
             $df = [double]$sf.base.diff; $ds = if ($df -gt 0) { "+" } elseif ($df -lt 0) { "-" } else { "" }
-            $parts += "다음 조정($($sf.window.applyLabel)) $($sf.base.verdict) 예상(기준 대비 $ds$([math]::Abs($df).ToString('#,0.#'))원)"
-            if ($sf.scenario -and $sf.scenario.trigger) { $parts += "유류세 인하 종료 시 $($sf.scenario.trigger.applyLabel) $($sf.scenario.trigger.verdict) 예상" }
+            $parts += "다음 조정($($sf.window.applyLabel)) $($sf.base.verdict) 예상$($sf.refTag), 기준 대비 $ds$([math]::Abs($df).ToString('#,0.#'))원"
+            if ($null -ne $sf.base.downAt) { $parts += "남은 기간 평균 $(Format-Won $sf.base.downAt)원 이하이면 인하" }
+            if ($sf.scenario -and $sf.scenario.trigger) { $parts += "유류세 인하 종료 시 $($sf.scenario.trigger.applyLabel) $($sf.scenario.trigger.verdict) 예상$($sf.scenario.trigger.refTag)" }
             [void]$lines.Add("- $($cat.title): $($parts -join ', ')")
             continue
         }
@@ -4534,7 +4636,7 @@ if ($safeFreight) {
     $sfState = "$($safeFreight.window.key):$($safeFreight.base.verdict)"
     if ($mailedLabels.ContainsKey("safe-freight") -and $mailedLabels["safe-freight"] -ne $sfState -and $safeFreight.base.verdict -ne "동결") {
         $ef = [DateTime]$safeFreight.window.effective
-        [void]$wdHighlights.Add([PSCustomObject]@{ text = "안전운임 $($safeFreight.base.verdict) 예상($($ef.Month)~$($ef.AddMonths(2).Month)월 적용)"; priority = 80 })
+        [void]$wdHighlights.Add([PSCustomObject]@{ text = "안전운임 $($safeFreight.base.verdict) 예상($($ef.Month)~$($ef.AddMonths(2).Month)월 적용$(if ($safeFreight.refTag) { ', 참고' }))"; priority = 80 })
     }
     $s = $safeFreight.scenario
     if ($s -and $s.dDay -ge 0 -and $s.dDay -le 7) {
