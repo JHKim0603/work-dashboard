@@ -380,6 +380,19 @@
   .sfe-lbl.up { fill: var(--bad); }
   .sfe-lbl.down { fill: var(--good); }
   .sfe-lbl.base { fill: var(--ink-muted); }
+  .sfe-now { fill: var(--ink-primary); font-size: 11px; font-weight: 700; }
+  .sfe-future { fill: var(--accent-wash); }
+  .sfg-mini { margin: 8px 0 2px; }
+  .ll-spark { display: block; width: 150px; height: 40px; overflow: visible; }
+  .ll-spark path { fill: none; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .ll-from { stroke: var(--ink-muted); stroke-width: 1.4; stroke-dasharray: 3 2; }
+  .ll-to { stroke: var(--accent); stroke-width: 1.8; }
+  .cost-det > summary { cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--accent); padding: 2px 0; }
+  .cost-det[open] > summary { margin-bottom: 10px; color: var(--ink-secondary); }
+  .cost-mag { display: block; height: 5px; margin-top: 3px; text-align: right; line-height: 0; }
+  .cost-mag i { display: inline-block; height: 5px; border-radius: 3px; background: var(--ink-muted); }
+  .cost-mag.up i { background: var(--bad); }
+  .cost-mag.down i { background: var(--good); }
   /* 다음 발표일, 원화 환산 */
   .next-rel { color: var(--accent); white-space: nowrap; }
   .price-krw { font-size: 12.5px; color: var(--ink-secondary); margin: -4px 0 8px; font-variant-numeric: tabular-nums; }
@@ -2338,6 +2351,69 @@ function sfEvolutionSvg(evo, base, thr, compact) {
     <text x="${xr}" y="${d.H - 4}" class="ch-xlabel" text-anchor="end">${md(lastE.date)}</text>
   </svg>`;
 }
+// 판정이 바뀌는 '남은 날 평균 경유가'. 서버 값(base.upAt/downAt)을 쓰고 없으면 같은 식으로 계산한다.
+function sfTurn(c) {
+  const k = sfWhatIfSlope(c);
+  if (!k) return null;
+  const thr = c.threshold, diff = c.base.diff, has = v => v !== null && v !== undefined;
+  return { up: has(c.base.upAt) ? c.base.upAt : Math.ceil(c.latest.value + (thr - diff) / k),
+           down: has(c.base.downAt) ? c.base.downAt : Math.floor(c.latest.value + (-thr - diff) / k) };
+}
+// 산정 기간의 실제 경유 가격에 '여기까지 가야 판정이 바뀌는 선'을 긋는다. 평균 추정치 추이는 띠 안에서 거의 직선이라
+// 읽을 것이 없었다(2026-11-14). 오른쪽 옅은 칸이 아직 오지 않은 날이고, 두 점선은 그 남은 날의 평균이 닿아야 하는 값이다.
+function sfPriceSvg(c) {
+  const t = sfTurn(c);
+  const card = (PRICES || []).find(p => p.id === "D047");
+  const m = /^(\d{4})-Q([1-4])$/.exec((c.window && c.window.key) || "");
+  if (!t || !card || !m) return "";
+  const t0 = Date.UTC(+m[1], (+m[2] - 1) * 3, 1), t1 = Date.UTC(+m[1], +m[2] * 3, 0);
+  const pts = (card.points || []).map(p => ({ t: Date.parse(String(p.label) + "T00:00:00Z"), v: p.value }))
+    .filter(p => isFinite(p.t) && p.t >= t0 && p.t <= t1 && typeof p.v === "number");
+  if (pts.length < 2) return "";
+  const W = 640, H = 132, PL = 46, PR = 118, PT = 10, PB = 18;
+  const vals = pts.map(p => p.v).concat([t.up, t.down]);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const pad = (hi - lo) * 0.1 || 5; lo -= pad; hi += pad;
+  const xr = W - PR;
+  const x = tt => PL + (tt - t0) / (t1 - t0) * (xr - PL);
+  const y = v => PT + (1 - (v - lo) / (hi - lo)) * (H - PT - PB);
+  const last = pts[pts.length - 1];
+  const md = tt => { const d = new Date(tt); return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`; };
+  const line = pts.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  const fx = x(last.t), fw = xr - fx;
+  return `<svg viewBox="0 0 ${W} ${H}" class="price-chart" role="img" aria-label="경유 가격 ${sfWon(last.v)}원. 남은 날 평균이 ${sfWon(t.down)}원 이하면 인하, ${sfWon(t.up)}원 이상이면 인상">
+    ${fw > 4 ? `<rect x="${fx.toFixed(1)}" y="${PT}" width="${fw.toFixed(1)}" height="${H - PT - PB}" class="sfe-future"/>
+      ${fw > 70 ? `<text x="${(fx + fw / 2).toFixed(1)}" y="${((y(t.up) + y(t.down)) / 2 - 14).toFixed(1)}" class="ch-xlabel" text-anchor="middle">남은 ${c.window.projectedDays}일</text>` : ""}` : ""}
+    <line x1="${PL}" x2="${xr}" y1="${y(t.up).toFixed(1)}" y2="${y(t.up).toFixed(1)}" class="sfe-up"/>
+    <line x1="${PL}" x2="${xr}" y1="${y(t.down).toFixed(1)}" y2="${y(t.down).toFixed(1)}" class="sfe-down"/>
+    <text x="${xr + 5}" y="${(y(t.up) + 4).toFixed(1)}" class="sfe-lbl up">인상 ${sfWon(t.up)}원 이상</text>
+    <text x="${xr + 5}" y="${(y(t.down) + 4).toFixed(1)}" class="sfe-lbl down">인하 ${sfWon(t.down)}원 이하</text>
+    <text x="${xr + 5}" y="${(y(last.v) + 4).toFixed(1)}" class="sfe-now">지금 ${sfWon(last.v)}원</text>
+    <path d="${line}" class="sfe-line"/>
+    <circle cx="${fx.toFixed(1)}" cy="${y(last.v).toFixed(1)}" r="3.5" class="ch-dot"/>
+    <text x="${PL}" y="${H - 4}" class="ch-xlabel" text-anchor="start">${md(t0)}</text>
+    ${fx - PL > 60 && xr - fx > 40 ? `<text x="${fx.toFixed(1)}" y="${H - 4}" class="ch-xlabel" text-anchor="middle">${md(last.t)}</text>` : ""}
+    <text x="${xr}" y="${H - 4}" class="ch-xlabel" text-anchor="end">${md(t1)}</text>
+  </svg>`;
+}
+// 타일용 작은 구간 막대(가운데 회색이 동결 구간, 점이 지금 추정치).
+function sfMiniGauge(c) {
+  if (!c || !c.base || c.base.diff === null || c.base.diff === undefined) return "";
+  const thr = c.threshold, diff = c.base.diff;
+  const lim = Math.max(thr * 2, Math.ceil((Math.abs(diff) + thr / 2) / 25) * 25);
+  const pos = v => Math.max(0, Math.min(100, (v + lim) / (2 * lim) * 100));
+  const zL = pos(-thr), zR = pos(thr), d = pos(diff);
+  return `<div class="sfg sfg-mini" role="img" aria-label="기준 대비 ${sfSigned(diff)}원, 조정 기준 ±${thr}원">
+      <div class="sfg-bar">
+        <span class="sfg-zone down" style="left:0;width:${zL.toFixed(1)}%"></span>
+        <span class="sfg-zone flat" style="left:${zL.toFixed(1)}%;width:${(zR - zL).toFixed(1)}%"></span>
+        <span class="sfg-zone up" style="left:${zR.toFixed(1)}%;width:${(100 - zR).toFixed(1)}%"></span>
+        <span class="sfg-cut" style="left:${zL.toFixed(1)}%"></span><span class="sfg-cut" style="left:${zR.toFixed(1)}%"></span>
+        <span class="sfg-dot" style="left:${d.toFixed(1)}%"></span>
+      </div>
+    </div>
+    <div class="kt-second">기준 대비 ${sfSigned(diff)}원 (조정 기준 ±${thr}원)</div>`;
+}
 // 경유가를 바꿔 보기. 남은 날의 경유가를 움직이면 산정 기간 평균과 판정이 바로 바뀐다. 월평균은 실측한 날과 남은 날의
 // 평균이라 남은 날 가격 P 에 대해 일차식이다: 평균(P) = 기본 가정 평균 + Σ(그달 남은 일수 ÷ 그달 일수) ÷ 3 × (P − 최근 가격).
 function sfWhatIfSlope(c) {
@@ -2559,8 +2635,10 @@ if (SAFE_FREIGHT) {
         <div>
           ${pendingLine}
           ${sfNextHtml(sf)}
-          ${sf.evolution && sf.evolution.length > 1 ? `<div class="sf-sub">${esc(sfSpan(sf.window.label))} 평균 추정치가 날마다 어떻게 움직였는지</div>
-            <div class="chart-wrap" style="margin-top:2px;">${sfEvolutionSvg(sf.evolution, sf.baseFuel, sf.threshold, true)}</div>` : ""}
+          ${(() => { const pv = sfPriceSvg(sf);
+            return pv ? `<div class="sf-sub">경유 가격과 판정이 바뀌는 선 (남은 ${sf.window.projectedDays}일 평균 기준)</div><div class="chart-wrap" style="margin-top:2px;">${pv}</div>`
+              : (sf.evolution && sf.evolution.length > 1 ? `<div class="sf-sub">${esc(sfSpan(sf.window.label))} 평균 추정치가 날마다 어떻게 움직였는지</div>
+                <div class="chart-wrap" style="margin-top:2px;">${sfEvolutionSvg(sf.evolution, sf.baseFuel, sf.threshold, true)}</div>` : ""); })()}
           ${sfWhatIfSlope(sf) ? `<button type="button" class="ops-btn sfw-open" data-detail="safe-freight" data-focus="sfwRange">⛽ 경유가를 바꿔 보기</button>` : ""}
         </div>
         <div>${impact ? sfImpactTable(impact.rows, impact.title, sf.rateFrom) : sfRateTable(sf.routes || [], sf.rateFrom)}</div>
@@ -2618,6 +2696,19 @@ function leadLag(fromPts, toPts) {
   }
   return best;
 }
+// 최근 2년: 선물 월평균을 시차만큼 뒤로 민 선(점선)과 국내 지수(실선). 둘 다 첫 값을 100으로 맞춘다.
+function llSpark(fromPts, toPts, lag) {
+  const X = monthlyAvg(fromPts), Y = monthlyAvg(toPts);
+  const ms = Object.keys(Y).sort().slice(-24);
+  const norm = arr => { const f = arr.find(v => typeof v === "number"); return arr.map(v => (typeof v === "number" && f) ? v / f * 100 : null); };
+  const na = norm(ms.map(m => X[monthShift(m, -lag)])), nb = norm(ms.map(m => Y[m]));
+  const all = na.concat(nb).filter(v => v !== null);
+  if (ms.length < 8 || all.length < 16) return "";
+  const lo = Math.min(...all), hi = Math.max(...all), W = 150, H = 40;
+  const path = arr => { let d = "", pen = false; arr.forEach((v, i) => { if (v === null) { pen = false; return; }
+    d += `${pen ? "L" : "M"}${(i / (ms.length - 1) * W).toFixed(1)},${(3 + (1 - (v - lo) / ((hi - lo) || 1)) * (H - 6)).toFixed(1)} `; pen = true; }); return d; };
+  return `<svg class="ll-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="최근 2년 흐름. 점선은 선물, 실선은 국내 지수"><path d="${path(na)}" class="ll-from"/><path d="${path(nb)}" class="ll-to"/></svg>`;
+}
 (function leadLagCard() {
   const byId = {};
   (PRICES || []).forEach(c => { byId[c.id] = c; });
@@ -2645,18 +2736,19 @@ function leadLag(fromPts, toPts) {
     const read = !ok ? "과거 5년 동안 함께 움직인 정도가 낮아 선물로 미리 보기 어렵습니다."
       : res.lag === 0 ? "같은 달에 함께 움직여, 선물로 미리 볼 수 있는 몫은 적습니다."
       : lagMove === null ? `선물 움직임이 국내 지수에 보통 ${lagTxt} 나타납니다.`
-      : `최근 ${res.lag}개월 선물 변화(${pctText(lagMove)})가 국내 지수에 아직 덜 반영됐을 수 있습니다. 과거 관계로는 앞으로 ${res.lag}개월 동안 약 ${pctText(lagMove * res.beta)} 정도입니다.`;
+      : `아직 덜 반영됐을 몫: 앞으로 ${res.lag}개월 약 ${pctText(lagMove * res.beta)} (최근 ${res.lag}개월 선물 ${pctText(lagMove)})`;
     return `<tr><td>${esc(a.displayName)} → ${esc(b.displayName)}</td><td>${ok ? lagTxt : "–"}</td>
       <td>${strength(res.r)} <span class="os">(${res.r.toFixed(2)})</span></td>
-      <td class="${pctCls(recent)}">${recent === null ? "–" : pctText(recent)}</td><td class="ll-read">${esc(read)}</td></tr>`;
+      <td class="${pctCls(recent)}">${recent === null ? "–" : pctText(recent)}</td><td>${llSpark(a.points, b.points, res.lag)}</td><td class="ll-read">${esc(read)}</td></tr>`;
   }).join("");
   pushCard(sortKey, `
     <div class="card span2" id="leadLag">
       <div class="card-head"><h3>선행 관계: 중국 선물 → 국내 물가지수</h3></div>
       <div class="m-note" style="margin:2px 0 8px;">부자재 단가 협의 시점을 잡기 위한 참고입니다. 월평균의 월별 변화율로 시차 0~4개월을 비교해
-        가장 함께 움직인 시차를 골랐습니다(2021년 이후 ${rows[0].res.n}개월 안팎). 국내 지수는 원화 판매가격이라 환율도 함께 영향을 줍니다.</div>
+        가장 함께 움직인 시차를 골랐습니다(2021년 이후 ${rows[0].res.n}개월 안팎). 국내 지수는 원화 판매가격이라 환율도 함께 영향을 줍니다.
+        그림의 점선은 선물(시차만큼 뒤로 민 것), 실선은 국내 지수입니다.</div>
       <div class="ll-wrap"><table class="sf-table ll-table">
-        <tr><th>선행 → 따라오는 지표</th><th>시차</th><th>함께 움직인 정도</th><th>선물 최근 3개월</th><th>읽는 법</th></tr>
+        <tr><th>선행 → 따라오는 지표</th><th>시차</th><th>함께 움직인 정도</th><th>선물 최근 3개월</th><th>최근 2년 흐름</th><th>읽는 법</th></tr>
         ${body}
       </table></div>
       <div class="card-src">출처: 대련상품거래소(DCE) 선물, 한국은행 ECOS 생산자물가지수. 과거 관계가 앞으로도 같다는 보장은 없습니다.</div>
@@ -3115,7 +3207,8 @@ function hlNewsHtml(h) {
         ${ref ? "" : tileSpark(t)}
         ${!ref && t.second && t.second.pct !== null && t.second.pct !== undefined ? `<div class="kt-second">${esc(t.second.name)} ${esc(t.second.label)} ${pctText(t.second.pct)}</div>` : ""}`;
     } else {
-      body = (t.lines || []).map((l, i) => `<div class="${i ? "kt-sub" : "kt-lead"}">${esc(l)}</div>`).join("");
+      body = (t.lines || []).map((l, i) => `<div class="${i ? "kt-sub" : "kt-lead"}">${esc(l)}</div>`).join("") +
+        (t.detail === "safe-freight" && !ref ? sfMiniGauge(SAFE_FREIGHT) : "");
     }
     return `<div class="kpi-tile ${ref ? "ref " : "main "}${esc(t.tone || "flat")}"${click}>
         <div class="kt-title">${esc(t.title)}</div>
@@ -3133,8 +3226,8 @@ function hlNewsHtml(h) {
   const headHtml = head ? `<div class="ops-head ${esc(head.tone || "flat")}"><div class="oh-title">${esc(head.title)}</div><div class="oh-text">${esc(head.text)}</div></div>` : "";
 
   const hl = (OPS_SUMMARY.highlights || []).map(h => typeof h === "string" ? { tag: "", text: h } : h);
-  // 지금 주목할 점은 5건까지 먼저 보이고 나머지는 접어 둔다.
-  const HL_SHOW = 5;
+  // 지금 주목할 점은 5건(휴대폰은 3건)까지 먼저 보이고 나머지는 접어 둔다.
+  const HL_SHOW = (window.matchMedia && window.matchMedia("(max-width: 639px)").matches) ? 3 : 5;
   const hlItem = h => `<li>${h.tag ? `<span class="hl-tag">${esc(h.tag)}</span>` : ""}${esc(h.text)}${hlNewsHtml(h)}</li>`;
   const side = `<div class="ops-side">
       ${hl.length ? `<div class="ops-today"><div class="ops-today-title">지금 주목할 점</div>
@@ -3203,16 +3296,21 @@ function hlNewsHtml(h) {
   if (pool.length < 2) return;
   const MAXC = 5;
   const PER = [{ key: "3M", label: "3개월", days: 91 }, { key: "6M", label: "6개월", days: 182 }, { key: "1Y", label: "1년", days: 365 }, { key: "3Y", label: "3년", days: 1095 }];
-  const STORE = "work-compare-v1";
+  const STORE = "work-compare-v2", STORE_OLD = "work-compare-v1";
   const has = id => pool.some(x => x.id === id);
-  let period = "1Y", color = {}, msg = "";
+  let period = "3M", color = {}, msg = "";
   (function restore() {
-    let saved = null;
-    try { saved = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) { saved = null; }
+    // 기본 기간을 1년에서 3개월로 바꿨다(2026-11-14, 1년은 크게 움직인 지표 하나가 나머지를 0% 근처로 눌렀다).
+    // 예전 저장값에서는 고른 지표만 이어받고 기간은 새 기본을 쓴다.
+    let saved = null, old = false;
+    try {
+      saved = JSON.parse(localStorage.getItem(STORE) || "null");
+      if (!saved) { saved = JSON.parse(localStorage.getItem(STORE_OLD) || "null"); old = true; }
+    } catch (e) { saved = null; }
     if (saved && typeof saved === "object") {
       const used = {};
       Object.keys(saved.color || {}).forEach(id => { const c = +saved.color[id]; if (has(id) && c >= 1 && c <= MAXC && !used[c]) { color[id] = c; used[c] = true; } });
-      if (PER.some(pd => pd.key === saved.period)) period = saved.period;
+      if (!old && PER.some(pd => pd.key === saved.period)) period = saved.period;
     }
     if (!Object.keys(color).length) {
       ["scfi", "kcci", "brent", "usdkrw", "D047"].filter(has).slice(0, MAXC).forEach((id, k) => { color[id] = k + 1; });
@@ -3543,14 +3641,20 @@ if (NEWS_OUTAGE) {
       used.map(r => `${r.label.replace(/ \(.*\)$/, "")} ${won(r.monthly)}`).join(", ") + "." +
       (sfOut.some(r => r.u > 0) ? ` 내륙운송료는 ${sfWhen} 기준입니다.` : "");
   }
+  // 영향액 칸: 금액 아래에 가장 큰 영향액 대비 길이의 막대를 둔다.
+  const outHtml = (r, max) => r.u ? `${won(r.monthly)}<span class="cost-mag ${pctCls(r.monthly)}"><i style="width:${max ? Math.max(4, Math.abs(r.monthly) / max * 100).toFixed(0) : 0}%"></i></span>` : "–";
+  const maxOf = list => list.reduce((a, r) => Math.max(a, r.u ? Math.abs(r.monthly) : 0), 0);
+  let costOpen = false;
   function render() {
     const { pd, rows, sfOut, total } = compute();
+    const max = maxOf(rows.concat(sfOut)), used = rows.concat(sfOut).some(r => r.u > 0);
     const line = r => `<tr><td>${esc(r.label)}</td>
         <td class="num"><input class="cost-in" data-cost="${esc(r.id)}" inputmode="decimal" autocomplete="off" value="${r.u ? esc(String(r.u)) : ""}" placeholder="0" aria-label="${esc(r.label)} 월 사용량"> ${esc(r.unit)}</td>
         <td class="num">${fmtNum(Math.round(r.unitKrw))}원</td>
         <td class="num ${pctCls(r.pct)}">${pctText(r.pct)}</td>
-        <td class="num ${pctCls(r.monthly)}" data-out="${esc(r.id)}">${r.u ? won(r.monthly) : "–"}</td></tr>`;
-    box.innerHTML = `
+        <td class="num ${pctCls(r.monthly)}" data-out="${esc(r.id)}">${outHtml(r, max)}</td></tr>`;
+    box.innerHTML = `<details class="cost-det"${used || costOpen ? " open" : ""}>
+      <summary>${used ? "원가 영향 표" : `월 사용량을 넣어 원가 영향을 계산해 보기 (품목 ${rows.length + sfOut.length}개)`}</summary>
       <div class="cost-bar">
         <span>단가 변화 기준</span>
         <div class="range-btns" role="group" aria-label="기간">${PERIODS.map(p => `<button type="button" data-cperiod="${p.k}" class="${p.k === pd.k ? "on" : ""}">${p.label}</button>`).join("")}</div>
@@ -3563,8 +3667,9 @@ if (NEWS_OUTAGE) {
         <tr class="cost-total"><td>합계</td><td></td><td></td><td></td><td class="num ${pctCls(total)}" id="costTotal">${total ? `월 ${won(total)}, 분기 ${won(total * 3)}` : "–"}</td></tr>
       </table></div>
       <div class="m-note">넣은 사용량은 이 PC의 브라우저에만 저장됩니다. 원화 환산은 오늘 환율로 했고, 환율 변화 자체의 영향은 따로 세지 않았습니다.
-        PP·PE는 중국 선물 가격이라 실제 구매 단가와 수준은 다르지만 방향과 폭을 가늠하는 데 씁니다.</div>`;
+        PP·PE는 중국 선물 가격이라 실제 구매 단가와 수준은 다르지만 방향과 폭을 가늠하는 데 씁니다.</div></details>`;
   }
+  box.addEventListener("toggle", e => { if (e.target.classList && e.target.classList.contains("cost-det")) costOpen = e.target.open; }, true);
   sec.hidden = false;
   render();
   box.addEventListener("input", e => {
@@ -3574,7 +3679,8 @@ if (NEWS_OUTAGE) {
     save();
     // 입력 중에는 표를 다시 그리지 않고 결과 칸만 바꾼다(커서가 튀지 않게).
     const { rows, sfOut, total } = compute();
-    rows.concat(sfOut).forEach(r => { const o = box.querySelector(`[data-out="${CSS.escape(r.id)}"]`); if (o) { o.textContent = r.u ? won(r.monthly) : "–"; o.className = `num ${pctCls(r.monthly)}`; } });
+    const max = maxOf(rows.concat(sfOut));
+    rows.concat(sfOut).forEach(r => { const o = box.querySelector(`[data-out="${CSS.escape(r.id)}"]`); if (o) { o.innerHTML = outHtml(r, max); o.className = `num ${pctCls(r.monthly)}`; } });
     const tEl = document.getElementById("costTotal");
     if (tEl) { tEl.textContent = total ? `월 ${won(total)}, 분기 ${won(total * 3)}` : "–"; tEl.className = `num ${pctCls(total)}`; }
   });
