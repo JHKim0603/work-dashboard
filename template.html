@@ -670,6 +670,7 @@
     }
     .ops-table tr.ops-row td.c-fc { grid-area: fc; text-align: right; font-size: 13px; }
     .ops-table .ops-spark { margin-left: 0; }
+    .ops-table .sp-note { text-align: left; }
   }
   /* 지금 주목할 점: 표를 읽기 전에 무엇이 움직였는지 문장으로 먼저 본다. */
   .ops-today { background: var(--accent-wash); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
@@ -970,6 +971,27 @@
   .ll-table td, .ll-table th, .cost-table td, .cost-table th { white-space: nowrap; }
   .ll-table td.ll-read { white-space: normal; min-width: 280px; color: var(--ink-secondary); text-align: left; }
   .ll-table th:last-child { text-align: left; }
+  /* 휴대폰: 선행 관계 표는 오른쪽 칸(시차·정도·그림·읽는 법)이 화면 밖으로 밀렸다(2026-11-15). 행마다 세로로 쌓는다. */
+  @media (max-width: 639px) {
+    .ll-wrap { overflow-x: visible; }
+    .ll-table, .ll-table tbody, .ll-table tr, .ll-table td { display: block; width: auto; }
+    .ll-table tr:first-child { display: none; }
+    .ll-table tr { padding: 8px 0; border-top: 1px solid var(--gridline); }
+    .ll-table td, .ll-table td.ll-read { border: 0; padding: 2px 0; white-space: normal; min-width: 0; text-align: left; }
+    .ll-table td:first-child { font-weight: 650; }
+    .ll-table td[data-label] { display: inline-block; margin-right: 12px; }
+    .ll-table td[data-label]::before { content: attr(data-label) " "; color: var(--ink-muted); font-size: 12px; font-weight: 400; }
+    .ll-table .ll-spark { margin: 4px 0; }
+  }
+  /* 경영진 요약 화면에만 보이는 다가오는 일정 */
+  .exec-sched { display: none; margin-top: 14px; border-top: 1px solid var(--gridline); padding-top: 10px; }
+  body.exec .exec-sched { display: block; }
+  .es-title { font-size: 13px; font-weight: 650; color: var(--ink-secondary); margin-bottom: 4px; }
+  .es-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; padding: 4px 0; color: var(--ink-primary); }
+  .es-d { color: var(--ink-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .c-spark .sp-note { text-align: right; }
+  /* 휴대폰: 구간 막대 아래 세 숫자(인하 기준·기준·인상 기준)가 붙어 읽히지 않았다. 기준은 위 문장에 있으므로 가운데를 뺀다. */
+  @media (max-width: 639px) { .sfg-ticks span:nth-child(2) { display: none; } }
   .cost-in { width: 7.5em; padding: 4px 6px; font: inherit; font-size: 13px; text-align: right; border: 1px solid var(--border); border-radius: 6px;
     background: var(--surface); color: var(--ink-primary); font-variant-numeric: tabular-nums; }
   .cost-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -2370,7 +2392,10 @@ function sfPriceSvg(c) {
   const pts = (card.points || []).map(p => ({ t: Date.parse(String(p.label) + "T00:00:00Z"), v: p.value }))
     .filter(p => isFinite(p.t) && p.t >= t0 && p.t <= t1 && typeof p.v === "number");
   if (pts.length < 2) return "";
-  const W = 640, H = 132, PL = 46, PR = 118, PT = 10, PB = 18;
+  // 휴대폰에서는 그림이 통째로 줄어 글자가 6px 쯤이 됐다(2026-11-15). 좁은 화면은 그림 폭을 줄이고 이름표를 짧게 한다.
+  const narrow = window.innerWidth < 640;
+  const W = narrow ? 360 : 640, H = narrow ? 150 : 132, PL = narrow ? 30 : 46, PR = narrow ? 86 : 118, PT = 10, PB = 18;
+  const fs = narrow ? ' style="font-size:12.5px"' : "";
   const vals = pts.map(p => p.v).concat([t.up, t.down]);
   let lo = Math.min(...vals), hi = Math.max(...vals);
   const pad = (hi - lo) * 0.1 || 5; lo -= pad; hi += pad;
@@ -2383,17 +2408,17 @@ function sfPriceSvg(c) {
   const fx = x(last.t), fw = xr - fx;
   return `<svg viewBox="0 0 ${W} ${H}" class="price-chart" role="img" aria-label="경유 가격 ${sfWon(last.v)}원. 남은 날 평균이 ${sfWon(t.down)}원 이하면 인하, ${sfWon(t.up)}원 이상이면 인상">
     ${fw > 4 ? `<rect x="${fx.toFixed(1)}" y="${PT}" width="${fw.toFixed(1)}" height="${H - PT - PB}" class="sfe-future"/>
-      ${fw > 70 ? `<text x="${(fx + fw / 2).toFixed(1)}" y="${((y(t.up) + y(t.down)) / 2 - 14).toFixed(1)}" class="ch-xlabel" text-anchor="middle">남은 ${c.window.projectedDays}일</text>` : ""}` : ""}
+      ${fw > 70 ? `<text x="${(fx + fw / 2).toFixed(1)}" y="${((y(t.up) + y(t.down)) / 2 - 14).toFixed(1)}" class="ch-xlabel" text-anchor="middle"${fs}>남은 ${c.window.projectedDays}일</text>` : ""}` : ""}
     <line x1="${PL}" x2="${xr}" y1="${y(t.up).toFixed(1)}" y2="${y(t.up).toFixed(1)}" class="sfe-up"/>
     <line x1="${PL}" x2="${xr}" y1="${y(t.down).toFixed(1)}" y2="${y(t.down).toFixed(1)}" class="sfe-down"/>
-    <text x="${xr + 5}" y="${(y(t.up) + 4).toFixed(1)}" class="sfe-lbl up">인상 ${sfWon(t.up)}원 이상</text>
-    <text x="${xr + 5}" y="${(y(t.down) + 4).toFixed(1)}" class="sfe-lbl down">인하 ${sfWon(t.down)}원 이하</text>
-    <text x="${xr + 5}" y="${(y(last.v) + 4).toFixed(1)}" class="sfe-now">지금 ${sfWon(last.v)}원</text>
+    <text x="${xr + 5}" y="${(y(t.up) + 4).toFixed(1)}" class="sfe-lbl up"${fs}>${narrow ? `인상 ${sfWon(t.up)}↑` : `인상 ${sfWon(t.up)}원 이상`}</text>
+    <text x="${xr + 5}" y="${(y(t.down) + 4).toFixed(1)}" class="sfe-lbl down"${fs}>${narrow ? `인하 ${sfWon(t.down)}↓` : `인하 ${sfWon(t.down)}원 이하`}</text>
+    <text x="${xr + 5}" y="${(y(last.v) + 4).toFixed(1)}" class="sfe-now"${fs}>지금 ${sfWon(last.v)}${narrow ? "" : "원"}</text>
     <path d="${line}" class="sfe-line"/>
     <circle cx="${fx.toFixed(1)}" cy="${y(last.v).toFixed(1)}" r="3.5" class="ch-dot"/>
-    <text x="${PL}" y="${H - 4}" class="ch-xlabel" text-anchor="start">${md(t0)}</text>
-    ${fx - PL > 60 && xr - fx > 40 ? `<text x="${fx.toFixed(1)}" y="${H - 4}" class="ch-xlabel" text-anchor="middle">${md(last.t)}</text>` : ""}
-    <text x="${xr}" y="${H - 4}" class="ch-xlabel" text-anchor="end">${md(t1)}</text>
+    <text x="${PL}" y="${H - 4}" class="ch-xlabel" text-anchor="start"${fs}>${md(t0)}</text>
+    ${fx - PL > 60 && xr - fx > 40 ? `<text x="${fx.toFixed(1)}" y="${H - 4}" class="ch-xlabel" text-anchor="middle"${fs}>${md(last.t)}</text>` : ""}
+    <text x="${xr}" y="${H - 4}" class="ch-xlabel" text-anchor="end"${fs}>${md(t1)}</text>
   </svg>`;
 }
 // 타일용 작은 구간 막대(가운데 회색이 동결 구간, 점이 지금 추정치).
@@ -2737,9 +2762,9 @@ function llSpark(fromPts, toPts, lag) {
       : res.lag === 0 ? "같은 달에 함께 움직여, 선물로 미리 볼 수 있는 몫은 적습니다."
       : lagMove === null ? `선물 움직임이 국내 지수에 보통 ${lagTxt} 나타납니다.`
       : `아직 덜 반영됐을 몫: 앞으로 ${res.lag}개월 약 ${pctText(lagMove * res.beta)} (최근 ${res.lag}개월 선물 ${pctText(lagMove)})`;
-    return `<tr><td>${esc(a.displayName)} → ${esc(b.displayName)}</td><td>${ok ? lagTxt : "–"}</td>
-      <td>${strength(res.r)} <span class="os">(${res.r.toFixed(2)})</span></td>
-      <td class="${pctCls(recent)}">${recent === null ? "–" : pctText(recent)}</td><td>${llSpark(a.points, b.points, res.lag)}</td><td class="ll-read">${esc(read)}</td></tr>`;
+    return `<tr><td>${esc(a.displayName)} → ${esc(b.displayName)}</td><td data-label="시차">${ok ? lagTxt : "–"}</td>
+      <td data-label="함께 움직인 정도">${strength(res.r)} <span class="os">(${res.r.toFixed(2)})</span></td>
+      <td class="${pctCls(recent)}" data-label="선물 3개월">${recent === null ? "–" : pctText(recent)}</td><td>${llSpark(a.points, b.points, res.lag)}</td><td class="ll-read">${esc(read)}</td></tr>`;
   }).join("");
   pushCard(sortKey, `
     <div class="card span2" id="leadLag">
@@ -3128,7 +3153,11 @@ function hlNewsHtml(h) {
     const vals = use.map(p => p.value), { lo, span } = yRange(vals);
     const W = 96, H = 26;
     const d = use.map((p, i) => `${i ? "L" : "M"}${(i / (use.length - 1) * W).toFixed(1)},${(2 + (1 - (p.value - lo) / span) * (H - 4)).toFixed(1)}`).join(" ");
-    return `<svg class="ops-spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d}" class="${esc(r.tone || "flat")}"/></svg>`;
+    // 국내 경유·휘발유처럼 기록이 6개월보다 짧은 지표는 같은 제목 아래에서 6개월치로 읽혔다(2026-11-15). 며칠치인지 적는다.
+    const firstD = parseLabel(pts[0].label);
+    const spanD = lastD && firstD ? Math.round((lastD - firstD) / 86400000) + 1 : null;
+    const note = spanD !== null && spanD < 150 ? `<div class="os sp-note">기록 ${spanD}일</div>` : "";
+    return `<svg class="ops-spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d}" class="${esc(r.tone || "flat")}"/></svg>${note}`;
   };
   // 평소 변동폭(판정 기준폭)보다 크게 움직인 칸만 칠한다. 2배 이상이면 진하게.
   const tint = (v, thr) => {
@@ -3260,6 +3289,14 @@ function hlNewsHtml(h) {
           </table></div>
         </div>
       </div>
+      ${(() => {
+        // 경영진 요약 화면에만: 60일 안의 정책 일정 세 건(지수 발표는 뺀다). 결론과 타일만 있으면 아래가 많이 비었다(2026-11-15).
+        const es = (SCHEDULE || []).filter(x => x.kind !== "발표" && x.dDay >= 0 && x.dDay <= 60).slice(0, 3);
+        return es.length ? `<div class="exec-sched"><div class="es-title">다가오는 일정</div>${es.map(x => {
+          const dt = new Date(x.date + "T00:00:00");
+          return `<div class="es-row"><span>${esc(x.title)}${x.note && /예상/.test(x.note) ? ` <span class="es-d">(${esc(x.note)})</span>` : ""}</span><span class="es-d">${dt.getMonth() + 1}/${dt.getDate()} · ${x.dDay ? `D-${x.dDay}` : "오늘"}</span></div>`;
+        }).join("")}</div>` : "";
+      })()}
       <div class="exec-note">전체 지표와 상세 화면은 위의 [전체 화면 보기]에서 볼 수 있습니다.</div>
     </div>`;
   box.addEventListener("click", e => {
