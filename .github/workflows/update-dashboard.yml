@@ -86,6 +86,11 @@ jobs:
             if cmp -s mail_charts.py /tmp/sibling-mail-charts.py; then echo "mail_charts.py matches stockdashboard"
             else echo "::warning::mail_charts.py differs from stockdashboard - 두 저장소의 공통 파일을 같게 맞추세요"; fi
           fi
+          # 세 대시보드 공통 규칙(DASHBOARD-RULES.md)도 같은 파일이어야 한다(2026-11-17).
+          if curl -fsSL "https://raw.githubusercontent.com/JHKim0603/stockdashboard/master/DASHBOARD-RULES.md" -o /tmp/sibling-rules.md; then
+            if cmp -s DASHBOARD-RULES.md /tmp/sibling-rules.md; then echo "DASHBOARD-RULES.md matches stockdashboard"
+            else echo "::warning::DASHBOARD-RULES.md differs from stockdashboard - 세 저장소의 공통 규칙 파일을 같게 맞추세요"; fi
+          fi
 
       - name: Generate dashboard.html
         shell: pwsh

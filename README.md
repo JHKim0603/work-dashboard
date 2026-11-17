@@ -736,6 +736,8 @@ PP·PE 가격 변동에 민감한 부자재(PP밴드, PP마대, 스트레치필�
 
 ## Files
 
+- `DASHBOARD-RULES.md`: 세 대시보드(stockdashboard, work-dashboard, realestate-dashboard)가 똑같이 쓰는 작업 규칙입니다(문체, 글자 12px, 숫자 표기, 메일 모양, 작업 순서, 올리기 전 점검). 고치면 세 저장소를 같이 고칩니다. 실행 때마다 다른 저장소의 파일과 비교해 다르면 경고합니다.
+- `CLAUDE.md`: 이 저장소만의 작업 안내(실행 방법, 봇이 관리하는 자료 파일, 색의 뜻). 공통 규칙을 불러옵니다.
 - `Update-WorkDashboard.ps1` — fetches everything above and renders `template.html` into
   `dashboard.html`.
 - `news-filter.ps1` — 뉴스 제목 거르기(`Test-SpamHeadline`). stockdashboard 와 같은 파일이며 워크플로가 서로 비교합니다.
