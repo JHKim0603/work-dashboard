@@ -802,7 +802,7 @@
   .sf-next.up { border-left-color: var(--bad); }
   .sf-next.down { border-left-color: var(--good); }
   .sf-next-q { font-size: 13px; font-weight: 650; color: var(--ink-secondary); }
-  .sf-tag { display: inline-block; margin-left: 6px; padding: 0 7px; border: 1px solid var(--border); border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--ink-muted); vertical-align: 1px; }
+  .sf-tag { display: inline-block; margin-left: 6px; padding: 0 7px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--ink-muted); vertical-align: 1px; }
   .sf-ref { font-size: 12px; line-height: 1.55; color: var(--ink-muted); margin-top: 6px; }
   .sf-next-a { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 6px; font-size: 15px; font-weight: 650; color: var(--ink-primary); }
   .sf-next-a .sf-verdict { font-size: 15px; }
@@ -1385,6 +1385,7 @@ if (!HOLIDAY) {
   // 매주 반복되는 지수 발표와 해외 연휴는 큰 글씨로 올리지 않는다.
   const hero = inWindow.find(x => x.kind === "정책" && dOf(x.date) <= SOON_DAYS && dOf(x.end) >= 0);
   const holHtml = `<span class="hol-name">${esc(names)}</span>`;
+  const holFar = HOLIDAY.dDay > SOON_DAYS;
   const heroHtml = hero
     ? `<div class="hol-head">
         <span class="dday">${dOf(hero.date) <= 0 ? "오늘" : `D-${dOf(hero.date)}`}</span>
@@ -1392,6 +1393,8 @@ if (!HOLIDAY) {
       </div>
       <div class="hol-range">${esc(hero.date === hero.end ? fmt(hero.date) : `${fmt(hero.date)}~${fmt(hero.end)}`)}, ${esc(hero.kind)}${hero.note ? `, ${esc(hero.note)}` : ""}</div>
       <div class="hol-next">다음 연휴 <b>${esc(names)}</b> ${esc(rangeText)}, ${HOLIDAY.days}일(${dDayText})</div>`
+    : holFar
+    ? `<div class="hol-next">다음 연휴 <b>${esc(names)}</b> ${esc(rangeText)}, ${HOLIDAY.days}일(${dDayText})</div>`
     : `<div class="hol-head">
         <span class="dday">${dDayText}</span>
         ${holHtml}
@@ -1471,8 +1474,8 @@ if (!TYPHOON) {
     }).join("");
 
     const gap = row.gapMedian
-      ? `과거 이맘때 다음 태풍까지 걸린 기간은 <b>중앙값 ${row.gapMedian}일</b>입니다 <span class="clim-dim">(절반이 ${row.gapQ1}~${row.gapQ3}일, 표본 ${row.gapN}건)</span>`
-      : `이 시기는 표본이 적어 간격을 계산하지 않습니다.`;
+      ? `과거 이맘때는 다음 태풍까지 보통 <b>${row.gapMedian}일</b>쯤 걸렸습니다 <span class="clim-dim">(절반은 ${row.gapQ1}~${row.gapQ3}일 사이, 지난 기록 ${row.gapN}번 기준)</span>`
+      : `이 시기는 지난 기록이 적어 간격을 계산하지 않습니다.`;
 
     const legLine = legOrder.map(k =>
       `<span class="clim-key"><i class="${k}"></i>${esc((L[k] || {}).label || k)} ${row[k] || 0}건</span>`
@@ -3167,8 +3170,11 @@ function hlNewsHtml(h) {
   };
   const pctTd = (v, thr, cls, label) =>
     `<td class="${cls} ${pctCls(v)} ${tint(v, thr)}" data-label="${esc(label)}">${pctText(v)}</td>`;
+  // 범위가 지금 값의 30%를 넘으면(예: 3,729~5,854) 숫자는 읽을 뜻이 없어 메일처럼 '예측 어려움'만 적는다(2026-11-13 점검).
   const fcCell = r => r.fc
-    ? `${fcRange(r.fc, r.currency)}<div class="os fc-dir ${fcCls(fcDir(r.fc))}">${esc(fcDir(r.fc))}</div>`
+    ? (fcDir(r.fc) === "예측 어려움"
+      ? `<span class="os fc-dir wide" title="${esc(r.fc.label || "")} 예상 범위 ${esc(r.currency || "")}${fmtNum(r.fc.low)}~${esc(r.currency || "")}${fmtNum(r.fc.high)}">예측 어려움</span>`
+      : `${fcRange(r.fc, r.currency)}<div class="os fc-dir ${fcCls(fcDir(r.fc))}">${esc(fcDir(r.fc))}</div>`)
     : (r.value !== null && r.value !== undefined) ? `<span class="os" title="자료가 30건 이상 쌓이면 예상 범위를 표시합니다">자료 수집 중</span>` : "–";
   // 경향(최근 흐름)은 지표 이름 바로 옆에 둔다. 맨 오른쪽 끝에 있으면 숫자 칸을 다 지나야 결론이 보였다.
   const rowHtml = r => {
@@ -3178,7 +3184,7 @@ function hlNewsHtml(h) {
     const changed = r.changed && r.prevTrend
       ? `<span class="chg-flag" title="1주 전 자료로 보면 ${esc(r.prevTrend)}였습니다">지난주엔 ${esc(r.prevTrend)}</span>` : "";
     return `<tr class="ops-row"${clickable}>
-      <td class="c-name"><div class="on">${esc(r.name)}${trendChip(r.trend, r.tone)}${changed}</div>${(r.context || r.position || r.longPosition) ? `<div class="os">${esc(r.context || [r.position, r.longPosition].filter(Boolean).join(", "))}</div>` : ""}</td>
+      <td class="c-name"><div class="on">${esc(r.name)}${trendChip(r.trend, r.tone)}${changed}</div>${r.context ? `<div class="os">${esc(r.context)}</div>` : ""}</td>
       <td class="c-val">${val}${r.label ? `<div class="os">${esc(r.label)}</div>` : ""}</td>
       <td class="c-spark mid">${spark(r)}</td>
       ${pctTd(r.shortPct, r.thrS, "c-s", "1개월 변화")}
@@ -3393,7 +3399,15 @@ function hlNewsHtml(h) {
     const W = Math.max(300, Math.round(plot.clientWidth || 600));
     const wide = W >= 640;
     const H = wide ? 280 : 230;
-    const padL = 46, padR = wide ? 140 : 10, padT = 12, padB = 26;
+    // 오른쪽 이름표 칸을 실제 글자 폭으로 잰다. 140px 고정이라 '부산발 운임 종합(KCCI) +4.9%'가 카드 밖으로 나갔다(2026-11-13 점검).
+    const endTxt = l => l.x.name + " " + fmtP(l.pts[l.pts.length - 1].v);
+    let labW = 0;
+    if (wide) {
+      const cx = document.createElement("canvas").getContext("2d");
+      cx.font = `12px ${getComputedStyle(plot).fontFamily}`;
+      lines.forEach(l => { labW = Math.max(labW, cx.measureText(endTxt(l)).width); });
+    }
+    const padL = 46, padR = wide ? Math.min(Math.round(W * 0.4), Math.max(140, Math.ceil(labW) + 36)) : 10, padT = 12, padB = 26;
     let t0 = Infinity, t1 = -Infinity, lo = 0, hi = 0;
     lines.forEach(l => l.pts.forEach(p => { t0 = Math.min(t0, p.t); t1 = Math.max(t1, p.t); lo = Math.min(lo, p.v); hi = Math.max(hi, p.v); }));
     const step = niceStep((hi - lo) / 5 || 1);
@@ -3444,7 +3458,7 @@ function hlNewsHtml(h) {
         key.setAttribute("style", `stroke:${colorOf(o.l)}`);
         svg.appendChild(key);
         const tx = el("text", { x: lx + 17, y: (o.y + 4).toFixed(1), class: "cmp-end" });
-        tx.textContent = o.l.x.name + " " + fmtP(o.l.pts[o.l.pts.length - 1].v);
+        tx.textContent = endTxt(o.l);
         svg.appendChild(tx);
       });
     }
@@ -3591,17 +3605,16 @@ if (NEWS_OUTAGE) {
       ? m.news.map((n, i) => newsItemHtml(n, i < NEWS_SHOWN ? "" : "news-extra")).join("") +
         (m.news.length > NEWS_SHOWN ? `<button type="button" class="news-more" aria-expanded="false">나머지 ${m.news.length - NEWS_SHOWN}건 더 보기</button>` : "")
       : `<div class="empty-note">관련 뉴스가 없습니다.</div>`;
-    const flagged = (m.news || []).filter(n => n.flag).length;
-    // Says the badge is a keyword rule rather than a reading of the article, in the same
-    // place and the same voice the price cards already use for their own limits.
-    const caveat = flagged ? `중요도 표시는 기사 제목의 단어로 자동 분류한 결과입니다.` : "";
     return `
       <div class="card">
         <h3>${esc(m.displayName)}</h3>
-        ${caveat ? `<div class="news-caveat">${caveat}</div>` : ""}
         ${news}
       </div>`;
   }).join("");
+  // 중요도 표시가 단어 규칙이라는 안내는 네 카드에 똑같이 반복돼(2026-11-13 점검) 뉴스 묶음 아래에 한 번만 둔다.
+  if (MATERIALS.some(m => (m.news || []).some(n => n.flag))) {
+    materialsGrid.insertAdjacentHTML("afterend", `<div class="news-caveat">중요도 표시는 기사 제목의 단어로 자동 분류한 결과입니다.</div>`);
+  }
   materialsGrid.addEventListener("click", e => {
     const b = e.target.closest(".news-more");
     if (!b) return;

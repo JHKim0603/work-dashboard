@@ -203,7 +203,12 @@ function Get-WeatherSnapshot {
            "&current=temperature_2m,relative_humidity_2m,apparent_temperature,weathercode" +
            "&timezone=Asia%2FSeoul&forecast_days=7"
     try {
-        $resp = Invoke-RestMethod -Uri $uri -Headers $headers
+        # 날씨 서버가 가끔 한 번 응답하지 않아 그날 메일에서 그 지역 날씨가 통째로 빠졌다. 세 번까지 다시 묻는다(2026-11-17).
+        $resp = $null
+        for ($try = 1; $try -le 3; $try++) {
+            try { $resp = Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 30; break }
+            catch { if ($try -eq 3) { throw }; Start-Sleep -Seconds (3 * $try) }
+        }
         $cur = $resp.current
         $daily = $resp.daily
 
@@ -2346,9 +2351,11 @@ function Get-MaterialSnapshot {
 $nowKst = (Get-Date).ToUniversalTime().AddHours(9)
 
 Write-Host "Fetching weather..."
+$weatherFailed = New-Object System.Collections.Generic.List[string]
 $weather = @(foreach ($loc in $config.weatherLocations) {
     Write-Host "  - $($loc.DisplayName)"
-    Get-WeatherSnapshot $loc
+    $snap = Get-WeatherSnapshot $loc
+    if ($snap) { $snap } else { $weatherFailed.Add([string]$loc.DisplayName) }
     Start-Sleep -Milliseconds 300
 })
 $weather = @($weather | Where-Object { $_ })
@@ -2942,6 +2949,14 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
         $a = [math]::Abs($p)
         if ($a -ge 10) { [math]::Round($a).ToString("0") } else { $a.ToString("0.0", [Globalization.CultureInfo]::InvariantCulture) }
     }
+    # 두 값을 '각각 a%, b%'로 나란히 적을 때는 자릿수를 맞춘다. 둘 다 10% 이상이면 정수, 아니면 둘 다 소수 첫째 자리.
+    # '각각 10%, 7.2%'처럼 섞여 나갔다(2026-11-13 점검).
+    function Format-PctPair {
+        param([double]$a, [double]$b)
+        $ci = [Globalization.CultureInfo]::InvariantCulture
+        if ([math]::Abs($a) -ge 10 -and [math]::Abs($b) -ge 10) { @([math]::Round([math]::Abs($a)).ToString("0"), [math]::Round([math]::Abs($b)).ToString("0")) }
+        else { @([math]::Abs($a).ToString("0.0", $ci), [math]::Abs($b).ToString("0.0", $ci)) }
+    }
     # 움직임의 크기를 말로. 평소 움직임의 2.5배 이상이면 급등·급락, 아니면 올라·내려. mid 는 문장 가운데 꼴(…해, …라).
     function Get-MoveVerb {
         param([double]$p, $ratio, [bool]$mid)
@@ -3329,13 +3344,15 @@ if ($opsSummary) {
         if ($pp.trend -eq $pe.trend -and ($pp.trend -eq "상승 후 조정" -or $pp.trend -eq "하락 후 반등")) {
             # 타일이 '상승 후 조정'인데 결론이 '3개월 동안 올랐습니다'로 끝나면 최근 흐름이 빠진다.
             $tail = if ($pp.trend -eq "상승 후 조정") { "올랐지만 최근 $($pp.shortLabel)은 내리고 있습니다" } else { "내렸지만 최근 $($pp.shortLabel)은 오르고 있습니다" }
-            $hlText += "PP·PE 가격은 $($pp.longLabel) 동안 각각 $(Format-PctWord $a)%, $(Format-PctWord $b)% $tail."
+            $pq = Format-PctPair $a $b
+            $hlText += "PP·PE 가격은 $($pp.longLabel) 동안 각각 $($pq[0])%, $($pq[1])% $tail."
         }
         elseif ([math]::Abs($a) -lt 0.5 -and [math]::Abs($b) -lt 0.5) { $hlText += "PP·PE 가격은 3개월 동안 큰 변화가 없습니다." }
         elseif (($a -ge 0) -eq ($b -ge 0)) {
             # 둘 다 평소의 2.5배를 넘을 때만 '급등·급락'(작은 쪽 배수로 고른다).
             $rMin = if ($null -ne $pp.ratioL -and $null -ne $pe.ratioL) { [math]::Min([double]$pp.ratioL, [double]$pe.ratioL) } else { $null }
-            $hlText += "PP·PE 가격은 3개월 동안 각각 $(Format-PctWord $a)%, $(Format-PctWord $b)% $(Get-MoveVerb $a $rMin $false)."
+            $pq = Format-PctPair $a $b
+            $hlText += "PP·PE 가격은 3개월 동안 각각 $($pq[0])%, $($pq[1])% $(Get-MoveVerb $a $rMin $false)."
             foreach ($pair in @(@{ r = $pp; n = "PP 가격" }, @{ r = $pe; n = "PE 가격" })) {
                 $x = $pair.r
                 if ($x.since -and (([double]$x.longPct -ge 0 -and $x.since.dir -eq "high") -or ([double]$x.longPct -lt 0 -and $x.since.dir -eq "low"))) {
@@ -3343,7 +3360,7 @@ if ($opsSummary) {
                 }
             }
         }
-        else { $hlText += "PP 가격은 3개월 동안 $(Format-PctWord $a)% $(if ($a -ge 0) { '올랐고' } else { '내렸고' }), PE 가격은 $(Format-PctWord $b)% $(if ($b -ge 0) { '올랐습니다' } else { '내렸습니다' })." }
+        else { $pq = Format-PctPair $a $b; $hlText += "PP 가격은 3개월 동안 $($pq[0])% $(if ($a -ge 0) { '올랐고' } else { '내렸고' }), PE 가격은 $($pq[1])% $(if ($b -ge 0) { '올랐습니다' } else { '내렸습니다' })." }
     }
     if ($sf -and $sf.base) {
         # 두 문장('…은 동결이 예상됩니다. 다만 … 인상이 예상됩니다')을 한 문장으로. 같은 해면 뒤 연도는 뺀다.
@@ -4158,6 +4175,10 @@ if ($sfHtml) { $priceSectionRows += [PSCustomObject]@{ sort = $sfSort; html = $s
 # Collection failures go near the top of the mail, above the news. Someone maintaining this
 # needs to know a source went quiet on the day it happens - finding out weeks later, from a
 # chart with a hole in it, is how a broken feed becomes permanent.
+# 날씨를 받지 못한 지역. 예전에는 그 지역 날씨가 말없이 빠져 날씨가 없는 날인지 수집이 실패한 날인지 알 수 없었다(2026-11-17).
+$weatherFailHtml = if ($weatherFailed.Count) {
+    "<div style='margin:0 0 10px;$mailCard border-left:4px solid #a15c00;font-size:12.5px;color:#0b0b0b;'>⚠ $(($weatherFailed | ForEach-Object { [System.Net.WebUtility]::HtmlEncode($_) }) -join ', ') 날씨를 받지 못했습니다. 다음 실행 때 다시 받습니다.</div>"
+} else { "" }
 $failureHtml = ""
 if ($missingCards.Count -gt 0) {
     $rows = foreach ($m in $missingCards) {
@@ -4538,6 +4559,7 @@ $emailHtml = @"
   $weeklyHtml
   $(Get-MailLabel "날씨·일정·태풍")
   $(Get-EmailSection "" ($weatherRowsHtml -join "`n"))
+  $weatherFailHtml
   $holidayHtml
   $typhoonHtml
   $(if ($highlightHtml -or @($materialsHtml).Count) { Get-MailLabel "수급 뉴스" })
