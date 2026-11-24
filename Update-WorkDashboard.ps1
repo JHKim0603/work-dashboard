@@ -1039,24 +1039,49 @@ function Get-CustomsImportSeries {
 
     $key = $env:DATA_GO_KR_KEY
     if (-not $key) { return $null }
+    # config 의 Months 가 있으면 그 길이로 받는다(KCl 수입 단가는 국제가격 카드와 견주려고 36개월).
+    if ($cfg.Months -and [int]$cfg.Months -gt 0) { $months = [int]$cfg.Months }
 
     try {
         $end = (Get-Date).AddMonths(-1)          # newest published month, given the lag
         $start = $end.AddMonths(-($months - 1))
-        $uri = "https://apis.data.go.kr/1220000/nitemtrade/getNitemtradeList" +
-               "?serviceKey=$([uri]::EscapeDataString($key))" +
-               "&strtYymm=$($start.ToString('yyyyMM'))&endYymm=$($end.ToString('yyyyMM'))" +
-               "&hsSgn=$([uri]::EscapeDataString($cfg.HsSgn))"
-        if ($cfg.CntyCd) { $uri += "&cntyCd=$([uri]::EscapeDataString($cfg.CntyCd))" }
-
-        $resp = Invoke-WebRequest -Uri $uri -Headers $headers -UseBasicParsing -TimeoutSec 45
-        [xml]$xml = $resp.Content
-
-        $code = $xml.response.header.resultCode
-        if ($code -ne "00") { throw "resultCode=$code $($xml.response.header.resultMsg)" }
-
-        # 총계 repeats the window sum as a pseudo-row; a real month always looks like "2026.07".
-        $items = @($xml.response.body.items.item | Where-Object { $_.year -match '^\d{4}\.\d{2}$' })
+        # 한 번에 1년까지만 조회되므로 1년씩 나눠 묻는다. 가장 최근 구간이 실패하면 카드 전체를 실패로 두고,
+        # 그보다 앞 구간이 실패하면 받은 구간만으로 그린다(최신 값이 맞으면 카드의 쓸모는 남는다).
+        $windows = @()
+        $wEnd = $end
+        while ($wEnd.ToString('yyyyMM') -ge $start.ToString('yyyyMM')) {
+            $wStart = $wEnd.AddMonths(-11)
+            if ($wStart.ToString('yyyyMM') -lt $start.ToString('yyyyMM')) { $wStart = $start }
+            $windows += , @($wStart, $wEnd)
+            $wEnd = $wStart.AddMonths(-1)
+        }
+        $items = @()
+        for ($wi = 0; $wi -lt $windows.Count; $wi++) {
+            $ws = $windows[$wi][0]; $we = $windows[$wi][1]
+            $uri = "https://apis.data.go.kr/1220000/nitemtrade/getNitemtradeList" +
+                   "?serviceKey=$([uri]::EscapeDataString($key))" +
+                   "&strtYymm=$($ws.ToString('yyyyMM'))&endYymm=$($we.ToString('yyyyMM'))" +
+                   "&hsSgn=$([uri]::EscapeDataString($cfg.HsSgn))"
+            if ($cfg.CntyCd) { $uri += "&cntyCd=$([uri]::EscapeDataString($cfg.CntyCd))" }
+            $got = $null
+            for ($try = 1; $try -le 2 -and -not $got; $try++) {
+                try {
+                    $resp = Invoke-WebRequest -Uri $uri -Headers $headers -UseBasicParsing -TimeoutSec 45
+                    [xml]$xml = $resp.Content
+                    $code = $xml.response.header.resultCode
+                    if ($code -ne "00") { throw "resultCode=$code $($xml.response.header.resultMsg)" }
+                    # 총계 repeats the window sum as a pseudo-row; a real month always looks like "2026.07".
+                    $got = @($xml.response.body.items.item | Where-Object { $_.year -match '^\d{4}\.\d{2}$' })
+                } catch {
+                    if ($try -ge 2) {
+                        if ($wi -eq 0) { throw }
+                        Write-Warning "관세청 수입단가 앞 구간 조회 실패 ($($cfg.Id) $($ws.ToString('yyyy-MM'))~$($we.ToString('yyyy-MM'))): $($_.Exception.Message)"
+                    } else { Start-Sleep -Seconds 3 }
+                }
+            }
+            if ($got) { $items += $got }
+            if ($wi -lt $windows.Count - 1) { Start-Sleep -Milliseconds 300 }
+        }
         if ($cfg.StatKorMatch) {
             $items = @($items | Where-Object { $_.statKor -like "*$($cfg.StatKorMatch)*" })
         }
@@ -1087,6 +1112,13 @@ function Get-CustomsImportSeries {
         }
         $points = @($points)
         if ($points.Count -eq 0) { throw "no month had both import value and weight - check HsSgn/CntyCd" }
+        # 실행 기록에 최근 12개월 수입량과 평균 단가를 남긴다(공개 연간 통계와 맞춰 볼 때 쓴다).
+        $recentM = @($byMonth.Keys | Sort-Object | Select-Object -Last 12)
+        $rw = 0.0; $rd = 0.0
+        foreach ($m in $recentM) { $rw += $byMonth[$m].wgt; $rd += $byMonth[$m].dlr }
+        if ($rw -gt 0) {
+            Write-Host ("    {0}: {1}개월, 최근 12개월 {2:N0}톤, 평균 {3:N0} USD/톤" -f $cfg.Id, $points.Count, ($rw / 1000), ($rd / $rw * 1000))
+        }
 
         [PSCustomObject]@{
             id          = $cfg.Id
@@ -2380,7 +2412,7 @@ if ($kcl) {
         currency    = "$"
         # KCl is the feedstock for both KOH (KCl brine electrolysis) and K2CO3 (KOH + CO2),
         # neither of which has a free price series - so this doubles as their cost indicator.
-        note        = "월간 국제가격(KOH, K2CO3 원료)"
+        note        = "월간 국제가격, 브라질 도착 기준(KOH, K2CO3 원료)"
         source      = $kcl.source
         points      = $kcl.points
     }
@@ -2594,6 +2626,34 @@ foreach ($cfg in @($config.ecosSeries)) {
     }
 }
 
+# 관세청 수입 단가(월 1회)도 같은 방식으로 'customs-<id>' 에 남겨 두고, 조회가 실패한 날은 그 기록으로 카드를 만든다(2026-11-24).
+# KCl 수입 단가가 더해져 관세청 카드가 3장이 되었다. 관세청이 한 번 응답하지 않는 날 3장이 한꺼번에 빠지면 다른 카드 하나만
+# 더 실패해도 '수집 실패 카드 3개 초과' 점검이 그 회차 배포를 막는다. 키가 없는 로컬 실행도 저장된 값으로 같은 화면을 본다.
+foreach ($u in @($customsSeries)) {
+    $kept = @{}
+    foreach ($p in @($u.points)) { $kept[[string]$p.label] = $p.value }
+    $historyStore["customs-$($u.id)"] = $kept
+}
+$customsArrived = @($customsSeries | ForEach-Object { [string]$_.id })
+foreach ($cfg in @($config.customsSeries)) {
+    if (-not $cfg -or $customsArrived -contains [string]$cfg.Id) { continue }
+    $cached = $historyStore["customs-$($cfg.Id)"]
+    if (-not $cached -or $cached.Keys.Count -lt 2) { continue }
+    $pts = @($cached.Keys | Sort-Object | ForEach-Object { [PSCustomObject]@{ label = $_; value = $cached[$_] } })
+    Write-Warning "관세청 $($cfg.Id): 오늘 조회 실패 - 저장해 둔 계열($($pts.Count)개월, 마지막 $($pts[-1].label))로 표시"
+    $customsSeries += [PSCustomObject]@{
+        id          = $cfg.Id
+        displayName = $cfg.DisplayName
+        unit        = $(if ($cfg.Unit) { $cfg.Unit } else { "USD/톤" })
+        note        = $cfg.Note
+        source      = "관세청 수출입무역통계 (오늘 응답이 없어 저장해 둔 값)"
+        currency    = "$"
+        points      = $pts
+        newsQuery   = $cfg.NewsQuery
+        cached      = $true
+    }
+}
+
 Write-HistoryStore -store $historyStore
 
 # 안전운임 유가연동 전망. 오피넷 키가 없는 로컬 실행에서도 저장소에 쌓인 경유 기록으로 계산된다.
@@ -2779,6 +2839,84 @@ Write-HistoryStore -store $historyStore
 foreach ($c in $priceCards) {
     $about = $config.cardAbout.($c.id)
     if ($about) { $c | Add-Member -NotePropertyName about -NotePropertyValue $about -Force }
+}
+
+# 공개 기준가 점선(config.refLines, 2026-11-24). 중국 KCl 수입 계약가처럼 해마다 한 번 공표되는 가격을 카드 그래프에
+# 계단 모양 점선으로 긋고, 최근 값이 그 기준과 얼마나 다른지 한 문장으로 적는다(카드와 [상세]가 같은 문장을 쓴다).
+# 메일에는 가격 카드 목록이 없어(2026-11-12 결정) 싣지 않는다. 사내 계약가는 여기 두지 않는다(공개 저장소). 그것은 메일 전용 $cardTargets 다.
+$refCi = [Globalization.CultureInfo]::InvariantCulture
+$refDow = @("일", "월", "화", "수", "목", "금", "토")
+foreach ($rl in @($config.refLines)) {
+    if (-not $rl -or -not $rl.label) { continue }
+    $refPeriods = @(foreach ($p in @($rl.periods)) {
+        if (-not $p -or -not $p.year -or -not $p.value) { continue }
+        $y = [int]$p.year
+        $jan1 = New-Object DateTime $y, 1, 1
+        $agreedStr = Format-DateOnly $p.agreed
+        $agreed = [DateTime]::MinValue
+        $hasAgreed = $agreedStr -and [DateTime]::TryParseExact($agreedStr, "yyyy-MM-dd", $refCi, 'None', [ref]$agreed)
+        # 전년 계약이 그해 말까지 가고 새 계약은 합의한 뒤부터 적용되므로, 선은 합의일과 1/1 가운데 늦은 날부터 긋는다.
+        $from = if ($hasAgreed -and $agreed -gt $jan1) { $agreed } else { $jan1 }
+        [PSCustomObject]@{
+            year   = $y
+            value  = [double]$p.value
+            agreed = $(if ($hasAgreed) { $agreedStr } else { "" })
+            from   = $from.ToString("yyyy-MM-dd")
+            to     = "$y-12-31"
+        }
+    })
+    $refPeriods = @($refPeriods | Sort-Object year)
+    if ($refPeriods.Count -eq 0) { continue }
+    foreach ($c in $priceCards) {
+        if (@($rl.ids | ForEach-Object { [string]$_ }) -notcontains [string]$c.id) { continue }
+        $pts = @($c.points)
+        if ($pts.Count -eq 0) { continue }   # 수집 실패 카드
+        $last = $pts[-1]
+        $ld = ConvertTo-LabelDate $last.label
+        if (-not $ld) { continue }
+        $isMonth = ([string]$last.label) -match '^\d{4}-\d{2}$'
+        $pEnd = if ($isMonth) { $ld.AddMonths(1).AddDays(-1) } else { $ld }
+        # 최근 값의 날(월간 계열은 그달)에 적용되던 계약. 그달 안에 새 계약이 시작됐으면 새 것을 쓴다.
+        $cur = @($refPeriods | Where-Object {
+            [DateTime]::ParseExact($_.from, "yyyy-MM-dd", $refCi) -le $pEnd -and [DateTime]::ParseExact($_.to, "yyyy-MM-dd", $refCi) -ge $ld
+        }) | Select-Object -Last 1
+        $cmpText = ""; $cmpPct = $null
+        if ($cur) {
+            $cmpPct = [math]::Round(([double]$last.value - $cur.value) / $cur.value * 100, 1)
+            $when = if ($isMonth) { "$($ld.Month)월 값은" } else { "$($ld.Month)/$($ld.Day) 값은" }
+            # 카드에서는 바로 위 점선 이름표(중국 수입 계약가)가 주어 노릇을 하므로 짧게 쓴다.
+            $base = "$($cur.year)년 계약가 `$$($cur.value.ToString('#,0.##', $refCi))"
+            $a = [math]::Abs($cmpPct)
+            $pw = if ($a -ge 10) { [math]::Round($a).ToString("0") } else { $a.ToString("0.0", $refCi) }
+            $cmpText = if ($a -lt 0.05) { "$when $base 수준입니다." }
+                       elseif ($cmpPct -gt 0) { "$when ${base}보다 $pw% 높습니다." }
+                       else { "$when ${base}보다 $pw% 낮습니다." }
+        }
+        # 그래프 끝보다 뒤에 시작하는 계약(예: 11월에 정해진 이듬해 계약)은 선으로 보이지 않으므로 문장으로 알린다.
+        $next = @($refPeriods | Where-Object { [DateTime]::ParseExact($_.from, "yyyy-MM-dd", $refCi) -gt $pEnd }) | Select-Object -Last 1
+        $nextText = ""
+        if ($next) {
+            $nv = $next.value.ToString('#,0.##', $refCi)
+            if ($next.agreed) {
+                $ad = [DateTime]::ParseExact($next.agreed, "yyyy-MM-dd", $refCi)
+                $adTxt = "$($ad.Month)/$($ad.Day)($($refDow[[int]$ad.DayOfWeek]))"
+                if ($ad.Year -ne $nowKst.Year) { $adTxt = "$($ad.ToString('yy'))년 $adTxt" }
+                $nextText = "${adTxt}에 정해진 $($next.year)년 계약가는 `$${nv}입니다."
+            } else {
+                $nextText = "$($next.year)년 계약가는 `$${nv}입니다."
+            }
+        }
+        $c | Add-Member -NotePropertyName refLine -NotePropertyValue ([PSCustomObject]@{
+            label    = [string]$rl.label
+            basis    = [string]$rl.basis
+            about    = [string]$rl.about
+            source   = [string]$rl.source
+            periods  = $refPeriods
+            cmpPct   = $cmpPct
+            cmpText  = $cmpText
+            nextText = $nextText
+        }) -Force
+    }
 }
 
 # Sort key rather than a fixed assembly order, because the freight cards are built in the page

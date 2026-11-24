@@ -12,6 +12,8 @@
   - `Update-WorkDashboard.ps1`: 운임·원자재·환율·날씨·일정·태풍·뉴스를 받아 `dashboard.html` 과 매일 메일을 만듭니다.
   - `template.html`: 화면. 자료는 `__…_JSON__` 자리표시자에 들어갑니다.
   - `config.json`: 지표, 지역, 일정, 내륙운송료(안전운임) 설정.
+    `refLines` 는 KCl 카드 두 장에 긋는 중국 KCl 수입 계약가 점선입니다. 해마다 새 계약이 공표되면(최근 두 해는 11월 하순)
+    `periods` 에 한 줄을 더합니다. 사내 계약가는 넣지 않습니다(공개 저장소, 메일 전용 `CARD_TARGETS_JSON` 시크릿을 씁니다).
   - `tools/safe-freight-verify/`: 내륙운송료 판정 검증 도구(고시 원문 대조).
   - `news-filter.ps1`, `mail_charts.py`: stockdashboard 와 똑같은 파일입니다. 고치면 두 저장소를 같이 고칩니다.
 

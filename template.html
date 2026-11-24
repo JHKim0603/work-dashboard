@@ -402,6 +402,12 @@
   .ch-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .ch-area { fill: var(--accent-wash); stroke: none; }
   .ch-dot { fill: var(--accent); }
+  /* 공개 기준가 점선(중국 KCl 수입 계약가, 2026-11-24). 상승·하락의 뜻이 없는 보라로 긋는다. */
+  .ch-ref { fill: none; stroke: var(--cmp-3); stroke-width: 1.6; stroke-dasharray: 5 4; stroke-linejoin: round; }
+  .ref-note { font-size: 12px; line-height: 1.55; color: var(--ink-secondary); margin-top: 6px; }
+  .ref-note .rl-head { color: var(--ink-muted); }
+  .rl-key { display: inline-block; width: 18px; height: 0; border-top: 2px dashed var(--cmp-3); vertical-align: middle; margin: 0 5px 2px 0; }
+  .ref-table th, .ref-table td { white-space: nowrap; }
   .ch-ylabel { font-size: 10.5px; fill: var(--ink-muted); text-anchor: end; font-variant-numeric: tabular-nums; }
   .ch-xlabel { font-size: 10.5px; fill: var(--ink-muted); font-variant-numeric: tabular-nums; }
   /* viewBox units: the card geometry renders at roughly 0.9x, so this lands near 10px. */
@@ -1559,8 +1565,9 @@ function yRange(vals) {
   return { lo, hi, span: (hi - lo) || 1 };
 }
 
-function chartGeometry(points, d = CH) {
-  const vals = points.map(p => p.value);
+// extra: 세로축 범위에 같이 넣을 값(기준가 점선). 점선이 그림 밖으로 나가지 않게 한다.
+function chartGeometry(points, d = CH, extra = []) {
+  const vals = points.map(p => p.value).concat(extra || []);
   const { lo, hi, span } = yRange(vals);
   return {
     lo, hi, span,
@@ -1591,9 +1598,54 @@ function eventMarks(points, evs, x, d, idxOffset = 0) {
   }).join("");
 }
 
-function priceChartSvg(points, chartId, d = CH, evs = null) {
-  if (CHART_DATA[chartId]) CHART_DATA[chartId].dims = d;
-  const g = chartGeometry(points, d);
+// 공개 기준가(config.refLines)의 적용 기간 중 차트 기간과 겹치는 부분. 날짜를 점 사이 위치(i0~i1)로 바꾼다.
+function refSpans(points, ref) {
+  if (!ref || !ref.periods || !ref.periods.length || points.length < 2) return [];
+  const ds = points.map(p => parseLabel(p.label));
+  const t0 = ds[0], t1 = ds[ds.length - 1];
+  if (!t0 || !t1) return [];
+  const fi = t => {
+    let i = 0;
+    while (i < ds.length - 2 && ds[i + 1] < t) i++;
+    return i + (t - ds[i]) / ((ds[i + 1] - ds[i]) || 1);
+  };
+  return ref.periods.map(p => {
+    const a = parseLabel(p.from), b = parseLabel(p.to);
+    if (!a || !b || b < t0 || a > t1) return null;
+    const s = a < t0 ? t0 : a, e = b > t1 ? t1 : b;
+    return { i0: fi(s), i1: fi(e), value: p.value, from: a, to: b };
+  }).filter(s => s && s.i1 > s.i0);
+}
+// 해마다 바뀌는 계약가를 계단 모양 점선으로. 앞 계약이 끝난 다음 날 새 계약이 시작되면 세로로 잇고, 계약이 없던 기간은 비운다.
+function refPath(spans, x, y) {
+  let dPath = "", prev = null;
+  for (const s of spans) {
+    const x0 = x(s.i0).toFixed(1), x1 = x(s.i1).toFixed(1), yy = y(s.value).toFixed(1);
+    const joined = prev && (s.from - prev.to) <= 1.5 * 86400000;
+    dPath += joined ? ` L${x0},${y(prev.value).toFixed(1)} L${x0},${yy} L${x1},${yy}` : ` M${x0},${yy} L${x1},${yy}`;
+    prev = s;
+  }
+  return dPath ? `<path d="${dPath.trim()}" class="ch-ref"/>` : "";
+}
+// 마우스를 올린 점의 날(월간 계열은 그달)에 적용되던 기준가.
+function refAt(ref, label) {
+  if (!ref || !ref.periods) return null;
+  const d = parseLabel(label);
+  if (!d) return null;
+  const end = label.length === 7 ? new Date(d.getFullYear(), d.getMonth() + 1, 0) : d;
+  let hit = null;
+  for (const p of ref.periods) {
+    const a = parseLabel(p.from), b = parseLabel(p.to);
+    if (a && b && a <= end && b >= d) hit = p;
+  }
+  return hit;
+}
+
+function priceChartSvg(points, chartId, d = CH, evs = null, ref = null) {
+  const spans = refSpans(points, ref);
+  const extra = spans.map(s => s.value);
+  if (CHART_DATA[chartId]) Object.assign(CHART_DATA[chartId], { dims: d, extra, ref });
+  const g = chartGeometry(points, d, extra);
   const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${g.x(i).toFixed(1)},${g.y(p.value).toFixed(1)}`).join(" ");
   const area = `${line} L${g.x(points.length - 1).toFixed(1)},${(d.H - d.PAD_B).toFixed(1)} L${g.x(0).toFixed(1)},${(d.H - d.PAD_B).toFixed(1)} Z`;
 
@@ -1616,6 +1668,7 @@ function priceChartSvg(points, chartId, d = CH, evs = null) {
   return `<svg viewBox="0 0 ${d.W} ${d.H}" class="price-chart${d.compact ? " compact" : ""}" data-chart="${chartId}" role="img" aria-label="가격 추이 차트">
     ${grid}
     <path d="${area}" class="ch-area"/>
+    ${refPath(spans, g.x, g.y)}
     <path d="${line}" class="ch-line"/>
     ${eventMarks(points, evs, g.x, d)}
     <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3.5" class="ch-dot"/>
@@ -1638,7 +1691,7 @@ function attachChartHover(wrap) {
 
   const { points, currency, unit, decimals } = pts;
   const dims = pts.dims || CH;
-  const g = chartGeometry(points, dims);
+  const g = chartGeometry(points, dims, pts.extra || []);
   const cursor = svg.querySelector(".ch-cursor");
   const marker = svg.querySelector(".ch-marker");
   const tip = wrap.querySelector(".ch-tip");
@@ -1660,7 +1713,9 @@ function attachChartHover(wrap) {
     cursor.setAttribute("x1", px); cursor.setAttribute("x2", px);
     marker.setAttribute("cx", px); marker.setAttribute("cy", py);
 
-    tip.innerHTML = `<span class="tv">${esc(currency)}${fmtNum(p.value, decimals)}</span> <span style="opacity:.7">${esc(unit)}</span><br><span class="td">${esc(p.label)}</span>`;
+    const rf = refAt(pts.ref, p.label);
+    tip.innerHTML = `<span class="tv">${esc(currency)}${fmtNum(p.value, decimals)}</span> <span style="opacity:.7">${esc(unit)}</span><br><span class="td">${esc(p.label)}</span>` +
+      (rf ? `<br><span class="td">${esc(pts.ref.label)} ${esc(currency)}${fmtNum(rf.value)}</span>` : "");
     // clamp so the tooltip never runs off either edge of the card
     const leftPx = Math.min(Math.max(px / scale, 42), rect.width - 42);
     tip.style.left = leftPx + "px";
@@ -2044,7 +2099,7 @@ function openDetail(id) {
     const initDays = spanDays > 400 ? 366 : 0;
     const shown = sliceDays(pts, initDays);
     CHART_DATA[chartId] = { points: shown, currency: c.currency || "", unit: c.unit || "", decimals: 2 };
-    rangeInit = { chartId, pts, evs: evsFor(id) };
+    rangeInit = { chartId, pts, evs: evsFor(id), ref: c.refLine || null };
     const rangeHtml = ranges.length ? `<div class="range-btns" role="group" aria-label="차트 기간">${ranges.map(r =>
       `<button type="button" data-days="${r.days}" class="${r.days === initDays ? "on" : ""}">${r.label}</button>`).join("")}</div>` : "";
     body += `${subLine(c)}
@@ -2055,10 +2110,12 @@ function openDetail(id) {
       </div>
       ${rangeHtml}
       ${c.krwPerUnit ? `<div class="price-krw">원화 환산 약 ${fmtNum(c.krwPerUnit)}원/톤 <span>(1위안 ${fmtNum(c.krwRate, 1)}원 기준)</span></div>` : ""}
-      <div class="chart-wrap" id="wrap-${chartId}">${priceChartSvg(shown, chartId, CH, evsFor(id))}<div class="ch-tip"></div></div>
+      <div class="chart-wrap" id="wrap-${chartId}">${priceChartSvg(shown, chartId, CH, evsFor(id), c.refLine)}<div class="ch-tip"></div></div>
+      ${c.refLine ? `<div class="ref-note"><div class="rl-head"><span class="rl-key" aria-hidden="true"></span>${esc(c.refLine.label)}${c.refLine.basis ? `(${esc(c.refLine.basis)})` : ""}</div></div>` : ""}
       <div class="m-stats">${statWindowsFor(pts).map(w => statBox(w.label, changeOver(pts, w.days))).join("")}</div>
       ${c.trend ? `<div class="m-section-title">지금 상태</div><div class="m-read">${trendExplain(c.trend)}</div>`
         : `<div class="m-section-title">추이 요약</div><div class="m-read">${trendSentence(c)}</div>`}
+      ${refSectionHtml(c.refLine, c.currency)}
       ${forecastSection(c)}
       ${seasonalSection(c)}
       ${kcciLaneSection(c.kcciLanes)}`;
@@ -2161,12 +2218,12 @@ function openDetail(id) {
   if (c.isSafeFreight) wireSfWhatIf(c);
   document.querySelectorAll("#modalBody .chart-wrap").forEach(attachChartHover);
   if (rangeInit) {
-    const { chartId, pts: all, evs } = rangeInit;
+    const { chartId, pts: all, evs, ref } = rangeInit;
     document.querySelectorAll("#modalBody .range-btns button").forEach(btn => btn.addEventListener("click", () => {
       const sub = sliceDays(all, Number(btn.dataset.days));
       CHART_DATA[chartId].points = sub;
       const wrap = document.getElementById("wrap-" + chartId);
-      wrap.innerHTML = `${priceChartSvg(sub, chartId, CH, evs)}<div class="ch-tip"></div>`;
+      wrap.innerHTML = `${priceChartSvg(sub, chartId, CH, evs, ref)}<div class="ch-tip"></div>`;
       attachChartHover(wrap);
       btn.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === btn));
     }));
@@ -2204,6 +2261,35 @@ function staleTag(label) {
   if (days < 45) return "";
   const months = Math.floor(days / 30);
   return ` <span class="stale" title="최신 발표가 ${months}개월 전입니다">${months}개월 전 발표</span>`;
+}
+
+// 카드 그래프 아래: 점선이 무엇인지와 최근 값의 비교 문장(생성 스크립트가 만든 문장, 메일과 같음).
+function refNoteHtml(r) {
+  if (!r || !r.periods || !r.periods.length) return "";
+  const txt = [r.cmpText, r.nextText].filter(Boolean).map(esc).join(" ");
+  return `<div class="ref-note"><div class="rl-head"><span class="rl-key" aria-hidden="true"></span>${esc(r.label)}${r.basis ? `(${esc(r.basis)})` : ""}</div>${txt ? `<div>${txt}</div>` : ""}</div>`;
+}
+// [상세]의 기준가 구역: 비교 문장, 연도별 표, 설명과 출처.
+function refSectionHtml(r, cur) {
+  if (!r || !r.periods || !r.periods.length) return "";
+  const dow = ["일", "월", "화", "수", "목", "금", "토"];
+  const md = d => `${d.getMonth() + 1}/${d.getDate()}`;
+  const today = new Date();
+  // 점선 기간(합의일 또는 1/1부터 그해 말까지)은 아래 설명에 규칙으로 적고, 표에는 아직 적용 전인 해만 '(예정)'으로 표시한다.
+  // 기간 칸을 따로 두면 휴대폰 상세 창(약 290px)보다 표가 넓어졌다.
+  const rows = r.periods.slice().reverse().map(p => {
+    const a = parseLabel(p.from), ag = p.agreed ? parseLabel(p.agreed) : null;
+    const agTxt = ag ? `${String(ag.getFullYear()).slice(2)}년 ${md(ag)}(${dow[ag.getDay()]})` : "";
+    return `<tr><td>${p.year}년${a && a > today ? "(예정)" : ""}</td><td>${esc(cur || "")}${fmtNum(p.value)}</td><td>${agTxt}</td></tr>`;
+  }).join("");
+  const txt = [r.cmpText, r.nextText].filter(Boolean).map(esc).join(" ");
+  return `<div class="m-section-title">${esc(r.label)}</div>
+    ${txt ? `<div class="m-read">${txt}</div>` : ""}
+    <table class="sf-table ref-table">
+      <tr><th>적용 연도</th><th>톤당 계약가${r.basis ? `(${esc(r.basis)})` : ""}</th><th>합의일</th></tr>
+      ${rows}
+    </table>
+    <div class="m-note">${esc(r.about || "").replace(/\n/g, "<br>")}${r.source ? `<br>출처: ${esc(r.source)}` : ""}</div>`;
 }
 
 function priceCardHtml(c, idx) {
@@ -2253,9 +2339,10 @@ function priceCardHtml(c, idx) {
       ${trendLine(c.trend)}
       ${fcLine(c.forecast, c.currency)}
       <div class="chart-wrap">
-        ${priceChartSvg(cardPts, chartId, CH_CARD, evsFor(c.id))}
+        ${priceChartSvg(cardPts, chartId, CH_CARD, evsFor(c.id), c.refLine)}
         <div class="ch-tip"></div>
       </div>
+      ${refNoteHtml(c.refLine)}
       <div class="card-src">출처: ${esc(c.source || "")}</div>
     </div>`;
 }
