@@ -47,6 +47,9 @@
     --up-1: rgba(179,34,31,0.09); --up-2: rgba(179,34,31,0.20);
     --down-1: rgba(0,99,0,0.08); --down-2: rgba(0,99,0,0.18);
     --cmp-1: #2a78d6; --cmp-2: #eb6834; --cmp-3: #6250d6; --cmp-4: #eda100; --cmp-5: #e87ba4;
+    /* 가격 구역 색(2026-11-24): 운임·물류비, 부자재, 환율·국제유가, 원재료·전력 순. 이름표 글자는 바탕과 대비가 큰 쪽(흰색 또는 거의 검정). */
+    --sec-1: #2a78d6; --sec-2: #eda100; --sec-3: #6250d6; --sec-4: #e87ba4;
+    --on-sec-1: #ffffff; --on-sec-2: #0b0b0b; --on-sec-3: #ffffff; --on-sec-4: #0b0b0b;
   }
   @media (prefers-color-scheme: dark) {
     .viz-root {
@@ -70,6 +73,8 @@
       --up-1: rgba(240,133,133,0.13); --up-2: rgba(240,133,133,0.28);
       --down-1: rgba(46,196,46,0.11); --down-2: rgba(46,196,46,0.24);
     --cmp-1: #3987e5; --cmp-2: #d95926; --cmp-3: #9085e9; --cmp-4: #c98500; --cmp-5: #d55181;
+    --sec-1: #3987e5; --sec-2: #c98500; --sec-3: #9085e9; --sec-4: #d55181;
+    --on-sec-1: #0b0b0b; --on-sec-2: #0b0b0b; --on-sec-3: #0b0b0b; --on-sec-4: #0b0b0b;
     }
   }
   :root[data-theme="dark"] .viz-root {
@@ -83,6 +88,8 @@
     --up-1: rgba(240,133,133,0.13); --up-2: rgba(240,133,133,0.28);
     --down-1: rgba(46,196,46,0.11); --down-2: rgba(46,196,46,0.24);
     --cmp-1: #3987e5; --cmp-2: #d95926; --cmp-3: #9085e9; --cmp-4: #c98500; --cmp-5: #d55181;
+    --sec-1: #3987e5; --sec-2: #c98500; --sec-3: #9085e9; --sec-4: #d55181;
+    --on-sec-1: #0b0b0b; --on-sec-2: #0b0b0b; --on-sec-3: #0b0b0b; --on-sec-4: #0b0b0b;
   }
   :root[data-theme="light"] .viz-root {
     color-scheme: light;
@@ -95,6 +102,9 @@
     --up-1: rgba(179,34,31,0.09); --up-2: rgba(179,34,31,0.20);
     --down-1: rgba(0,99,0,0.08); --down-2: rgba(0,99,0,0.18);
     --cmp-1: #2a78d6; --cmp-2: #eb6834; --cmp-3: #6250d6; --cmp-4: #eda100; --cmp-5: #e87ba4;
+    /* 가격 구역 색(2026-11-24): 운임·물류비, 부자재, 환율·국제유가, 원재료·전력 순. 이름표 글자는 바탕과 대비가 큰 쪽(흰색 또는 거의 검정). */
+    --sec-1: #2a78d6; --sec-2: #eda100; --sec-3: #6250d6; --sec-4: #e87ba4;
+    --on-sec-1: #ffffff; --on-sec-2: #0b0b0b; --on-sec-3: #ffffff; --on-sec-4: #0b0b0b;
   }
 
   .viz-root {
@@ -341,6 +351,9 @@
   .group-count { font-weight: 500; color: var(--ink-muted); margin-left: 6px; text-transform: none; letter-spacing: 0; }
   .price-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--ink-muted); margin: -6px 0 8px; }
   .card-src { font-size: 12px; color: var(--ink-muted); margin-top: 6px; line-height: 1.5; }
+  /* 한 줄의 카드 높이는 같으므로 출처 줄을 카드 바닥에 붙여 줄마다 끝선을 맞춘다. */
+  #priceGroups .grid > .card:not(.span2) { display: flex; flex-direction: column; }
+  #priceGroups .grid > .card:not(.span2) > .card-src { margin-top: auto; padding-top: 6px; }
   .price-now { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 2px 0 8px; }
   .price-now .pv { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .price-now .pu { font-size: 12.5px; color: var(--ink-muted); margin-left: -4px; }
@@ -399,14 +412,30 @@
   .price-krw span { color: var(--ink-muted); }
   .price-chart { width: 100%; height: auto; display: block; overflow: visible; touch-action: none; }
   .ch-grid { stroke: var(--gridline); stroke-width: 1; }
-  .ch-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  /* 가격 그래프(2026-11-24, live3x 참고): 선과 면은 구역 색(--series)으로 그리고, 면은 위에서 아래로 옅어진다.
+     세로축 숫자는 오른쪽에 두고, 맨 끝 값은 오른쪽 축에 색 이름표로 붙인다. */
+  .ch-line { fill: none; stroke: var(--series, var(--accent)); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .ch-area { fill: var(--accent-wash); stroke: none; }
-  .ch-dot { fill: var(--accent); }
-  /* 공개 기준가 점선(중국 KCl 수입 계약가, 2026-11-24). 상승·하락의 뜻이 없는 보라로 긋는다. */
-  .ch-ref { fill: none; stroke: var(--cmp-3); stroke-width: 1.6; stroke-dasharray: 5 4; stroke-linejoin: round; }
+  .ch-gs0 { stop-color: var(--series, var(--accent)); stop-opacity: 0.24; }
+  .ch-gs1 { stop-color: var(--series, var(--accent)); stop-opacity: 0; }
+  .ch-dot { fill: var(--series, var(--accent)); stroke: var(--surface-raised); stroke-width: 2; }
+  .ch-tag rect { fill: var(--series, var(--accent)); }
+  .ch-tag text { fill: var(--on-series, #ffffff); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; dominant-baseline: central; }
+  .price-chart.compact .ch-tag text { font-size: 12.5px; }
+  .ch-yr { font-size: 10.5px; fill: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .price-chart.compact .ch-yr { font-size: 12.5px; }
+  /* 구역 머리줄: 구역 이름과 색 표시, 지표 수와 갱신 주기, 구역 전체 그래프 기간 */
+  .grp-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 12px; }
+  .grp-head .section-title { margin: 0; }
+  .grp-name { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .grp-key { width: 10px; height: 10px; border-radius: 3px; background: var(--series, var(--accent)); flex: none; }
+  .grp-meta { font-size: 12px; color: var(--ink-muted); }
+  .grp-head .range-btns { margin: 0; }
+  /* 공개 기준가 점선(중국 KCl 수입 계약가). 구역 색과 겹치지 않게 회색 점선으로 긋는다. */
+  .ch-ref { fill: none; stroke: var(--ink-secondary); stroke-width: 1.5; stroke-dasharray: 5 4; stroke-linejoin: round; }
   .ref-note { font-size: 12px; line-height: 1.55; color: var(--ink-secondary); margin-top: 6px; }
   .ref-note .rl-head { color: var(--ink-muted); }
-  .rl-key { display: inline-block; width: 18px; height: 0; border-top: 2px dashed var(--cmp-3); vertical-align: middle; margin: 0 5px 2px 0; }
+  .rl-key { display: inline-block; width: 18px; height: 0; border-top: 2px dashed var(--ink-secondary); vertical-align: middle; margin: 0 5px 2px 0; }
   .ref-table th, .ref-table td { white-space: nowrap; }
   .ch-ylabel { font-size: 10.5px; fill: var(--ink-muted); text-anchor: end; font-variant-numeric: tabular-nums; }
   .ch-xlabel { font-size: 10.5px; fill: var(--ink-muted); font-variant-numeric: tabular-nums; }
@@ -415,7 +444,7 @@
   /* hover readout: a vertical rule + marker that follow the nearest data point */
   .ch-hitbox { fill: transparent; cursor: crosshair; }
   .ch-cursor { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; pointer-events: none; }
-  .ch-marker { fill: var(--surface-raised); stroke: var(--accent); stroke-width: 2.5; opacity: 0; pointer-events: none; }
+  .ch-marker { fill: var(--surface-raised); stroke: var(--series, var(--accent)); stroke-width: 2.5; opacity: 0; pointer-events: none; }
   .chart-wrap.active .ch-cursor, .chart-wrap.active .ch-marker { opacity: 1; }
   .ch-tip {
     position: absolute; pointer-events: none; opacity: 0; transform: translate(-50%, -100%);
@@ -1551,8 +1580,36 @@ if (!TYPHOON) {
 // geometry served both the ~300px grid cards and the ~700px popup, which left the card axes at
 // about 5px on screen - unreadable. Each surface now gets a viewBox close to its real width, so
 // the same label size lands near 10-12px in both.
-const CH = { W: 560, H: 150, PAD_L: 46, PAD_R: 12, PAD_T: 12, PAD_B: 24 };
-const CH_CARD = { W: 320, H: 100, PAD_L: 42, PAD_R: 8, PAD_T: 8, PAD_B: 20, compact: true };
+// 2026-11-24: 세로축 숫자를 오른쪽으로 옮겼다(PAD_R 은 priceChartSvg 가 글자 폭을 재서 다시 정한다). 카드 그래프는 조금 키웠다.
+const CH = { W: 560, H: 160, PAD_L: 8, PAD_R: 48, PAD_T: 12, PAD_B: 24 };
+const CH_CARD = { W: 320, H: 118, PAD_L: 4, PAD_R: 48, PAD_T: 10, PAD_B: 20, compact: true };
+// 가격 구역 머리줄의 그래프 기간 단추. 카드 그래프는 처음에 2년을 그린다(예전과 같음).
+const GROUP_RANGES = [{ label: "6개월", days: 183 }, { label: "1년", days: 366 }, { label: "2년", days: 731 }, { label: "전체", days: 0 }];
+// 상세 창이 좁으면(휴대폰) 560 폭 그림이 반으로 줄어 글자가 6px 쯤이 됐다. 창 폭에 맞춘 그림을 쓴다.
+function modalDims() {
+  const w = (document.getElementById("modalBody") || {}).clientWidth || 0;
+  return (w && w < 520) ? Object.assign({}, CH, { W: Math.max(260, Math.round(w)), H: 190, PAD_T: 10, PAD_B: 22, compact: true }) : CH;
+}
+// 왼쪽 축을 쓰는 상세 창 그림(향후 예상, 평년 비교). 휴대폰에서는 창 폭에 맞추고 글자를 카드 크기로 키운다.
+const CH_L = { W: 560, H: 150, PAD_L: 46, PAD_R: 12, PAD_T: 12, PAD_B: 24 };
+function modalDimsL() {
+  const w = (document.getElementById("modalBody") || {}).clientWidth || 0;
+  return (w && w < 520) ? Object.assign({}, CH_L, { W: Math.max(260, Math.round(w)), H: 180, PAD_L: 44, PAD_R: 10, compact: true }) : CH_L;
+}
+// 글자 폭을 재서 축 자리를 잡는다(그림 밖이나 이름표와 겹치지 않게).
+const _measureCtx = document.createElement("canvas").getContext("2d");
+function textW(s, px, weight = 400) {
+  _measureCtx.font = `${weight} ${px}px system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif`;
+  return _measureCtx.measureText(String(s)).width;
+}
+// 가로축 날짜: 1년 가까이 되는 기간은 '24년 11월', 짧은 기간은 '11/24'. 연간 계열은 연도 그대로.
+function tickLabel(lbl, spanDays) {
+  if (/^\d{4}$/.test(String(lbl))) return String(lbl);
+  const d = parseLabel(String(lbl));
+  if (!d) return String(lbl);
+  if (String(lbl).length === 7 || spanDays > 300) return `${String(d.getFullYear()).slice(2)}년 ${d.getMonth() + 1}월`;
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
 
 // 거의 안 움직이는 지표를 그 폭에 딱 맞춰 그리면 작은 흔들림이 절벽처럼 보인다(국내 경유 6개월 범위가 1,841~1,845원,
 // 0.2%인데 추석 연휴 2.5원 하락이 바닥까지 꺼지는 선으로 그려졌다. 판정은 '보합'인데 그래프는 요동쳤다).
@@ -1641,37 +1698,57 @@ function refAt(ref, label) {
   return hit;
 }
 
-function priceChartSvg(points, chartId, d = CH, evs = null, ref = null) {
+// 2026-11-24(live3x 참고): 세로축 숫자는 오른쪽, 맨 끝 값은 오른쪽 축에 구역 색 이름표, 면은 위에서 아래로 옅어지는 색.
+// 이름표와 같은 높이의 눈금 숫자는 숨긴다(겹침 방지). 오른쪽 여백은 눈금 숫자와 이름표 글자 폭을 재서 정한다.
+function priceChartSvg(points, chartId, d0 = CH, evs = null, ref = null) {
   const spans = refSpans(points, ref);
   const extra = spans.map(s => s.value);
+  const cd = CHART_DATA[chartId] || {};
+  const fs = d0.compact ? 12.5 : 11;
+  const g0 = chartGeometry(points, d0, extra);
+  // Three gridlines on a card - four labels stacked in 60px of plot collide at a readable size.
+  const fracs = d0.compact ? [0, 0.5, 1] : [0, 0.33, 0.66, 1];
+  const ticks = fracs.map(f => g0.lo + f * g0.span);
+  const last = points[points.length - 1];
+  const tagTxt = `${cd.currency || ""}${fmtNum(last.value, cd.decimals === undefined ? 2 : cd.decimals)}`;
+  const tagW = Math.ceil(textW(tagTxt, fs, 700) + 10);
+  const tickW = Math.max(...ticks.map(v => textW(axisNum(v, g0.span), fs)));
+  const d = Object.assign({}, d0, { PAD_R: Math.ceil(Math.max(tickW + 9, tagW + 7)) });
   if (CHART_DATA[chartId]) Object.assign(CHART_DATA[chartId], { dims: d, extra, ref });
   const g = chartGeometry(points, d, extra);
+  const axisX = d.W - d.PAD_R, baseY = d.H - d.PAD_B;
   const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${g.x(i).toFixed(1)},${g.y(p.value).toFixed(1)}`).join(" ");
-  const area = `${line} L${g.x(points.length - 1).toFixed(1)},${(d.H - d.PAD_B).toFixed(1)} L${g.x(0).toFixed(1)},${(d.H - d.PAD_B).toFixed(1)} Z`;
+  const area = `${line} L${g.x(points.length - 1).toFixed(1)},${baseY.toFixed(1)} L${g.x(0).toFixed(1)},${baseY.toFixed(1)} Z`;
+  const gid = "cg-" + String(chartId).replace(/[^\w-]/g, "");
 
-  // Three gridlines on a card - four labels stacked in 60px of plot collide at a readable size.
-  const fracs = d.compact ? [0, 0.5, 1] : [0, 0.33, 0.66, 1];
-  const grid = fracs.map(f => {
-    const v = g.lo + f * g.span;
+  const lastX = g.x(points.length - 1), lastY = g.y(last.value);
+  const tagH = Math.round(fs + 7);
+  const tagY = Math.min(Math.max(lastY, d.PAD_T + tagH / 2), baseY - tagH / 2);
+  const grid = ticks.map(v => {
     const yy = g.y(v);
-    return `<line x1="${d.PAD_L}" y1="${yy.toFixed(1)}" x2="${d.W - d.PAD_R}" y2="${yy.toFixed(1)}" class="ch-grid"/>
-            <text x="${d.PAD_L - 5}" y="${(yy + 3.5).toFixed(1)}" class="ch-ylabel">${axisNum(v, g.span)}</text>`;
+    const hide = Math.abs(yy - tagY) < tagH * 0.95;
+    return `<line x1="${d.PAD_L}" y1="${yy.toFixed(1)}" x2="${axisX}" y2="${yy.toFixed(1)}" class="ch-grid"/>` +
+      (hide ? "" : `<text x="${axisX + 6}" y="${yy.toFixed(1)}" class="ch-yr" dominant-baseline="central">${axisNum(v, g.span)}</text>`);
   }).join("");
+  const tag = `<g class="ch-tag"><rect x="${axisX + 5}" y="${(tagY - tagH / 2).toFixed(1)}" width="${tagW}" height="${tagH}" rx="4"/>` +
+    `<text x="${axisX + 10}" y="${tagY.toFixed(1)}">${esc(tagTxt)}</text></g>`;
 
+  const d0t = parseLabel(String(points[0].label)), d1t = parseLabel(String(last.label));
+  const spanDays = d0t && d1t ? (d1t - d0t) / 86400000 : 0;
   const tickIdx = [0, Math.floor((points.length - 1) / 2), points.length - 1];
   const xlabels = tickIdx.map(i =>
-    `<text x="${g.x(i).toFixed(1)}" y="${d.H - 5}" class="ch-xlabel" text-anchor="${i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${esc(points[i].label)}</text>`
+    `<text x="${g.x(i).toFixed(1)}" y="${d.H - 5}" class="ch-xlabel" text-anchor="${i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${esc(tickLabel(points[i].label, spanDays))}</text>`
   ).join("");
 
-  const lastX = g.x(points.length - 1), lastY = g.y(points[points.length - 1].value);
-
   return `<svg viewBox="0 0 ${d.W} ${d.H}" class="price-chart${d.compact ? " compact" : ""}" data-chart="${chartId}" role="img" aria-label="가격 추이 차트">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="ch-gs0"/><stop offset="1" class="ch-gs1"/></linearGradient></defs>
     ${grid}
-    <path d="${area}" class="ch-area"/>
+    <path d="${area}" class="ch-area" style="fill:url(#${gid})"/>
     ${refPath(spans, g.x, g.y)}
     <path d="${line}" class="ch-line"/>
     ${eventMarks(points, evs, g.x, d)}
     <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3.5" class="ch-dot"/>
+    ${tag}
     ${xlabels}
     <line class="ch-cursor" y1="${d.PAD_T}" y2="${d.H - d.PAD_B}" x1="0" x2="0"/>
     <circle class="ch-marker" r="4.5" cx="0" cy="0"/>
@@ -1781,7 +1858,7 @@ function fcLine(fc, cur) {
 }
 // 상세 화면용 차트: 최근 기록 + 앞으로의 예상 범위(부채꼴)와 중간값(점선).
 function forecastChartSvg(points, fc, evs = null) {
-  const d = CH;
+  const d = modalDimsL();
   const keep = fc.unit === "month" ? 24 : fc.unit === "day" ? 90 : 52;
   const hist = points.slice(-Math.min(points.length, keep));
   const hs = fc.horizons.slice().sort((a, b) => a.steps - b.steps);
@@ -1816,7 +1893,7 @@ function forecastChartSvg(points, fc, evs = null) {
     const xx = x(n + (t - lastD) / (endD - lastD) * hs[hs.length - 1].steps).toFixed(1);
     return `<g class="ch-ev"><line x1="${xx}" x2="${xx}" y1="${d.PAD_T}" y2="${d.H - d.PAD_B}"/><text x="${(+xx + 3).toFixed(1)}" y="${d.PAD_T + 10}">${esc(ev.label)}</text><title>${esc(ev.date)} ${esc(ev.label)}</title></g>`;
   }).join("") + eventMarks(hist, evs, x, d);
-  return `<svg viewBox="0 0 ${d.W} ${d.H}" class="price-chart" role="img" aria-label="최근 추이와 앞으로의 예상 범위">
+  return `<svg viewBox="0 0 ${d.W} ${d.H}" class="price-chart${d.compact ? " compact" : ""}" role="img" aria-label="최근 추이와 앞으로의 예상 범위">
     ${grid}
     <path d="${fan}" class="fc-fan"/>
     <line x1="${x(n).toFixed(1)}" y1="${d.PAD_T}" x2="${x(n).toFixed(1)}" y2="${d.H - d.PAD_B}" class="fc-now"/>
@@ -1972,7 +2049,7 @@ function seasonalSection(c) {
   }
   const all = [].concat(...years.map(yv => ser[yv].filter(v => v !== null)));
   const vmin = Math.min(...all), vmax = Math.max(...all), span = (vmax - vmin) || 1;
-  const d = CH;
+  const d = modalDimsL();
   const x = b => d.PAD_L + b / (NB - 1) * (d.W - d.PAD_L - d.PAD_R);
   const y = v => d.PAD_T + (1 - (v - vmin) / span) * (d.H - d.PAD_T - d.PAD_B);
   const pathOf = arr => {
@@ -2013,7 +2090,7 @@ function seasonalSection(c) {
   }
   const rangeTxt = `${past[0]}~${past[past.length - 1]}년`;
   return `<div class="m-section-title">평년 비교 (같은 시기 ${esc(rangeTxt)})</div>
-    <div class="chart-wrap"><svg viewBox="0 0 ${d.W} ${d.H}" class="price-chart" role="img" aria-label="같은 시기 과거 범위와 올해 비교">
+    <div class="chart-wrap"><svg viewBox="0 0 ${d.W} ${d.H}" class="price-chart${d.compact ? " compact" : ""}" role="img" aria-label="같은 시기 과거 범위와 올해 비교">
       ${grid}
       <path d="${band}" class="ss-band"/>
       ${byYear[py] ? `<path d="${pathOf(ser[py])}" class="ss-prev"/>` : ""}
@@ -2067,6 +2144,14 @@ function openDetail(id) {
   const c = CARD_BY_ID[id];
   if (!c) return;
   document.getElementById("modalTitle").textContent = c.displayName;
+  // 창을 먼저 열어 폭을 잰다(휴대폰에서는 그림을 창 폭에 맞춘다). 그림 색은 카드가 속한 구역 색을 따른다.
+  const mBody = document.getElementById("modalBody");
+  document.getElementById("modalBackdrop").classList.add("open");
+  const sortKey = typeof c.sort === "number" ? c.sort : (CARD_SORTS && typeof CARD_SORTS[id] === "number" ? CARD_SORTS[id] : 900);
+  const gIdx = groupOf(sortKey), secN = gIdx >= 0 && gIdx < 4 ? gIdx + 1 : 1;
+  mBody.style.setProperty("--series", `var(--sec-${secN})`);
+  mBody.style.setProperty("--on-series", `var(--on-sec-${secN})`);
+  const MD = modalDims();
 
   const pts = c.points || [];
   let body = "";
@@ -2110,7 +2195,7 @@ function openDetail(id) {
       </div>
       ${rangeHtml}
       ${c.krwPerUnit ? `<div class="price-krw">원화 환산 약 ${fmtNum(c.krwPerUnit)}원/톤 <span>(1위안 ${fmtNum(c.krwRate, 1)}원 기준)</span></div>` : ""}
-      <div class="chart-wrap" id="wrap-${chartId}">${priceChartSvg(shown, chartId, CH, evsFor(id), c.refLine)}<div class="ch-tip"></div></div>
+      <div class="chart-wrap" id="wrap-${chartId}">${priceChartSvg(shown, chartId, MD, evsFor(id), c.refLine)}<div class="ch-tip"></div></div>
       ${c.refLine ? `<div class="ref-note"><div class="rl-head"><span class="rl-key" aria-hidden="true"></span>${esc(c.refLine.label)}${c.refLine.basis ? `(${esc(c.refLine.basis)})` : ""}</div></div>` : ""}
       <div class="m-stats">${statWindowsFor(pts).map(w => statBox(w.label, changeOver(pts, w.days))).join("")}</div>
       ${c.trend ? `<div class="m-section-title">지금 상태</div><div class="m-read">${trendExplain(c.trend)}</div>`
@@ -2199,7 +2284,7 @@ function openDetail(id) {
           const chartId = "modal-lane-" + l.id;
           CHART_DATA[chartId] = { points: l.points, currency: "", unit: "pt", decimals: 1 };
           return `<div class="m-sub" style="margin-top:12px;"><b>${esc(l.displayName)}</b></div>
-            <div class="chart-wrap">${priceChartSvg(l.points, chartId)}<div class="ch-tip"></div></div>`;
+            <div class="chart-wrap">${priceChartSvg(l.points, chartId, MD)}<div class="ch-tip"></div></div>`;
         }).join("");
     } else {
       body += `<div class="m-note">과거 자료는 유료 구독으로만 제공되어 매주 받은 값을 쌓고 있습니다. 3주 이상 쌓이면 항로별 차트를 표시합니다.</div>`;
@@ -2223,7 +2308,7 @@ function openDetail(id) {
       const sub = sliceDays(all, Number(btn.dataset.days));
       CHART_DATA[chartId].points = sub;
       const wrap = document.getElementById("wrap-" + chartId);
-      wrap.innerHTML = `${priceChartSvg(sub, chartId, CH, evs, ref)}<div class="ch-tip"></div>`;
+      wrap.innerHTML = `${priceChartSvg(sub, chartId, MD, evs, ref)}<div class="ch-tip"></div>`;
       attachChartHover(wrap);
       btn.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === btn));
     }));
@@ -2338,7 +2423,7 @@ function priceCardHtml(c, idx) {
       ${c.krwPerUnit ? `<div class="price-krw">원화 환산 약 ${fmtNum(c.krwPerUnit)}원/톤 <span>(1위안 ${fmtNum(c.krwRate, 1)}원)</span></div>` : ""}
       ${trendLine(c.trend)}
       ${fcLine(c.forecast, c.currency)}
-      <div class="chart-wrap">
+      <div class="chart-wrap" data-range-card="${esc(c.id)}" data-range-chart="${chartId}">
         ${priceChartSvg(cardPts, chartId, CH_CARD, evsFor(c.id), c.refLine)}
         <div class="ch-tip"></div>
       </div>
@@ -2383,7 +2468,7 @@ if (SCFI) {
       ${trendLine(SCFI.trend)}
       ${fcLine(SCFI.forecast, "")}
       ${hasChart
-        ? `<div class="chart-wrap">${priceChartSvg(pts, chartId, CH_CARD)}<div class="ch-tip"></div></div>`
+        ? `<div class="chart-wrap" data-range-card="scfi" data-range-chart="${chartId}">${priceChartSvg(pts, chartId, CH_CARD)}<div class="ch-tip"></div></div>`
         : `<div class="prev-row"><span>전주 (${esc(SCFI.lastDate)})</span><span>${SCFI.previous.toLocaleString()}</span></div>`}
       <div class="card-src">출처: ${esc(SCFI.source || "")} (주간 발표${hasChart ? "" : `, ${pts.length}주째 수집 중`})</div>
     </div>`);
@@ -2484,8 +2569,9 @@ function sfPriceSvg(c) {
   if (pts.length < 2) return "";
   // 휴대폰에서는 그림이 통째로 줄어 글자가 6px 쯤이 됐다(2026-11-15). 좁은 화면은 그림 폭을 줄이고 이름표를 짧게 한다.
   const narrow = window.innerWidth < 640;
-  const W = narrow ? 360 : 640, H = narrow ? 150 : 132, PL = narrow ? 30 : 46, PR = narrow ? 86 : 118, PT = 10, PB = 18;
-  const fs = narrow ? ' style="font-size:12.5px"' : "";
+  // 2026-11-24: 휴대폰 그림 폭을 실제 카드 폭(약 300px)에 가깝게 줄이고, 넓은 화면도 이름표를 12.5px 로 키웠다(둘 다 11px 아래였음).
+  const W = narrow ? 300 : 640, H = narrow ? 150 : 132, PL = narrow ? 30 : 46, PR = narrow ? 86 : 124, PT = 10, PB = 18;
+  const fs = ' style="font-size:12.5px"';
   const vals = pts.map(p => p.v).concat([t.up, t.down]);
   let lo = Math.min(...vals), hi = Math.max(...vals);
   const pad = (hi - lo) * 0.1 || 5; lo -= pad; hi += pad;
@@ -2980,14 +3066,74 @@ if (!HAS_KCL) {
   groups.forEach(g => g.cards.sort((a, b) => isWide(a) - isWide(b)));
   const titleOf = gi => (CARD_GROUPS && CARD_GROUPS[gi] && CARD_GROUPS[gi].title)
     || ((CARD_GROUPS && CARD_GROUPS.length) ? "기타 지표" : "원자재·물류 가격");
-  priceGroupsEl.innerHTML = groups.map(g => `
-    <div id="grp-${g.gi}">
-      <div class="section-title">${esc(titleOf(g.gi))}</div>
+  // 구역 머리줄(2026-11-24, live3x 참고): 구역 색 표시, 지표 수와 갱신 주기, 구역 전체 그래프 기간 단추.
+  const cadenceOf = c => {
+    const pts = (c && c.points) || [];
+    if (pts.length < 2) return "";
+    const lb = String(pts[pts.length - 1].label);
+    if (/^\d{4}$/.test(lb)) return "매년";
+    if (lb.length === 7) return "매월";
+    // 카드에 적힌 비교 기준(예: 11/23 대비)과 같게, 마지막 두 값의 간격으로 정한다(긴 기록은 주 단위로 줄여 받는 지표가 있다).
+    const a = parseLabel(String(pts[pts.length - 2].label)), b = parseLabel(lb);
+    const gap = a && b ? (b - a) / 86400000 : 1;
+    return gap <= 3 ? "매일" : gap <= 10 ? "매주" : "매월";
+  };
+  const CAD_ORDER = ["매일", "매주", "매월", "매년"];
+  priceGroupsEl.innerHTML = groups.map(g => {
+    const sec = g.gi >= 0 && g.gi < 4 ? g.gi + 1 : 1;
+    const ids = (g.cards.map(c => (c.html.match(/data-detail="([^"]+)"/) || [])[1]).filter(Boolean));
+    const cads = [...new Set(ids.map(id => cadenceOf(CARD_BY_ID[id])).filter(Boolean))].sort((a, b) => CAD_ORDER.indexOf(a) - CAD_ORDER.indexOf(b));
+    const meta = `지표 ${g.cards.length}개${cads.length ? `, ${cads.join("·")} 갱신` : ""}`;
+    const hasCharts = /data-range-card=/.test(g.cards.map(c => c.html).join(""));
+    const rng = hasCharts ? `<div class="range-btns" role="group" aria-label="이 구역 그래프 기간">${GROUP_RANGES.map(r =>
+      `<button type="button" data-grange="${r.days}" class="${r.days === 731 ? "on" : ""}">${r.label}</button>`).join("")}</div>` : "";
+    return `
+    <div id="grp-${g.gi}" style="--series: var(--sec-${sec}); --on-series: var(--on-sec-${sec});">
+      <div class="grp-head">
+        <div class="grp-name"><span class="grp-key" aria-hidden="true"></span><span class="section-title">${esc(titleOf(g.gi))}</span><span class="grp-meta">${esc(meta)}</span></div>
+        ${rng}
+      </div>
       <div class="grid">${g.cards.map(c => c.html).join("")}</div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
+  // 기간 단추는 그 구역의 가격 카드 그래프를 모두 다시 그린다(연간 계열인 전기요금은 늘 전체).
+  priceGroupsEl.querySelectorAll("[data-grange]").forEach(btn => btn.addEventListener("click", () => {
+    const sec = btn.closest("[id^='grp-']"), days = Number(btn.dataset.grange);
+    sec.querySelectorAll(".chart-wrap[data-range-card]").forEach(wrap => {
+      const c = CARD_BY_ID[wrap.dataset.rangeCard], chartId = wrap.dataset.rangeChart;
+      if (!c || !c.points || !CHART_DATA[chartId]) return;
+      const annual = /^\d{4}$/.test(String(c.points[c.points.length - 1].label));
+      let pts = annual ? c.points : sliceDays(c.points, days);
+      if (pts.length < 3) pts = c.points.slice(-3);
+      CHART_DATA[chartId].points = pts;
+      drawCardChart(wrap);
+    });
+    btn.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === btn));
+  }));
 })();
 
-document.querySelectorAll("#priceGroups .chart-wrap").forEach(attachChartHover);
+// 카드 그래프는 카드에 놓인 뒤 실제 폭을 재서 그 폭 그대로 다시 그린다. 고정 폭(320)으로 그리면 넓은 화면에서
+// 0.89배로 줄어 글자가 11px 쯤이 됐다(12px 기준 미달). 화면 폭이 바뀌면 다시 그린다.
+function drawCardChart(wrap) {
+  const chartId = wrap.dataset.rangeChart, cd = CHART_DATA[chartId], c = CARD_BY_ID[wrap.dataset.rangeCard];
+  if (!cd || !cd.points || !cd.points.length) return;
+  const w = Math.round(wrap.clientWidth) || CH_CARD.W;
+  const dims = Object.assign({}, CH_CARD, { W: Math.max(200, w) });
+  const evs = c && c.id !== "scfi" ? evsFor(c.id) : null;
+  wrap.innerHTML = `${priceChartSvg(cd.points, chartId, dims, evs, (c && c.refLine) || null)}<div class="ch-tip"></div>`;
+  attachChartHover(wrap);
+}
+function drawAllCardCharts() { document.querySelectorAll("#priceGroups .chart-wrap[data-range-card]").forEach(drawCardChart); }
+drawAllCardCharts();
+document.querySelectorAll("#priceGroups .chart-wrap:not([data-range-card])").forEach(attachChartHover);
+(function () {
+  let lastW = window.innerWidth, t = null;
+  window.addEventListener("resize", () => {
+    if (window.innerWidth === lastW) return;
+    lastW = window.innerWidth;
+    clearTimeout(t); t = setTimeout(drawAllCardCharts, 150);
+  });
+})();
 wireFxCalc();
 
 // 경영진 요약 보기(?view=exec): 결론, 분야 타일, 주목할 점만 보이게 한다. 주소를 그대로 보내면 같은 화면이 열린다.
