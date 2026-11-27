@@ -561,6 +561,9 @@
   .ops-spark .down { stroke: var(--good); }
   .ops-spark .mixed { stroke: var(--warn); }
   .ops-spark .flat { stroke: var(--ink-muted); }
+  .ops-spark circle { stroke: none; }
+  .ops-spark circle.up { fill: var(--bad); } .ops-spark circle.down { fill: var(--good); }
+  .ops-spark circle.mixed { fill: var(--warn); } .ops-spark circle.flat { fill: var(--ink-muted); }
   .ops-actions { display: flex; gap: 6px; flex-wrap: wrap; }
   .ops-btn { font: inherit; font-size: 12.5px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
     background: transparent; color: var(--ink-secondary); cursor: pointer; white-space: nowrap; }
@@ -3393,7 +3396,9 @@ function hlNewsHtml(h) {
     const firstD = parseLabel(pts[0].label);
     const spanD = lastD && firstD ? Math.round((lastD - firstD) / 86400000) + 1 : null;
     const note = spanD !== null && spanD < 150 ? `<div class="os sp-note">기록 ${spanD}일</div>` : "";
-    return `<svg class="ops-spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d}" class="${esc(r.tone || "flat")}"/></svg>${note}`;
+    // 끝점: 지금 값이 6개월 흐름의 어디쯤인지 바로 보이게 점을 찍는다(2026-11-27)
+    const tone = esc(r.tone || "flat"), ey = 2 + (1 - (vals[vals.length - 1] - lo) / span) * (H - 4);
+    return `<svg class="ops-spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d}" class="${tone}"/><circle cx="${W}" cy="${ey.toFixed(1)}" r="2.6" class="${tone}"/></svg>${note}`;
   };
   // 평소 변동폭(판정 기준폭)보다 크게 움직인 칸만 칠한다. 2배 이상이면 진하게.
   const tint = (v, thr) => {
