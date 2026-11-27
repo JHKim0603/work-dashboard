@@ -2342,6 +2342,16 @@ function Get-MaterialSnapshot {
         $news += Get-NewsHeadlines -query $q -max 3
         if (-not $script:newsFromPrefetch) { Start-Sleep -Milliseconds 300 }
     }
+    # 검색어만으로는 '반도체 성장 전망', '상수도 급수공사 중지' 같은 엉뚱한 기사가 섞였다(2026-11-27, 공통 규칙 5).
+    # config.materials 의 TitleWords 중 하나가 제목에 있어야 남기고, ExcludeWords 가 있으면 뺀다.
+    if ($mat.TitleWords) {
+        $twRx = (@($mat.TitleWords) | ForEach-Object { [regex]::Escape([string]$_) }) -join '|'
+        $news = @($news | Where-Object { [string]$_.title -match $twRx })
+    }
+    if ($mat.ExcludeWords) {
+        $xwRx = (@($mat.ExcludeWords) | ForEach-Object { [regex]::Escape([string]$_) }) -join '|'
+        $news = @($news | Where-Object { [string]$_.title -notmatch $xwRx })
+    }
     # de-dup by link
     $seen = New-Object System.Collections.Generic.HashSet[string]
     $deduped = @(foreach ($n in $news) {
@@ -3167,7 +3177,10 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
         } }
         $tag = if ($catOf.ContainsKey([string]$r.id)) { $catOf[[string]$r.id] } else { "지표" }
         $hdir = if ($pct -ge 0) { 1 } else { -1 }
-        if ($where) { Add-Highlight $tag "$topic 최근 $span 동안 $pctTxt% $verb ${where}." ([string]$r.id) $hdir }
+        # 내렸는데 1년 중 높은 편이면 '14% 급락해 1년 중 높은 편입니다'가 앞뒤가 맞지 않아 '급락했지만 아직 …'으로 잇는다(2026-11-27).
+        $against = (-not $sinceOk) -and (($pct -lt 0 -and @("최고", "상단") -contains [string]$r.band) -or ($pct -ge 0 -and @("최저", "하단") -contains [string]$r.band))
+        if ($where -and $against) { Add-Highlight $tag "$topic 최근 $span 동안 $pctTxt% $($verbEnd -replace '습니다$', '지만') 아직 ${where}." ([string]$r.id) $hdir }
+        elseif ($where) { Add-Highlight $tag "$topic 최근 $span 동안 $pctTxt% $verb ${where}." ([string]$r.id) $hdir }
         else { Add-Highlight $tag "$topic 최근 $span 동안 $pctTxt% $verbEnd." ([string]$r.id) $hdir }
     }
     $movedIds = @($moves | Sort-Object score -Descending | Select-Object -First 3 | ForEach-Object { [string]$_.r.id })
@@ -3261,6 +3274,9 @@ if ($config.opsSummary -and @($config.opsSummary.items).Count -gt 0) {
         elseif ($nUp -gt 0) { $word = "항목별로 다름"; $tone = "mixed" }
         elseif ($nMixed -gt 0) { $word = $(if ($lead.tone -eq "mixed") { [string]$lead.trend } else { "방향 전환" }); $tone = "mixed" }
         else { $word = "보합"; $tone = "flat" }
+        # 대표 지표가 다수와 반대 방향이면 '항목별로 다름'으로 둔다. 타일에는 대표 지표의 값이 나오는데 분야는 다수결로 '하락'이라
+        # "해상운임이 내리고 있습니다" 아래에 '부산→동남아 3개월 +43%, 4년 중 최고'가 붙었다(2026-11-27).
+        if (($tone -eq "up" -and $lead.tone -eq "down") -or ($tone -eq "down" -and $lead.tone -eq "up")) { $word = "항목별로 다름"; $tone = "mixed" }
         $count = ""
         if ($rows.Count -gt 1) {
             $parts = @()
@@ -3448,10 +3464,24 @@ if ($opsSummary) {
 
     # 한 줄 결론 제목: 오르거나 내리는 분야 이름을 그대로 쓴다. 예) "해상운임과 PP·PE 가격이 오르고 있습니다"
     # 해상운임과 부자재는 시장 가격이라 '오르고/내리고 있다', 내륙운송료는 고시 운임이라 '인상/인하가 예상된다'로 쓴다.
-    $ups = @(); $downs = @()
-    foreach ($pair in @(@{ k = "freight"; n = "해상운임" }, @{ k = "packaging"; n = "PP·PE 가격" })) {
+    # 오르거나 내리는 분야만 세면 '항목별로 다름', '상승 후 조정'인 분야가 빠져 "큰 변화가 없습니다"로 나갔다(2026-11-27).
+    # 분야마다 [이어 쓰는 꼴, 끝맺는 꼴]을 만들어 둔다. 예) "해상운임은 항로마다 엇갈리고, PP·PE 가격은 오른 뒤 내리고 있습니다"
+    $ups = @(); $downs = @(); $clauses = @()
+    foreach ($pair in @(@{ k = "freight"; n = "해상운임"; split = "항로마다" }, @{ k = "packaging"; n = "PP·PE 가격"; split = "품목마다" })) {
         if (-not $tileOf.ContainsKey($pair.k)) { continue }
-        if ($tileOf[$pair.k].tone -eq "up") { $ups += $pair.n } elseif ($tileOf[$pair.k].tone -eq "down") { $downs += $pair.n }
+        $tt = $tileOf[$pair.k]
+        if ($tt.tone -eq "up") { $ups += $pair.n } elseif ($tt.tone -eq "down") { $downs += $pair.n }
+        $nm = "$($pair.n)$(Get-Josa $pair.n '은' '는')"
+        $cl = switch ([string]$tt.word) {
+            "상승"          { @("$nm 오르고", "$nm 오르고 있습니다") }
+            "하락"          { @("$nm 내리고", "$nm 내리고 있습니다") }
+            "항목별로 다름" { @("$nm $($pair.split) 엇갈리고", "$nm $($pair.split) 엇갈리고 있습니다") }
+            "상승 후 조정"  { @("$nm 오른 뒤 내리고", "$nm 오른 뒤 내리고 있습니다") }
+            "하락 후 반등"  { @("$nm 내린 뒤 오르고", "$nm 내린 뒤 오르고 있습니다") }
+            "방향 전환"     { @("$nm 방향이 바뀌고", "$nm 방향이 바뀌고 있습니다") }
+            default         { $null }
+        }
+        if ($cl) { $clauses += ,@($cl) }
     }
     function Join-Topic {
         param([string[]]$names, [string]$j1, [string]$j2)
@@ -3459,7 +3489,11 @@ if ($opsSummary) {
         "$($names[0])$(Get-Josa $names[0] $j1 $j2)"
     }
     $sfVerdict = if ($sf -and $sf.base) { [string]$sf.base.verdict } else { "" }
-    if ($ups.Count -and $downs.Count) {
+    if (($clauses.Count - $ups.Count - $downs.Count) -gt 0) {
+        # 엇갈림·상승 후 조정처럼 방향이 하나가 아닌 분야가 있으면 분야마다 한 마디씩 잇는다.
+        $hlTone = "mixed"
+        $hlTitle = if ($clauses.Count -ge 2) { "$($clauses[0][0]), $($clauses[1][1])" } else { [string]$clauses[0][1] }
+    } elseif ($ups.Count -and $downs.Count) {
         $hlTone = "mixed"; $hlTitle = "$(Join-Topic $ups '은' '는') 오르고, $(Join-Topic $downs '은' '는') 내리고 있습니다"
     } elseif ($ups.Count) {
         $hlTone = "up"; $hlTitle = "$(Join-Topic $ups '이' '가') 오르고 있습니다"
@@ -4031,6 +4065,17 @@ function Format-PriceValue {
     ((("{0:N2}" -f $r) -replace '0+$', '') -replace '\.$', '')
 }
 
+# 범위의 두 값을 같은 소수 자릿수로('$10.31~$15.2' → '$10.31~$15.20', 공통 규칙 4)
+function Format-PricePair {
+    param($a, $b)
+    $x = Format-PriceValue $a; $y = Format-PriceValue $b
+    $dx = 0; if ($x -match '\.(\d+)$') { $dx = $Matches[1].Length }
+    $dy = 0; if ($y -match '\.(\d+)$') { $dy = $Matches[1].Length }
+    $d = [math]::Max($dx, $dy)
+    $pad = { param($s) $n = 0; if ($s -match '\.(\d+)$') { $n = $Matches[1].Length }; if ($d -eq 0 -or $n -eq $d) { $s } elseif ($n -eq 0) { "$s." + ('0' * $d) } else { $s + ('0' * ($d - $n)) } }
+    @((& $pad $x), (& $pad $y))
+}
+
 function Get-BarChartHtml {
     # Replaces a Unicode-block sparkline ("▁▂▃▄"). That had only 8 height levels to spread two
     # years of weekly closes across, and mail clients font-substituted the glyphs onto
@@ -4464,8 +4509,8 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
         # 범위 폭이 지금 값의 30%를 넘으면 숫자 대신 '예측 어려움'(화면의 FC_WIDE_PCT 와 같은 기준).
         $fcWide = $r.fc -and $null -ne $r.value -and [double]$r.value -ne 0 -and (([double]$r.fc.high - [double]$r.fc.low) / [math]::Abs([double]$r.value) * 100 -gt 30)
         $fcHtml = if ($fcWide) { "<br><span style='font-size:12px;color:#898781;'>예측 어려움</span>" }
-            elseif ($r.fc) { "<br><span style='font-size:12px;color:#52514e;'>$($r.currency)$(Format-PriceValue $r.fc.low)~$(Format-PriceValue $r.fc.high)</span>" } else { "" }
-        $chgMark = if ($r.changed) { " <span style='font-size:12px;color:#2a78d6;'>(지난주엔 $($r.prevTrend))</span>" } else { "" }
+            elseif ($r.fc) { "<br><span style='font-size:12px;color:#52514e;'>$($r.currency)$((Format-PricePair $r.fc.low $r.fc.high) -join '~')</span>" } else { "" }
+        $chgMark = if ($r.changed) { " <span style='font-size:12px;color:#2a78d6;'>(지난주에는 $($r.prevTrend))</span>" } else { "" }
         $opsRowMap[[string]$r.id] = "<tr><td><b>$($r.name)</b> <b><span style='font-size:12px;color:$tc;'>$($r.trend)</span></b>$chgMark$subHtml</td><td align=right nowrap>$val</td>$(Get-PctCell $r.shortPct $r.thrS)$(Get-PctCell $r.longPct $r.thrL)$(Get-PctCell $r.yoyPct $r.thrY)<td align=right nowrap>$($fcHtml -replace '^<br>', '')</td></tr>"
     }
     $placed = @{}
