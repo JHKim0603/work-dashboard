@@ -540,6 +540,29 @@
     padding: 7px 0; border-top: 1px solid var(--gridline); font-variant-numeric: tabular-nums;
   }
   .lane-row:first-of-type { border-top: none; }
+  /* 주요 해협 통항 줄: 이름, 하루 평균, 1년 전 대비, 52주 작은 그림(2026-11-27) */
+  .cp-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto 54px 64px; gap: 8px; align-items: center;
+    padding: 6px 0; border-top: 1px solid var(--gridline); font-variant-numeric: tabular-nums;
+  }
+  .cp-row:first-of-type { border-top: none; }
+  .cp-row .ln { font-size: 13px; color: var(--ink-primary); font-weight: 600; min-width: 0; }
+  .cp-row .lv { font-size: 13.5px; font-weight: 700; }
+  .cp-row .lc { font-size: 12.5px; font-weight: 700; text-align: right; color: var(--ink-secondary); }
+  .cp-spark { display: block; overflow: visible; }
+  .cp-spark path { fill: none; stroke: var(--ink-muted); stroke-width: 1.4; stroke-linejoin: round; }
+  .cp-note { font-size: 12.5px; color: var(--ink-secondary); line-height: 1.55; margin-top: 8px; }
+  /* 날씨 카드의 앞바다 줄: 위 7일 칸과 같은 7칸 */
+  .sea-box { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gridline); }
+  .sea-title { font-size: 12.5px; font-weight: 700; color: var(--ink-secondary); margin-bottom: 4px; }
+  .sea-name { font-size: 12px; color: var(--ink-muted); margin: 6px 0 2px; }
+  .sea-cells { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+  .sea-cell { display: flex; flex-direction: column; align-items: center; border-radius: 6px; padding: 2px 0; font-variant-numeric: tabular-nums; }
+  .sea-cell b { font-size: 12.5px; font-weight: 700; color: var(--ink-primary); }
+  .sea-cell small { font-size: 12px; color: var(--ink-muted); white-space: nowrap; }
+  .sea-cell.warn { background: var(--warn-wash); }
+  .sea-cell.warn b, .sea-cell.warn small { color: var(--warn); }
+  .sea-note { font-size: 12.5px; color: var(--ink-secondary); line-height: 1.55; margin-top: 8px; }
   .lane-row .ln { font-size: 13px; color: var(--ink-primary); font-weight: 600; }
   .lane-row .lv { font-size: 14px; font-weight: 700; }
   .lane-row .lc { font-size: 12.5px; font-weight: 700; min-width: 74px; text-align: right; }
@@ -1164,7 +1187,7 @@
   <div class="footnote">
     출처: 날씨 Open-Meteo, 공휴일 Nager.Date, 태풍 GDACS, 환율과 국제유가 Yahoo Finance,
     합성수지 선물 대련·정저우 상품거래소(DCE·CZCE), 운임지수 상하이해운거래소(SCFI·CCFI)와 한국해양진흥공사(KCCI), KCl World Bank,
-    국내 유가 오피넷, 전기요금 EPSIS, 물가지수 한국은행, 수입 단가 관세청, 뉴스 Google 뉴스<br>
+    국내 유가 오피넷, 전기요금 EPSIS, 물가지수 한국은행, 수출입 통계 관세청, 해상 예보 Open-Meteo, 해협 통항 IMF PortWatch, 뉴스 Google 뉴스<br>
     각 카드의 [상세]에서 지표 설명과 판단 근거를 확인할 수 있습니다. 모든 값은 업무 참고용입니다.
   </div>
 
@@ -1193,6 +1216,7 @@ const CARD_GROUPS = __CARD_GROUPS_JSON__;
 const SCHEDULE = __SCHEDULE_JSON__;
 const CHART_EVENTS = __CHART_EVENTS_JSON__;
 const NEXT_RELEASE = __NEXT_RELEASE_JSON__;
+const CHOKEPOINTS = __CHOKEPOINTS_JSON__;
 const evsFor = id => (CHART_EVENTS || []).filter(e => !e.ids || !e.ids.length || e.ids.indexOf(id) >= 0);
 const SAFE_FREIGHT = __SAFE_FREIGHT_JSON__;
 const OPS_SUMMARY = __OPS_SUMMARY_JSON__;
@@ -1243,7 +1267,11 @@ function changeBadgeHtml(prior, latest) {
   if (pct !== null && Math.abs(pct) < 0.05) return `<span class="chg flat">보합</span>`;
   const up = diff >= 0;
   const pctText = pct === null ? "" : ` (${pctSigned(pct)})`;
-  return `<span class="chg ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${fmtNum(Math.abs(diff))}${pctText}</span>`;
+  // 차이는 지금 값보다 자세하게 적지 않는다(전기요금 181.9원에 '▲ 13.73'이 붙었다, 2026-11-28).
+  const sv = fmtNum(latest.value), dd = sv.includes(".") ? sv.length - sv.indexOf(".") - 1 : 0;
+  let ds = fmtNum(Math.abs(diff), dd);
+  if (Number(ds.replace(/,/g, "")) === 0) ds = fmtNum(Math.abs(diff));
+  return `<span class="chg ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${ds}${pctText}</span>`;
 }
 
 // Every number on this page is baked in at build time, so how old the build is *is* how old
@@ -1306,6 +1334,27 @@ function weatherIcon(desc) {
 
 const DOW = ["일", "월", "화", "수", "목", "금", "토"];
 
+// 앞바다 최대 파고와 풍속(Open-Meteo 해상 예보). 위 7일 칸과 같은 날짜 칸으로 맞춘다.
+// 풍랑주의보 기준(파고 3m 초과, 또는 풍속 14m/s가 3시간 이상)에 닿을 수 있는 날은 칸을 강조한다(2026-11-27).
+function seaRows(w) {
+  const sea = Array.isArray(w.sea) ? w.sea : [];
+  if (!sea.length) return "";
+  const dates = (w.days || []).map(d => d.date);
+  const rows = sea.map(s => {
+    const by = {};
+    (s.days || []).forEach(d => { by[d.date] = d; });
+    const cells = dates.map(dt => {
+      const d = by[dt];
+      if (!d) return `<span class="sea-cell">–</span>`;
+      const wave = typeof d.wave === "number" ? `${d.wave.toFixed(1)}m` : "–";
+      const wind = typeof d.wind === "number" ? `${Math.round(d.wind)}m/s` : "";
+      return `<span class="sea-cell${d.warn ? " warn" : ""}" title="${esc(s.name)} ${esc(dt)}: 최대 파고 ${wave}, 3시간 이어진 풍속 ${wind || "–"}"><b>${wave}</b><small>${wind}</small></span>`;
+    }).join("");
+    return `<div class="sea-name">${esc(s.name)}</div><div class="sea-cells">${cells}</div>`;
+  }).join("");
+  return `<div class="sea-box"><div class="sea-title">앞바다 최대 파고와 풍속</div>${rows}${w.seaNote ? `<div class="sea-note">${esc(w.seaNote)}</div>` : ""}</div>`;
+}
+
 const weatherGrid = document.getElementById("weatherGrid");
 if (!WEATHER || WEATHER.length === 0) {
   weatherGrid.innerHTML = `<div class="empty-note">날씨 정보를 가져오지 못했습니다.</div>`;
@@ -1353,6 +1402,7 @@ if (!WEATHER || WEATHER.length === 0) {
         </div>
         <div class="weather-meta">습도 ${w.humidity}% ${advisoryBadges(w.advisories)}</div>
         <div class="week-strip">${strip}</div>
+        ${seaRows(w)}
         ${weekAdvisoryList(days)}
       </div>`;
   }).join("");
@@ -1814,11 +1864,13 @@ function attachChartHover(wrap) {
 }
 
 // ---- 경향성 표시 ----------------------------------------------------------------------
-function pctText(v, plain) {
+function pctText(v) {
   if (v === null || v === undefined) return "–";
-  const minus = plain ? "-" : "−";
-  return `${v > 0 ? "+" : v < 0 ? minus : ""}${Math.abs(v).toFixed(1)}%`;
+  return `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(1)}%`;
 }
+// 보고서 글의 증감. 화면과 같은 빼기 기호(−)와 자릿수 규칙을 쓰고, 0.0%는 보합으로 적는다.
+// 예전에는 붙여 넣기용이라며 하이픈(-3.9%)을 썼다(2026-11-28).
+function reportPct(v) { return Math.abs(v) < 0.05 ? "보합" : pctSigned(v); }
 function pctCls(v) { return (v === null || v === undefined || Math.abs(v) < 0.05) ? "" : (v > 0 ? "up" : "down"); }
 function trendChip(t, tone) { return t ? `<span class="trend-chip ${esc(tone || "flat")}">${esc(t)}</span>` : ""; }
 // 1년 범위에서 위쪽이면 '상위 n%', 아래쪽이면 '하위 n%'. 하단인데 '상위 94%'로 적으면 거꾸로 읽힌다.
@@ -2538,6 +2590,53 @@ if (SSE_LANES && SSE_LANES.length) {
     </div>`);
 }
 
+// KCCI 항로별 운임: [상세] 창 안에만 있던 부산 출발 13개 항로 중 config.kcciLaneCard 의 항로를 첫 화면 카드로(2026-11-27).
+{
+  const kc = (PRICES || []).find(c => c.id === "kcci" && !c.failed);
+  const lanes = kc && Array.isArray(kc.kcciCardLanes) ? kc.kcciCardLanes : [];
+  if (lanes.length) {
+    const rows = lanes.map(l => {
+      const p = typeof l.weekPct === "number" ? l.weekPct : null;
+      const cls = p === null || Math.abs(p) < 0.05 ? "flat" : (p > 0 ? "up" : "down");
+      const chg = p === null ? "–" : cls === "flat" ? "보합" : `${p > 0 ? "▲" : "▼"} ${pctSigned(p)}`;
+      return `<div class="lane-row"><span class="ln">${esc(l.name)}</span><span class="lv">$${fmtNum(l.current)}</span><span class="lc ${cls}">${chg}</span></div>`;
+    }).join("");
+    pushCard(typeof CARD_SORTS.kcciLanes === "number" ? CARD_SORTS.kcciLanes : 150, `
+    <div class="card">
+      <div class="card-head">
+        <h3>KCCI 항로별 운임 (부산 출발)</h3>
+        <button class="detail-btn" data-detail="kcci">상세</button>
+      </div>
+      <div class="flag">${esc(lanes[0].label)} 기준, 40피트 1개 (전주 대비)${NEXT_RELEASE.kcci ? `, <span class="next-rel">${esc(NEXT_RELEASE.kcci)}</span>` : ""}</div>
+      ${rows}
+      <div class="card-src">출처: 한국해양진흥공사(KOBC) (주간 발표, 13개 항로 전체와 3개월·1년 변화는 [상세])</div>
+    </div>`);
+  }
+}
+
+// 주요 해협 컨테이너선 통항(IMF PortWatch): 최근 7일 하루 평균과 1년 전 같은 때 대비, 최근 52주 흐름(2026-11-27).
+// 통항이 늘거나 준 것 자체가 비용 오름·내림은 아니라서 빨강·초록을 쓰지 않는다.
+if (Array.isArray(CHOKEPOINTS) && CHOKEPOINTS.length) {
+  const spark = vals => {
+    if (!vals || vals.length < 3) return "";
+    const lo = Math.min(...vals), hi = Math.max(...vals), span = (hi - lo) || 1, W = 64, H = 20;
+    const d = vals.map((v, i) => `${i ? "L" : "M"}${(i / (vals.length - 1) * W).toFixed(1)},${(2 + (1 - (v - lo) / span) * (H - 4)).toFixed(1)}`).join(" ");
+    return `<svg class="cp-spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d}"/></svg>`;
+  };
+  const rows = CHOKEPOINTS.map(c => `<div class="cp-row" title="${esc(c.name)}: 최근 7일 하루 평균 ${c.avg7}척${typeof c.yoyPct === "number" ? `, 1년 전 같은 때보다 ${pctSigned(c.yoyPct)}` : ""}">
+      <span class="ln">${esc(c.name)}</span><span class="lv">${fmtNum(c.avg7, 1)}척</span>
+      <span class="lc">${typeof c.yoyPct === "number" ? pctSigned(c.yoyPct) : "–"}</span>${spark(c.points)}</div>`).join("");
+  const lastD = CHOKEPOINTS.map(c => c.last).sort().pop();
+  pushCard(typeof CARD_SORTS.chokepoints === "number" ? CARD_SORTS.chokepoints : 160, `
+    <div class="card">
+      <div class="card-head"><h3>주요 해협 컨테이너선 통항</h3></div>
+      <div class="flag">${esc(lastD)} 기준, 최근 7일 하루 평균 (1년 전 같은 때 대비)</div>
+      ${rows}
+      <div class="cp-note">수에즈와 바브엘만데브(홍해 입구)가 줄고 희망봉이 늘면 아시아와 유럽을 오가는 배가 아프리카를 돌아간다는 뜻입니다. 운항이 1~2주 길어져 유럽·중동 항로 운임이 오를 수 있습니다. 위치 신호를 끈 배는 세지 않아, 분쟁 해역에서는 실제보다 적게 잡힐 수 있습니다.</div>
+      <div class="card-src">출처: IMF PortWatch (선박 위치 신호로 센 값, 며칠 늦게 반영)</div>
+    </div>`);
+}
+
 // 안전운임 유가연동 전망. 시계열 카드가 아니라 판정 카드라 따로 조립한다: 다음 고시에서 운임이
 // 동결·인상·인하 중 어느 쪽인지, 유류세 인하가 끝나면 어떻게 되는지, 노선별로 몇 원인지.
 // 산정 기간 평균 추정치가 날마다 어떻게 바뀌어 왔는지(GDPNow 방식). 띠 안이면 동결, 위 선을 넘으면 인상, 아래 선을 넘으면 인하.
@@ -3197,9 +3296,10 @@ function opsReportText() {
     lines.push("■ 분야별 상태");
     OPS_SUMMARY.tiles.forEach(t => {
       const detail = t.lead
-        ? `${t.lead.name} ${reportValue(t.lead)}${t.change && t.change.pct !== null && t.change.pct !== undefined ? `, ${t.change.label} ${pctText(t.change.pct, true)}` : ""}`
+        ? `${t.lead.name} ${reportValue(t.lead)}${t.change && t.change.pct !== null && t.change.pct !== undefined ? `, ${t.change.label} ${reportPct(t.change.pct)}` : ""}`
         : (t.lines || []).join(", ");
-      lines.push(`- ${t.title}: ${t.word}${detail ? ` (${detail})` : ""}`);
+      // 값에 이미 괄호가 있어('톤당 약 177만원(¥8,828)') 바깥을 괄호로 묶으면 괄호 안 괄호가 된다(공통 규칙 3, 2026-11-28).
+      lines.push(`- ${t.title}: ${t.word}${detail ? `, ${detail}` : ""}`);
     });
     lines.push("");
   }
@@ -3216,9 +3316,9 @@ function opsReportText() {
     } else if (r.label) {
       parts.push(r.label);
     }
-    if (r.shortPct !== null && r.shortPct !== undefined) parts.push(`${r.shortLabel} ${pctText(r.shortPct, true)}`);
-    if (r.longPct !== null && r.longPct !== undefined) parts.push(`${r.longLabel} ${pctText(r.longPct, true)}`);
-    if (r.yoyPct !== null && r.yoyPct !== undefined) parts.push(`1년 ${pctText(r.yoyPct, true)}`);
+    if (r.shortPct !== null && r.shortPct !== undefined) parts.push(`${r.shortLabel} ${reportPct(r.shortPct)}`);
+    if (r.longPct !== null && r.longPct !== undefined) parts.push(`${r.longLabel} ${reportPct(r.longPct)}`);
+    if (r.yoyPct !== null && r.yoyPct !== undefined) parts.push(`1년 ${reportPct(r.yoyPct)}`);
     if (r.trend) parts.push(r.trend);
     if (r.position) parts.push(r.position);
     if (r.note) parts.push(r.note);
@@ -3312,7 +3412,7 @@ function weeklyReportText() {
       const monthly = pts.length > 0 && String(pts[pts.length - 1].label).length === 7;
       const ch = pts.length > 1 ? prevChange(pts, monthly) : null;
       const notes = [];
-      if (ch !== null) notes.push(`${monthly ? "전월" : "전주"} ${pctText(ch, true)}`);
+      if (ch !== null) notes.push(`${monthly ? "전월" : "전주"} ${reportPct(ch)}`);
       if (r.since) notes.push(r.since.short);
       else if (r.rangeName === "1년" && (r.band === "최고" || r.band === "최저")) notes.push(`1년 중 ${r.band}`);
       if (r.streak && r.streak.short) notes.push(r.streak.short);

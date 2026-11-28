@@ -231,6 +231,22 @@ function Get-WeatherSnapshot {
 
         $curAdvisories = @(Get-TempAdvisories -heatRefC ([int][math]::Round($cur.apparent_temperature)) -minC $null)
 
+        # 앞바다(config 의 SeaPoints): 풍랑주의보 기준에 닿을 수 있는 날을 한 문장으로. 화면과 메일이 같은 문장을 쓴다.
+        $sea = @(foreach ($sp in @($loc.SeaPoints)) { if ($sp) { Get-SeaForecast $sp } })
+        $sea = @($sea | Where-Object { $_ })
+        $seaNote = ""
+        if ($sea.Count) {
+            $ciW = [Globalization.CultureInfo]::InvariantCulture
+            $md = { param($s) $t = [DateTime]::ParseExact($s, "yyyy-MM-dd", $ciW); "$($t.Month)/$($t.Day)($("일월화수목금토"[[int]$t.DayOfWeek]))" }
+            $rule = "풍랑주의보 기준(파고 3m 초과, 또는 풍속 14m/s가 3시간 이상)"
+            $hits = @(foreach ($s in $sea) {
+                $ds = @($s.days | Where-Object { $_.warn } | ForEach-Object { & $md $_.date })
+                if ($ds.Count) { "$($s.name) $($ds -join ', ')" }
+            })
+            $seaNote = if ($hits.Count) { "$($hits -join ', ')에 ${rule}에 닿을 수 있습니다." }
+                       else { "$(($sea | ForEach-Object { $_.short }) -join '·') 앞바다는 7일 안에 ${rule}에 닿는 날이 없습니다." }
+        }
+
         [PSCustomObject]@{
             id          = $loc.Id
             displayName = $loc.DisplayName
@@ -241,6 +257,8 @@ function Get-WeatherSnapshot {
             desc        = Get-WeatherDescKo $cur.weathercode
             advisories  = $curAdvisories
             days        = $days
+            sea         = $sea
+            seaNote     = $seaNote
         }
     } catch {
         Write-Warning "Weather fetch failed for '$($loc.DisplayName)': $($_.Exception.Message)"
@@ -1041,6 +1059,12 @@ function Get-CustomsImportSeries {
     if (-not $key) { return $null }
     # config 의 Months 가 있으면 그 길이로 받는다(KCl 수입 단가는 국제가격 카드와 견주려고 36개월).
     if ($cfg.Months -and [int]$cfg.Months -gt 0) { $months = [int]$cfg.Months }
+    # Flow: imp(수입, 기본) 또는 exp(수출). Measure: price(금액 ÷ 중량 = USD/톤, 기본) 또는 weight(한 달 중량, 톤).
+    # 한 응답에 수출과 수입이 함께 오므로, 같은 품목의 단가 카드와 물량 카드가 같은 조회를 두 번 하지 않게 응답을 기억해 둔다(2026-11-27).
+    $flow = if ([string]$cfg.Flow -eq "exp") { "exp" } else { "imp" }
+    $measure = if ([string]$cfg.Measure -eq "weight") { "weight" } else { "price" }
+    $flowKo = if ($flow -eq "exp") { "수출" } else { "수입" }
+    if (-not $script:customsCache) { $script:customsCache = @{} }
 
     try {
         $end = (Get-Date).AddMonths(-1)          # newest published month, given the lag
@@ -1064,6 +1088,8 @@ function Get-CustomsImportSeries {
                    "&hsSgn=$([uri]::EscapeDataString($cfg.HsSgn))"
             if ($cfg.CntyCd) { $uri += "&cntyCd=$([uri]::EscapeDataString($cfg.CntyCd))" }
             $got = $null
+            if ($script:customsCache.ContainsKey($uri)) { $got = $script:customsCache[$uri] }
+            $fetched = $false
             for ($try = 1; $try -le 2 -and -not $got; $try++) {
                 try {
                     $resp = Invoke-WebRequest -Uri $uri -Headers $headers -UseBasicParsing -TimeoutSec 45
@@ -1072,15 +1098,16 @@ function Get-CustomsImportSeries {
                     if ($code -ne "00") { throw "resultCode=$code $($xml.response.header.resultMsg)" }
                     # 총계 repeats the window sum as a pseudo-row; a real month always looks like "2026.07".
                     $got = @($xml.response.body.items.item | Where-Object { $_.year -match '^\d{4}\.\d{2}$' })
+                    $fetched = $true
                 } catch {
                     if ($try -ge 2) {
                         if ($wi -eq 0) { throw }
-                        Write-Warning "관세청 수입단가 앞 구간 조회 실패 ($($cfg.Id) $($ws.ToString('yyyy-MM'))~$($we.ToString('yyyy-MM'))): $($_.Exception.Message)"
+                        Write-Warning "관세청 $flowKo 통계 앞 구간 조회 실패 ($($cfg.Id) $($ws.ToString('yyyy-MM'))~$($we.ToString('yyyy-MM'))): $($_.Exception.Message)"
                     } else { Start-Sleep -Seconds 3 }
                 }
             }
-            if ($got) { $items += $got }
-            if ($wi -lt $windows.Count - 1) { Start-Sleep -Milliseconds 300 }
+            if ($got) { $script:customsCache[$uri] = $got; $items += $got }
+            if ($fetched -and $wi -lt $windows.Count - 1) { Start-Sleep -Milliseconds 300 }
         }
         if ($cfg.StatKorMatch) {
             $items = @($items | Where-Object { $_.statKor -like "*$($cfg.StatKorMatch)*" })
@@ -1094,8 +1121,8 @@ function Get-CustomsImportSeries {
         foreach ($it in $items) {
             $m = $it.year
             if (-not $byMonth.ContainsKey($m)) { $byMonth[$m] = @{ dlr = 0.0; wgt = 0.0 } }
-            $byMonth[$m].dlr += [double]$it.impDlr
-            $byMonth[$m].wgt += [double]$it.impWgt
+            if ($flow -eq "exp") { $byMonth[$m].dlr += [double]$it.expDlr; $byMonth[$m].wgt += [double]$it.expWgt }
+            else { $byMonth[$m].dlr += [double]$it.impDlr; $byMonth[$m].wgt += [double]$it.impWgt }
         }
 
         # Guard on value as well as weight. An HS code that does not exist still answers 정상서비스
@@ -1107,31 +1134,42 @@ function Get-CustomsImportSeries {
             if ($w -le 0 -or $d -le 0) { continue }
             [PSCustomObject]@{
                 label = $m -replace '\.', '-'
-                value = [math]::Round(($d / $w) * 1000, 0)   # USD per tonne
+                # 단가는 USD/톤, 물량은 한 달 톤(관세청 중량은 kg)
+                value = $(if ($measure -eq "weight") { [math]::Round($w / 1000, 0) } else { [math]::Round(($d / $w) * 1000, 0) })
             }
         }
         $points = @($points)
-        if ($points.Count -eq 0) { throw "no month had both import value and weight - check HsSgn/CntyCd" }
-        # 실행 기록에 최근 12개월 수입량과 평균 단가를 남긴다(공개 연간 통계와 맞춰 볼 때 쓴다).
+        if ($points.Count -eq 0) { throw "no month had both $flowKo value and weight - check HsSgn/CntyCd/Flow" }
+        # 물량은 배가 들어온 달에 몰려 전달 대비가 수천 %로 튀었다(KCl 9월 1,729톤 → 10월 85,734톤, +4859%).
+        # Rolling 개월 이동 평균으로 흐름을 본다(2026-11-27).
+        if ($measure -eq "weight" -and $cfg.Rolling -and [int]$cfg.Rolling -gt 1 -and $points.Count -ge [int]$cfg.Rolling) {
+            $rn = [int]$cfg.Rolling
+            $points = @(for ($i = $rn - 1; $i -lt $points.Count; $i++) {
+                $sum = 0.0
+                for ($j = $i - $rn + 1; $j -le $i; $j++) { $sum += [double]$points[$j].value }
+                [PSCustomObject]@{ label = $points[$i].label; value = [math]::Round($sum / $rn, 0) }
+            })
+        }
+        # 실행 기록에 최근 12개월 물량과 평균 단가를 남긴다(공개 연간 통계와 맞춰 볼 때 쓴다).
         $recentM = @($byMonth.Keys | Sort-Object | Select-Object -Last 12)
         $rw = 0.0; $rd = 0.0
         foreach ($m in $recentM) { $rw += $byMonth[$m].wgt; $rd += $byMonth[$m].dlr }
         if ($rw -gt 0) {
-            Write-Host ("    {0}: {1}개월, 최근 12개월 {2:N0}톤, 평균 {3:N0} USD/톤" -f $cfg.Id, $points.Count, ($rw / 1000), ($rd / $rw * 1000))
+            Write-Host ("    {0}: {1}개월, 최근 12개월 {2} {3:N0}톤, 평균 {4:N0} USD/톤" -f $cfg.Id, $points.Count, $flowKo, ($rw / 1000), ($rd / $rw * 1000))
         }
 
         [PSCustomObject]@{
             id          = $cfg.Id
             displayName = $cfg.DisplayName
-            unit        = if ($cfg.Unit) { $cfg.Unit } else { "USD/톤" }
+            unit        = if ($cfg.Unit) { $cfg.Unit } elseif ($measure -eq "weight") { "톤" } else { "USD/톤" }
             note        = $cfg.Note
             source      = "관세청 수출입무역통계 (data.go.kr)"
-            currency    = "$"
+            currency    = $(if ($measure -eq "weight") { "" } else { "$" })
             points      = $points
             newsQuery   = $cfg.NewsQuery
         }
     } catch {
-        Write-Warning "관세청 수입단가 조회 실패 ($($cfg.Id)): $($_.Exception.Message)"
+        Write-Warning "관세청 $flowKo 통계 조회 실패 ($($cfg.Id)): $($_.Exception.Message)"
         $null
     }
 }
@@ -1393,12 +1431,105 @@ function Get-KcciSeries {
                 points      = $pts
                 newsQuery   = $cfg.NewsQuery
                 kcciLanes   = $(if ([string]$cfg.Code -eq "KCCI") { $kcciLanes } else { $null })
+                # 첫 화면 'KCCI 항로별 운임' 카드에 보일 항로(config.kcciLaneCard 순서). 1년 추이는 [상세]에만 있어 뺀다(2026-11-27).
+                kcciCardLanes = $(if ([string]$cfg.Code -eq "KCCI") { @(foreach ($cc in @($config.kcciLaneCard)) { $kcciLanes | Where-Object { $_.code -eq [string]$cc } | Select-Object -First 1 code, name, group, current, previous, label, weekPct, q13Pct, yoyPct }) } else { $null })
             }
         })
     } catch {
         Write-Warning "KCCI 조회 실패: $($_.Exception.Message)"
         @()
     }
+}
+
+# --- 앞바다 파고·풍속(Open-Meteo 해상·일반 예보, 인증키 없음) -------------------------------------
+# 기상청 풍랑주의보 기준(유의파고 3m 초과, 또는 풍속 14m/s 이상이 3시간 이상)에 닿을 수 있는 날을 미리 본다.
+# 특보가 아니라 예보다. 선적·입항 일정을 미리 살피는 용도(2026-11-27).
+function Get-SeaForecast {
+    param($sp)
+    try {
+        $q = "latitude=$($sp.Lat)&longitude=$($sp.Lon)&timezone=Asia%2FSeoul&forecast_days=7"
+        $m = $null; $w = $null
+        for ($try = 1; $try -le 3 -and -not ($m -and $w); $try++) {
+            try {
+                if (-not $m) { $m = Invoke-RestMethod -Uri "https://marine-api.open-meteo.com/v1/marine?$q&hourly=wave_height" -Headers $headers -TimeoutSec 30 }
+                if (-not $w) { $w = Invoke-RestMethod -Uri "https://api.open-meteo.com/v1/forecast?$q&hourly=wind_speed_10m&wind_speed_unit=ms" -Headers $headers -TimeoutSec 30 }
+            } catch { if ($try -eq 3) { throw }; Start-Sleep -Seconds (3 * $try) }
+        }
+        $byDay = [ordered]@{}
+        $mt = @($m.hourly.time); $mv = @($m.hourly.wave_height)
+        for ($i = 0; $i -lt $mt.Count; $i++) {
+            $d = ([string]$mt[$i]).Substring(0, 10)
+            if (-not $byDay.Contains($d)) { $byDay[$d] = @{ wave = $null; wind = $null } }
+            if ($null -ne $mv[$i] -and ($null -eq $byDay[$d].wave -or [double]$mv[$i] -gt $byDay[$d].wave)) { $byDay[$d].wave = [double]$mv[$i] }
+        }
+        # 풍속은 3시간 이어진 값으로 본다(연속 3시간 중 가장 약한 값의 그날 최댓값).
+        $wt = @($w.hourly.time); $wv = @($w.hourly.wind_speed_10m)
+        for ($i = 2; $i -lt $wt.Count; $i++) {
+            if ($null -eq $wv[$i] -or $null -eq $wv[$i - 1] -or $null -eq $wv[$i - 2]) { continue }
+            $d = ([string]$wt[$i]).Substring(0, 10)
+            if (-not $byDay.Contains($d)) { $byDay[$d] = @{ wave = $null; wind = $null } }
+            $sus = [math]::Min([double]$wv[$i], [math]::Min([double]$wv[$i - 1], [double]$wv[$i - 2]))
+            if ($null -eq $byDay[$d].wind -or $sus -gt $byDay[$d].wind) { $byDay[$d].wind = $sus }
+        }
+        $days = @(foreach ($k in @($byDay.Keys)) {
+            $e = $byDay[$k]
+            $warn = ($null -ne $e.wave -and $e.wave -gt 3) -or ($null -ne $e.wind -and $e.wind -ge 14)
+            [PSCustomObject]@{
+                date = [string]$k
+                wave = $(if ($null -ne $e.wave) { [math]::Round($e.wave, 1) } else { $null })
+                wind = $(if ($null -ne $e.wind) { [math]::Round($e.wind, 1) } else { $null })
+                warn = [bool]$warn
+            }
+        })
+        [PSCustomObject]@{ name = [string]$sp.DisplayName; short = [string]$sp.Short; days = $days }
+    } catch {
+        Write-Warning "앞바다 예보 조회 실패 ($($sp.DisplayName)): $($_.Exception.Message)"
+        $null
+    }
+}
+
+# --- 주요 해협 통항(IMF PortWatch, 인증키 없음) -------------------------------------------------
+# 선박 위치 신호(AIS)로 센 해협별 하루 통항 척수 중 컨테이너선. 수출 항로가 지나는 해협의 통항이 줄고 희망봉 통항이 늘면
+# 배가 돌아가고 있다는 뜻이라 운항 일수와 운임이 늘 수 있다. 며칠 늦게 반영된다(2026-11-27 기준 마지막 자료 11/22).
+function Get-Chokepoints {
+    param($cfgList)
+    $base = "https://services9.arcgis.com/weJ1QsnbMYJlCHdG/arcgis/rest/services/Daily_Chokepoints_Data/FeatureServer/0/query"
+    $since = (Get-Date).AddDays(-400).ToString("yyyy-MM-dd")
+    $ci = [Globalization.CultureInfo]::InvariantCulture
+    $out = @(foreach ($cp in @($cfgList)) {
+        try {
+            $where = [uri]::EscapeDataString("portid='$($cp.PortId)' AND date >= '$since'")
+            $uri = "${base}?where=$where&outFields=date,n_container&orderByFields=date&resultRecordCount=1000&f=json"
+            $resp = $null
+            for ($try = 1; $try -le 2 -and -not $resp; $try++) {
+                try { $resp = Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 45 }
+                catch { if ($try -eq 2) { throw }; Start-Sleep -Seconds 3 }
+            }
+            if ($resp.error) { throw [string]$resp.error.message }
+            $rows = @($resp.features | ForEach-Object { [PSCustomObject]@{ d = ([string]$_.attributes.date).Substring(0, 10); v = [double]$_.attributes.n_container } } | Sort-Object d)
+            if ($rows.Count -lt 60) { throw "자료가 $($rows.Count)일뿐입니다" }
+            $last = [DateTime]::ParseExact($rows[-1].d, "yyyy-MM-dd", $ci)
+            $avg7 = (@($rows | Select-Object -Last 7) | Measure-Object v -Average).Average
+            # 1년 전 같은 때의 7일
+            $a0 = $last.AddDays(-371).ToString("yyyy-MM-dd"); $a1 = $last.AddDays(-365).ToString("yyyy-MM-dd")
+            $ago = @($rows | Where-Object { $_.d -ge $a0 -and $_.d -le $a1 })
+            $yoy = $null
+            if ($ago.Count -ge 5) {
+                $avgAgo = ($ago | Measure-Object v -Average).Average
+                if ($avgAgo -gt 0) { $yoy = [math]::Round(($avg7 - $avgAgo) / $avgAgo * 100, 1) }
+            }
+            # 작은 그림용 주 평균(최근 52주)
+            $tail = @($rows | Select-Object -Last 364)
+            $weeks = @(for ($i = 0; $i + 7 -le $tail.Count; $i += 7) { [math]::Round((@($tail[$i..($i + 6)]) | Measure-Object v -Average).Average, 1) })
+            [PSCustomObject]@{ id = [string]$cp.PortId; name = [string]$cp.DisplayName; last = $last.ToString("yyyy-MM-dd")
+                avg7 = [math]::Round($avg7, 1); yoyPct = $yoy; points = $weeks }
+        } catch {
+            Write-Warning "해협 통항 조회 실패 ($($cp.DisplayName)): $($_.Exception.Message)"
+            $null
+        }
+        Start-Sleep -Milliseconds 200
+    })
+    @($out | Where-Object { $_ })
 }
 
 function ConvertTo-LabelDate {
@@ -1727,6 +1858,13 @@ function Get-Forecast {
         $pc = { param($v) [math]::Round(($v / $last.v - 1) * 100, 1) }
         # 값 크기에 맞춰 반올림한다(환율 1,271.8~1,376.14 → 1,272~1,376). 변화율은 반올림 전 값으로 낸다.
         $dg = if ($last.v -ge 1000) { 0 } elseif ($last.v -ge 100) { 1 } elseif ($last.v -ge 10) { 2 } else { 3 }
+        # 원자료보다 자세하게 적지 않는다. 관세청 단가는 정수인데 예상 범위가 '$741.4~$865.4'로 나갔다(2026-11-28).
+        $srcDg = 0
+        foreach ($sr in @($rows | Select-Object -Last 12)) {
+            $sv = $sr.v.ToString("R", [Globalization.CultureInfo]::InvariantCulture)
+            if ($sv -match '\.(\d+)$') { $srcDg = [math]::Max($srcDg, $Matches[1].Length) }
+        }
+        $dg = [math]::Min($dg, $srcDg)
         [PSCustomObject]@{
             label     = $hz.label
             steps     = $h
@@ -2095,6 +2233,17 @@ function Format-Won {
     $d.ToString("N2")
 }
 
+# 메일·보고서 글의 부호 붙은 변화율. 화면(pctSigned)과 같게 빼기는 −, 10% 이상은 정수, 그 아래는 소수 첫째 자리.
+# 'ToString(N1)'로 찍던 곳은 음수가 하이픈(-3.2%)으로 나갔다(2026-11-28).
+function Format-SignedPct {
+    param($v)
+    if ($null -eq $v) { return "–" }
+    $d = [double]$v; $a = [math]::Abs($d)
+    $s = if ($d -gt 0 -and $a -ge 0.05) { "+" } elseif ($d -lt 0 -and $a -ge 0.05) { "−" } else { "" }
+    $n = if ($a -ge 9.95) { [math]::Round($a).ToString("#,0") } else { $a.ToString("0.0", [Globalization.CultureInfo]::InvariantCulture) }
+    "$s$n%"
+}
+
 # --- News (materials) -------------------------------------------------------------------
 # Google News indexes SEO spam farms that publish Korean gambling copy on foreign domains, and
 # they match on almost any query - "엠카지노 도메인에 대한 궁금증을 해소하는 완벽한 가이드" from
@@ -2460,7 +2609,7 @@ if ($config.ecosSeries -and @($config.ecosSeries).Count -gt 0) {
 $customsSeries = @()
 if ($config.customsSeries -and @($config.customsSeries).Count -gt 0) {
     if ($env:DATA_GO_KR_KEY) {
-        Write-Host "Fetching 관세청 수입 단가..."
+        Write-Host "Fetching 관세청 수출입 통계..."
         $customsSeries = @(foreach ($cfg in $config.customsSeries) {
             Write-Host "  - $($cfg.DisplayName)"
             Get-CustomsImportSeries $cfg
@@ -2657,7 +2806,7 @@ foreach ($cfg in @($config.customsSeries)) {
         unit        = $(if ($cfg.Unit) { $cfg.Unit } else { "USD/톤" })
         note        = $cfg.Note
         source      = "관세청 수출입무역통계 (오늘 응답이 없어 저장해 둔 값)"
-        currency    = "$"
+        currency    = $(if ([string]$cfg.Measure -eq "weight") { "" } else { "$" })
         points      = $pts
         newsQuery   = $cfg.NewsQuery
         cached      = $true
@@ -2989,8 +3138,8 @@ function Get-OpsSummaryRow {
         $row.label = "적용 $($sf.window.applyLabel)"
         $row.trend = "$($sf.base.verdict) 예상$($sf.refTag)"
         $row.tone = if ($sf.base.verdict -eq "인상") { "up" } elseif ($sf.base.verdict -eq "인하") { "down" } else { "flat" }
-        $sign = if ($sf.base.diff -gt 0) { "+" } else { "" }
-        $row.note = "산정 $($sf.window.label) 평균 $(Format-Won $sf.base.avg)원(기준 대비 $sign$(Format-Won $sf.base.diff)원)"
+        $sign = if ($sf.base.diff -gt 0) { "+" } elseif ($sf.base.diff -lt 0) { "−" } else { "" }
+        $row.note = "산정 $($sf.window.label) 평균 $(Format-Won $sf.base.avg)원(기준 대비 $sign$(Format-Won ([math]::Abs([double]$sf.base.diff)))원)"
         if ($sf.scenario -and $sf.scenario.trigger) {
             $row.note += ", 유류세 인하 종료 시 $($sf.scenario.trigger.applyLabel) $($sf.scenario.trigger.verdict) 예상$($sf.scenario.trigger.refTag)"
         }
@@ -3782,7 +3931,10 @@ $pricesJson = ConvertTo-JsonOrNull -InputObject @($priceCards) -Depth 6
 $scfiJson = ConvertTo-JsonOrNull -InputObject $scfi -Depth 4
 $sseLanesJson = ConvertTo-JsonOrNull -InputObject @($sseLanes) -Depth 4
 $laneAboutJson = ConvertTo-JsonOrNull -InputObject $laneAbout -Depth 2
-$sortsJson = ConvertTo-Json -InputObject ([PSCustomObject]@{ scfi = $scfiSort; lanes = $laneSort; safeFreight = $sfSort; fuel = (Get-CardSort "D047"); kcl = (Get-CardSort "kcl") }) -Depth 2 -Compress
+$sortsJson = ConvertTo-Json -InputObject ([PSCustomObject]@{ scfi = $scfiSort; lanes = $laneSort; safeFreight = $sfSort; fuel = (Get-CardSort "D047"); kcl = (Get-CardSort "kcl"); kcciLanes = (Get-CardSort "kcci-lanes"); chokepoints = (Get-CardSort "chokepoints") }) -Depth 2 -Compress
+Write-Host "Fetching 주요 해협 통항(IMF PortWatch)..."
+$chokepoints = @(if ($config.chokepoints) { Get-Chokepoints $config.chokepoints })
+$chokeJson = if ($chokepoints.Count) { ConvertTo-Json -InputObject @($chokepoints) -Depth 5 -Compress } else { "[]" }
 $cardGroupsJson = ConvertTo-Json -InputObject @(@($cardGroups | ForEach-Object { [PSCustomObject]@{ title = [string]$_.title } })) -Depth 3 -Compress
 if (-not $cardGroupsJson -or $cardGroupsJson -eq "null") { $cardGroupsJson = "[]" }
 $safeFreightJson = ConvertTo-JsonOrNull -InputObject $safeFreight -Depth 8
@@ -3803,7 +3955,7 @@ $fxCalcJson = ConvertTo-JsonOrNull -InputObject $fxCalc -Depth 5
 $fetchedAt = $nowKst.ToString("yyyy-MM-ddTHH:mm:ss") + "+09:00"
 
 $template = Get-Content -Path (Join-Path $root "template.html") -Raw -Encoding UTF8
-$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__CARD_GROUPS_JSON__", $cardGroupsJson).Replace("__SCHEDULE_JSON__", $scheduleJson).Replace("__CHART_EVENTS_JSON__", $chartEventsJson).Replace("__NEXT_RELEASE_JSON__", $nextReleaseJson).Replace("__SAFE_FREIGHT_JSON__", $safeFreightJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__OPS_SUMMARY_JSON__", $opsSummaryJson).Replace("__FX_CALC_JSON__", $fxCalcJson).Replace("__NEWS_OUTAGE__", $(if ($newsOutage) { "true" } else { "false" })).Replace("__FETCHED_AT__", $fetchedAt)
+$output = $template.Replace("__WEATHER_JSON__", $weatherJson).Replace("__HOLIDAY_JSON__", $holidayJson).Replace("__FOREIGN_HOLIDAYS_JSON__", $foreignHolidaysJson).Replace("__TYPHOON_JSON__", $typhoonJson).Replace("__CLIMATOLOGY_JSON__", $climatologyJson).Replace("__PRICES_JSON__", $pricesJson).Replace("__SCFI_JSON__", $scfiJson).Replace("__SSE_LANES_JSON__", $sseLanesJson).Replace("__LANE_ABOUT_JSON__", $laneAboutJson).Replace("__CARD_SORTS_JSON__", $sortsJson).Replace("__CARD_GROUPS_JSON__", $cardGroupsJson).Replace("__SCHEDULE_JSON__", $scheduleJson).Replace("__CHART_EVENTS_JSON__", $chartEventsJson).Replace("__NEXT_RELEASE_JSON__", $nextReleaseJson).Replace("__SAFE_FREIGHT_JSON__", $safeFreightJson).Replace("__HAS_FUEL_KEY__", $hasFuelKey).Replace("__HAS_KCL__", $hasKcl).Replace("__MATERIALS_JSON__", $materialsJson).Replace("__OPS_SUMMARY_JSON__", $opsSummaryJson).Replace("__FX_CALC_JSON__", $fxCalcJson).Replace("__NEWS_OUTAGE__", $(if ($newsOutage) { "true" } else { "false" })).Replace("__CHOKEPOINTS_JSON__", $chokeJson).Replace("__FETCHED_AT__", $fetchedAt)
 
 $outPath = Join-Path $root "dashboard.html"
 Set-Content -Path $outPath -Value $output -Encoding UTF8
@@ -3875,6 +4027,7 @@ $weatherRowsHtml = foreach ($w in $weather) {
     </div>
     <div style="margin-top:3px;">$curAdvisoryHtml</div>
     <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;">$($dayRows -join "")</table>
+    $(if ($w.seaNote) { "<div style='margin-top:6px;font-size:12.5px;color:#52514e;line-height:1.5;'>🌊 $($w.seaNote)</div>" })
   </td>
 </tr>
 "@
@@ -4152,10 +4305,14 @@ function Get-PriceChangeHtml {
     # Up is red: every series here is an input cost, so rising is the bad direction.
     $accent = if ($up) { "#b3221f" } else { "#0a6b0a" }
     $arrow = if ($up) { "▲" } else { "▼" }
-    $pctStr = "{0:N1}" -f [math]::Abs($pct)
-    $diffStr = Format-PriceValue ([math]::Abs($diff))
+    # 화면 카드와 같은 꼴: '▲ 27 (−3.3%)'. 변화율은 부호와 자릿수 규칙(10% 이상 정수), 차이는 지금 값보다 자세하게 적지 않는다
+    # (전기요금 181.9원에 '▲ 13.73'이 붙었다, 2026-11-28).
+    $pctStr = Format-SignedPct $pct
+    $latestDg = 0; if ((Format-PriceValue $latestValue) -match '\.(\d+)$') { $latestDg = $Matches[1].Length }
+    $diffStr = Format-PriceValue ([math]::Round([math]::Abs($diff), $latestDg))
+    if ([math]::Round([math]::Abs($diff), $latestDg) -eq 0) { $diffStr = Format-PriceValue ([math]::Abs($diff)) }
     [PSCustomObject]@{
-        html   = "<span style='color:$accent;font-weight:700;'>$arrow $diffStr ($pctStr%)</span>"
+        html   = "<span style='color:$accent;font-weight:700;'>$arrow $diffStr ($pctStr)</span>"
         accent = $accent
     }
 }
@@ -4202,8 +4359,7 @@ $priceRowsHtml = foreach ($c in $priceCards) {
         $dev = (([double]$latest.value - $ref) / $ref) * 100
         $tLabel = if ($tg.label) { Get-HtmlText $tg.label } else { "기준가" }
         $tColor = if ($dev -ge 0) { "#b3221f" } else { "#0a6b0a" }
-        $tSign = if ($dev -ge 0) { "+" } else { "" }
-        $targetHtml = "<div style='font-size:12px;margin-top:4px;color:#52514e;'>$tLabel $($c.currency)$(Format-PriceValue $ref) 대비 <b style='color:$tColor;'>$tSign$($dev.ToString('N1'))%</b></div>"
+        $targetHtml = "<div style='font-size:12px;margin-top:4px;color:#52514e;'>$tLabel $($c.currency)$(Format-PriceValue $ref) 대비 <b style='color:$tColor;'>$(Format-SignedPct $dev)</b></div>"
     }
     if ($mailCompact -contains [string]$c.id) {
         # 한 줄 카드: 이름, 값, 단위, 등락, 기준일과 출처만(그래프·기준가 없음). 일반 카드의 절반 이하 용량이다.
@@ -4260,7 +4416,7 @@ if ($sseLanes.Count -gt 0) {
         $color = if ($flat) { "#6e6c66" } elseif ($up) { "#b3221f" } else { "#0a6b0a" }
         $chg = if ($flat) { "보합" } else {
             $arrow = if ($up) { "▲" } else { "▼" }
-            "$arrow $(Format-PriceValue ([math]::Abs($l.change))) ($([math]::Abs($l.changePct))%)"
+            "$arrow $(Format-PriceValue ([math]::Abs($l.change))) ($(Format-SignedPct $l.changePct))"
         }
         @"
 <tr>
@@ -4287,7 +4443,7 @@ $sfHtml = ""
 if ($safeFreight) {
     $sf = $safeFreight
     $vColor = @{ "인상" = "#b3221f"; "인하" = "#0a6b0a"; "동결" = "#6e6c66" }
-    function Get-SignedWon { param($v) $d = [double]$v; $s = if ($d -gt 0) { "+" } elseif ($d -lt 0) { "-" } else { "" }; "$s$(Format-Won ([math]::Abs($d)))" }
+    function Get-SignedWon { param($v) $d = [double]$v; $s = if ($d -gt 0) { "+" } elseif ($d -lt 0) { "−" } else { "" }; "$s$(Format-Won ([math]::Abs($d)))" }
     $estTag = if ($sf.baseProvisional) { ", 잠정" } else { "" }
     $baseLine = "<b style='color:$($vColor[$sf.base.verdict]);'>$($sf.window.applyLabel) 적용분 $($sf.base.verdict) 예상$($sf.refTag)</b><br>산정 기간 $($sf.window.label) 평균 $(Format-Won $sf.base.avg)원, 기준 $(Format-Won $sf.baseFuel)원($($sf.baseWindow)$estTag) 대비 $(Get-SignedWon $sf.base.diff)원(조정 기준 ±$(Format-Won $sf.threshold)원)"
     # 인하가 되려면 남은 날 경유가가 얼마여야 하는지(가장 많이 묻는 질문이라 메일에도 숫자로 적는다).
@@ -4477,10 +4633,9 @@ if ($opsSummary -and @($opsSummary.rows).Count -gt 0) {
     $toneColor = @{ up = "#b3221f"; down = "#0a6b0a"; mixed = "#a15c00"; flat = "#6e6c66" }
     function Get-PctText {
         param($v)
-        if ($null -eq $v) { return "-" }
-        $d = [double]$v
-        $sg = if ($d -gt 0) { "+" } else { "" }
-        "$sg$($d.ToString('N1'))%"
+        # 빼기는 화면과 같은 −, 10% 이상은 정수, 0.0%는 보합(2026-11-28, 예전에는 -3.9% 하이픈).
+        if ($null -ne $v -and [math]::Abs([double]$v) -lt 0.05) { return "보합" }
+        Format-SignedPct $v
     }
     # 평소 변동폭보다 크게 움직인 칸만 배경을 칠한다(오르면 빨강, 내리면 초록, 2배 이상이면 진하게).
     function Get-PctCell {
@@ -4595,7 +4750,8 @@ $updateUrl = "https://github.com/JHKim0603/work-dashboard/actions/workflows/upda
 # --- 주간 보고(월요일 메일) -----------------------------------------------------------------
 # 페이지 [주간 보고 복사](template.html 의 weeklyReportText)와 같은 글을 만든다. 월요일 메일 맨 위에 붙여, 버튼을 누르지 않아도
 # 메일에서 그대로 복사해 보고에 쓸 수 있게 한다. 두 곳의 규칙을 바꿀 때는 함께 바꾼다.
-function Format-ReportPct { param($v) if ($null -eq $v) { return "–" }; $s = if ($v -gt 0) { "+" } elseif ($v -lt 0) { "-" } else { "" }; "$s$([math]::Abs([double]$v).ToString('0.0'))%" }
+# 보고서 글의 증감. 화면과 같은 빼기 기호(−), 10% 이상은 정수, 0.0%는 보합(2026-11-28, 예전에는 하이픈 -3.9%).
+function Format-ReportPct { param($v) if ($null -ne $v -and [math]::Abs([double]$v) -lt 0.05) { return "보합" }; Format-SignedPct $v }
 function Get-JosaRo {
     param([string]$w)
     $t = $w.Trim(); if (-not $t) { return "로" }
@@ -4645,7 +4801,7 @@ function Get-WeeklyReportText {
             if (-not $sf -or -not $sf.base) { continue }
             $parts = @()
             if ($sf.pending -and $sf.pending.effective -and $sf.applied) { $pe = [DateTime]$sf.pending.effective; $parts += "$($pe.Month)/$($pe.Day)부터 $($sf.pending.verdict)된 운임 적용" }
-            $df = [double]$sf.base.diff; $ds = if ($df -gt 0) { "+" } elseif ($df -lt 0) { "-" } else { "" }
+            $df = [double]$sf.base.diff; $ds = if ($df -gt 0) { "+" } elseif ($df -lt 0) { "−" } else { "" }
             $parts += "다음 조정($($sf.window.applyLabel)) $($sf.base.verdict) 예상$($sf.refTag), 기준 대비 $ds$([math]::Abs($df).ToString('#,0.#'))원"
             if ($null -ne $sf.base.downAt) { $parts += "남은 기간 평균 $(Format-Won $sf.base.downAt)원 이하이면 인하" }
             if ($sf.scenario -and $sf.scenario.trigger) { $parts += "유류세 인하 종료 시 $($sf.scenario.trigger.applyLabel) $($sf.scenario.trigger.verdict) 예상$($sf.scenario.trigger.refTag)" }
@@ -4749,7 +4905,7 @@ $emailHtml = @"
   $highlightHtml
   $(Get-EmailSection "" ($materialsHtml -join "`n"))
   <div style="margin-top:16px;font-size:12px;color:#898781;line-height:1.6;">
-    출처: 날씨 Open-Meteo, 공휴일 Nager.Date, 해외 휴무 Google 캘린더, 태풍 GDACS, 환율과 국제유가 Yahoo Finance, 국내 유가 오피넷, 운임지수 상하이해운거래소·한국해양진흥공사, 합성수지 선물 대련·정저우 상품거래소, 물가지수 한국은행, 수입 단가 관세청, KCl World Bank, 뉴스 Google 뉴스. 업무 참고용 요약입니다.<br>
+    출처: 날씨 Open-Meteo, 공휴일 Nager.Date, 해외 휴무 Google 캘린더, 태풍 GDACS, 환율과 국제유가 Yahoo Finance, 국내 유가 오피넷, 운임지수 상하이해운거래소·한국해양진흥공사, 합성수지 선물 대련·정저우 상품거래소, 물가지수 한국은행, 수출입 통계 관세청, 해상 예보 Open-Meteo, 해협 통항 IMF PortWatch, KCl World Bank, 뉴스 Google 뉴스. 업무 참고용 요약입니다.<br>
     자세한 내용은 <a href="$dashboardUrl" style="color:#2a78d6;">대시보드</a>에서 확인하세요.
   </div>
 </div>
@@ -4817,8 +4973,7 @@ foreach ($c in $priceCards) {
     # 제목 알림의 지표 이름은 요약표와 같은 짧은 이름, 음수는 화면과 같은 '−'(2026-11-13 메일 형식 통일).
     $nmS = if ($subjShort.ContainsKey([string]$c.id)) { $subjShort[[string]$c.id] } else { [string]$c.displayName }
     if ([math]::Abs($pctChg) -ge (Get-ChangeAlertPct $c.id)) {
-        $sign = if ($pctChg -ge 0) { "+" } else { "−" }
-        [void]$wdHighlights.Add([PSCustomObject]@{ text = "$nmS $sign$([math]::Abs($pctChg).ToString('N1'))%"; priority = [math]::Abs($pctChg) })
+        [void]$wdHighlights.Add([PSCustomObject]@{ text = "$nmS $(Format-SignedPct $pctChg)"; priority = [math]::Abs($pctChg) })
     }
     # 기준가(계약·예산 단가)에서 alertPct 이상 벗어난 새 값. 같은 '새 값' 게이트를 거치므로
     # 기준을 넘은 채 머무는 동안 매일 제목을 차지하지는 않는다 - 새 시점이 들어올 때마다 한 번.
@@ -4828,8 +4983,7 @@ foreach ($c in $priceCards) {
         $limit = if ($null -ne $tg.alertPct) { [double]$tg.alertPct } else { 5 }
         if ([math]::Abs($dev) -ge $limit) {
             $tLabel = if ($tg.label) { $tg.label } else { "기준가" }
-            $sign = if ($dev -ge 0) { "+" } else { "−" }
-            [void]$wdHighlights.Add([PSCustomObject]@{ text = "$nmS $tLabel 대비 $sign$([math]::Abs($dev).ToString('N1'))%"; priority = 85 })
+            [void]$wdHighlights.Add([PSCustomObject]@{ text = "$nmS $tLabel 대비 $(Format-SignedPct $dev)"; priority = 85 })
         }
     }
 }
@@ -4865,9 +5019,8 @@ if ($opsSummary) {
 $scfiPrevLabel = Get-BaselineLabel "scfi"
 if ($scfi -and $scfi.changePct -and $scfiPrevLabel -and $scfiPrevLabel -ne [string]$scfi.currentDate `
     -and [math]::Abs($scfi.changePct) -ge (Get-ChangeAlertPct "scfi")) {
-    $sign = if ($scfi.changePct -ge 0) { "+" } else { "−" }
     $nmS = if ($subjShort.ContainsKey("scfi")) { $subjShort["scfi"] } else { "SCFI" }
-    [void]$wdHighlights.Add([PSCustomObject]@{ text = "$nmS $sign$([math]::Abs([double]$scfi.changePct).ToString('N1'))%"; priority = [math]::Abs($scfi.changePct) })
+    [void]$wdHighlights.Add([PSCustomObject]@{ text = "$nmS $(Format-SignedPct $scfi.changePct)"; priority = [math]::Abs($scfi.changePct) })
 }
 
 $wdTop = @($wdHighlights | Sort-Object priority -Descending | Select-Object -First 3 -ExpandProperty text)
@@ -4934,8 +5087,11 @@ $liveCards = @($priceCards | Where-Object { -not $_.failed })
 if ($liveCards.Count -lt 5) {
     $problems.Add("정상 가격 카드가 $($liveCards.Count)개뿐입니다 (최소 5개 기대)")
 }
-if ($missingCards.Count -gt 3) {
-    $problems.Add("수집 실패 카드가 $($missingCards.Count)개입니다 (3개 초과)")
+# 관세청 카드는 한 출처라 몇 장이 빠져도 하나로 센다. 카드가 8장으로 늘어 관세청이 한 번 응답하지 않으면 배포가 막힐 수 있었다(2026-11-27).
+$customsIds = @($config.customsSeries | ForEach-Object { [string]$_.Id })
+$missCount = @($missingCards | Where-Object { $customsIds -notcontains [string]$_.id }).Count + $(if (@($missingCards | Where-Object { $customsIds -contains [string]$_.id }).Count) { 1 } else { 0 })
+if ($missCount -gt 3) {
+    $problems.Add("수집 실패 카드가 $($missingCards.Count)개입니다 (관세청 카드는 하나로 세어 ${missCount}개, 3개 초과)")
 }
 
 # Every chartable card must carry a real array. The one-element-array collapse produced a
